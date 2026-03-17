@@ -1,0 +1,29 @@
+{
+  "name": "@terraqura/queue",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./jobs": "./src/jobs/index.ts",
+    "./workers": "./src/workers/index.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "bullmq": "^5.1.0",
+    "ioredis": "^5.3.2",
+    "ethers": "^6.11.0",
+    "crypto-js": "^4.2.0"
+  },
+  "devDependencies": {
+    "@terraqura/typescript-config": "workspace:*",
+    "@terraqura/types": "workspace:*",
+    "@types/crypto-js": "^4.2.2",
+    "typescript": "^5.3.3"
+  }
+}

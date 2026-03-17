@@ -1,0 +1,52 @@
+{
+  "name": "@terraqura/contracts",
+  "version": "0.1.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "scripts": {
+    "compile": "hardhat compile",
+    "build": "hardhat compile",
+    "test": "hardhat test",
+    "test:coverage": "hardhat coverage",
+    "lint": "NO_UPDATE_NOTIFIER=1 SOLHINT_DISABLE_UPDATE_CHECK=true solhint --disc 'contracts/**/*.sol' && eslint 'scripts/**/*.ts' 'test/**/*.ts'",
+    "lint:fix": "NO_UPDATE_NOTIFIER=1 SOLHINT_DISABLE_UPDATE_CHECK=true solhint --disc 'contracts/**/*.sol' --fix && eslint 'scripts/**/*.ts' 'test/**/*.ts' --fix",
+    "typecheck": "tsc --noEmit",
+    "deploy:testnet": "hardhat run scripts/deploy.ts --network polygonAmoy",
+    "deploy:mainnet": "hardhat run scripts/deploy.ts --network polygonMainnet",
+    "verify": "hardhat verify",
+    "clean": "hardhat clean && rm -rf typechain-types"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-chai-matchers": "^2.0.3",
+    "@nomicfoundation/hardhat-ethers": "^3.0.5",
+    "@nomicfoundation/hardhat-network-helpers": "^1.0.10",
+    "@nomicfoundation/hardhat-toolbox": "^4.0.0",
+    "@nomicfoundation/hardhat-verify": "^2.0.3",
+    "@openzeppelin/contracts": "^4.9.6",
+    "@openzeppelin/contracts-upgradeable": "^4.9.6",
+    "@openzeppelin/hardhat-upgrades": "^3.0.2",
+    "@terraqura/eslint-config": "workspace:*",
+    "@terraqura/typescript-config": "workspace:*",
+    "@typechain/ethers-v6": "^0.5.1",
+    "@typechain/hardhat": "^9.1.0",
+    "@types/chai": "^4.3.11",
+    "@types/mocha": "^10.0.6",
+    "@types/node": "^20.11.5",
+    "chai": "^4.4.1",
+    "dotenv": "^16.4.1",
+    "eslint": "^8.57.0",
+    "ethers": "^6.10.0",
+    "hardhat": "^2.19.4",
+    "hardhat-gas-reporter": "^1.0.9",
+    "merkletreejs": "^0.6.0",
+    "solhint": "^4.1.1",
+    "solidity-coverage": "^0.8.6",
+    "solidity-docgen": "0.6.0-beta.36",
+    "ts-node": "^10.9.2",
+    "typechain": "^8.3.2",
+    "typescript": "^5.3.3"
+  },
+  "dependencies": {
+    "@chainlink/contracts": "^1.5.0"
+  }
+}

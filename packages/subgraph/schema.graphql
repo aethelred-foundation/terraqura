@@ -1,0 +1,356 @@
+# TerraQura Subgraph Schema
+# GraphQL schema for indexed blockchain data
+
+# ============================================
+# USER ENTITY
+# ============================================
+
+type User @entity {
+  id: ID! # Wallet address
+
+  # Portfolio
+  credits: [CarbonCredit!]! @derivedFrom(field: "owner")
+  totalCreditsOwned: BigInt!
+  totalCreditsRetired: BigInt!
+  totalCreditsMinted: BigInt!
+
+  # Trading activity
+  listings: [Listing!]! @derivedFrom(field: "seller")
+  offers: [Offer!]! @derivedFrom(field: "buyer")
+  purchases: [Purchase!]! @derivedFrom(field: "buyer")
+  sales: [Purchase!]! @derivedFrom(field: "seller")
+  totalVolumeBought: BigInt!
+  totalVolumeSold: BigInt!
+
+  # Verification activity (for operators)
+  verificationBatches: [VerificationBatch!]! @derivedFrom(field: "operator")
+  totalCO2Captured: BigInt!
+
+  # KYC status (from contract)
+  isKycVerified: Boolean!
+  kycVerifiedAt: BigInt
+
+  # Timestamps
+  firstSeen: BigInt!
+  lastActive: BigInt!
+}
+
+# ============================================
+# CARBON CREDIT ENTITY
+# ============================================
+
+type CarbonCredit @entity {
+  id: ID! # tokenId
+  tokenId: BigInt!
+
+  # Ownership
+  owner: User!
+
+  # Credit details
+  amount: BigInt!
+  vintage: Int!
+
+  # Verification reference
+  verificationBatch: VerificationBatch
+  dataHash: Bytes!
+  ipfsCid: String
+
+  # Provenance chain
+  provenanceEvents: [ProvenanceEvent!]! @derivedFrom(field: "credit")
+
+  # Status
+  status: CreditStatus!
+  retiredAt: BigInt
+  retiredBy: User
+  retirementReason: String
+
+  # Marketplace
+  currentListing: Listing
+
+  # Metrics
+  co2Captured: BigInt! # In wei (18 decimals)
+  energyUsed: BigInt! # In wei (18 decimals)
+  efficiencyFactor: BigInt! # kWh/tonne * 10000
+
+  # Timestamps
+  mintedAt: BigInt!
+  mintTxHash: Bytes!
+  lastUpdated: BigInt!
+}
+
+enum CreditStatus {
+  ACTIVE
+  LISTED
+  RETIRED
+}
+
+type ProvenanceEvent @entity {
+  id: ID! # txHash + logIndex
+  credit: CarbonCredit!
+
+  eventType: String!
+  actor: User!
+  description: String
+  dataHash: Bytes
+
+  timestamp: BigInt!
+  txHash: Bytes!
+  blockNumber: BigInt!
+}
+
+# ============================================
+# VERIFICATION ENTITIES
+# ============================================
+
+type VerificationBatch @entity {
+  id: ID! # batchId (bytes32)
+
+  # Operator
+  operator: User!
+
+  # Verification details
+  co2Amount: BigInt!
+  efficiencyFactor: BigInt!
+  dataHash: Bytes!
+
+  # Phase tracking
+  phases: [VerificationPhase!]! @derivedFrom(field: "batch")
+  currentPhase: String!
+
+  # Status
+  status: VerificationStatus!
+  passed: Boolean!
+
+  # Results
+  sourceCheckPassed: Boolean
+  logicCheckPassed: Boolean
+  mintCheckPassed: Boolean
+
+  # Minted credit reference
+  mintedCredit: CarbonCredit
+
+  # Timestamps
+  submittedAt: BigInt!
+  completedAt: BigInt
+  txHash: Bytes!
+}
+
+enum VerificationStatus {
+  PENDING
+  SOURCE_CHECK
+  LOGIC_CHECK
+  MINT_CHECK
+  VERIFIED
+  FAILED
+}
+
+type VerificationPhase @entity {
+  id: ID! # batchId + phase
+  batch: VerificationBatch!
+
+  phase: String! # source, logic, mint
+  passed: Boolean!
+  timestamp: BigInt!
+  txHash: Bytes!
+}
+
+# ============================================
+# MARKETPLACE ENTITIES
+# ============================================
+
+type Listing @entity {
+  id: ID! # listingId
+  listingId: BigInt!
+
+  # Seller
+  seller: User!
+
+  # Credit details
+  credit: CarbonCredit!
+  tokenId: BigInt!
+  amount: BigInt!
+
+  # Pricing
+  pricePerUnit: BigInt! # In USDC (6 decimals)
+  minPurchaseAmount: BigInt
+
+  # Status
+  status: ListingStatus!
+  amountRemaining: BigInt!
+
+  # Purchases from this listing
+  purchases: [Purchase!]! @derivedFrom(field: "listing")
+
+  # Timestamps
+  createdAt: BigInt!
+  expiresAt: BigInt
+  cancelledAt: BigInt
+  soldOutAt: BigInt
+  txHash: Bytes!
+}
+
+enum ListingStatus {
+  ACTIVE
+  SOLD
+  CANCELLED
+  EXPIRED
+}
+
+type Offer @entity {
+  id: ID! # offerId
+  offerId: BigInt!
+
+  # Buyer
+  buyer: User!
+
+  # Offer details
+  tokenId: BigInt!
+  amount: BigInt!
+  pricePerUnit: BigInt!
+  depositAmount: BigInt!
+
+  # Status
+  status: OfferStatus!
+
+  # Acceptance
+  acceptedBy: User
+  acceptedAt: BigInt
+
+  # Timestamps
+  createdAt: BigInt!
+  expiresAt: BigInt
+  cancelledAt: BigInt
+  txHash: Bytes!
+}
+
+enum OfferStatus {
+  ACTIVE
+  ACCEPTED
+  CANCELLED
+  EXPIRED
+}
+
+type Purchase @entity {
+  id: ID! # txHash + logIndex
+
+  # Parties
+  buyer: User!
+  seller: User!
+
+  # Listing reference
+  listing: Listing
+
+  # Purchase details
+  tokenId: BigInt!
+  amount: BigInt!
+  pricePerUnit: BigInt!
+  totalPrice: BigInt!
+  platformFee: BigInt!
+
+  # Timestamp
+  timestamp: BigInt!
+  txHash: Bytes!
+  blockNumber: BigInt!
+}
+
+# ============================================
+# ANALYTICS ENTITIES
+# ============================================
+
+type DailyStats @entity {
+  id: ID! # date string (YYYY-MM-DD)
+  date: Int! # Unix timestamp for start of day
+
+  # Minting
+  creditsMinted: BigInt!
+  mintTransactions: Int!
+
+  # Retirements
+  creditsRetired: BigInt!
+  retirementTransactions: Int!
+
+  # Trading
+  volumeTraded: BigInt! # In USDC
+  tradeTransactions: Int!
+  uniqueBuyers: Int!
+  uniqueSellers: Int!
+
+  # Listings
+  newListings: Int!
+  cancelledListings: Int!
+
+  # Price metrics
+  avgPricePerTonne: BigInt
+  minPricePerTonne: BigInt
+  maxPricePerTonne: BigInt
+
+  # Verification
+  verificationsSubmitted: Int!
+  verificationsCompleted: Int!
+  verificationsPassed: Int!
+}
+
+type MarketStats @entity {
+  id: ID! # "global"
+
+  # Totals
+  totalCreditsMinted: BigInt!
+  totalCreditsRetired: BigInt!
+  totalCreditsActive: BigInt!
+
+  # Trading
+  totalVolumeTraded: BigInt!
+  totalTransactions: Int!
+  totalPlatformFeesCollected: BigInt!
+
+  # Fee configuration (dynamic - updated from PlatformFeeUpdated events)
+  currentFeeBps: BigInt!
+
+  # Users
+  totalUsers: Int!
+  totalOperators: Int!
+  totalBuyers: Int!
+
+  # Listings
+  activeListings: Int!
+  totalListings: Int!
+
+  # Offers
+  activeOffers: Int!
+  totalOffers: Int!
+
+  # CO2 metrics
+  totalCO2Captured: BigInt!
+  totalCO2Retired: BigInt!
+
+  # Buffer pool metrics
+  totalBufferPoolCredits: BigInt!
+  totalReversalsBurned: BigInt!
+
+  # Last updated
+  lastUpdated: BigInt!
+}
+
+# ============================================
+# PROTOCOL CONFIGURATION
+# ============================================
+
+type ProtocolConfig @entity {
+  id: ID! # "config"
+
+  # Contract addresses
+  carbonCreditAddress: Bytes!
+  verificationEngineAddress: Bytes!
+  marketplaceAddress: Bytes!
+
+  # Fee configuration
+  platformFeePercent: BigInt!
+  feeRecipient: Bytes!
+
+  # Admin
+  owner: Bytes!
+  paused: Boolean!
+
+  # Last updated
+  lastUpdated: BigInt!
+}

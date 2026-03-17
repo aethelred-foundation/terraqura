@@ -1,0 +1,33 @@
+{
+  "name": "@terraqura/database",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./timescale": "./src/timescale/index.ts",
+    "./prisma": "./src/prisma/index.ts"
+  },
+  "scripts": {
+    "build": "tsc",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev",
+    "db:push": "prisma db push",
+    "db:seed": "tsx src/seed.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@prisma/client": "^5.10.0",
+    "pg": "^8.11.3",
+    "drizzle-orm": "^0.29.3"
+  },
+  "devDependencies": {
+    "@terraqura/typescript-config": "workspace:*",
+    "@types/pg": "^8.11.0",
+    "prisma": "^5.10.0",
+    "tsx": "^4.7.1",
+    "typescript": "^5.3.3"
+  }
+}

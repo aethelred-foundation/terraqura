@@ -1,0 +1,94 @@
+specVersion: 0.0.5
+schema:
+  file: ./schema.graphql
+dataSources:
+  # Carbon Credit Contract
+  - kind: ethereum
+    name: CarbonCredit
+    network: matic-amoy
+    source:
+      address: "0x29B58064fD95b175e5824767d3B18bACFafaF959"
+      abi: CarbonCredit
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - CarbonCredit
+        - Transfer
+        - Retirement
+        - User
+      abis:
+        - name: CarbonCredit
+          file: ./abis/CarbonCredit.json
+      eventHandlers:
+        - event: CreditMinted(indexed uint256,indexed bytes32,indexed address,uint256,bytes32)
+          handler: handleCreditMinted
+        - event: CreditRetired(indexed uint256,indexed address,uint256,string)
+          handler: handleCreditRetired
+        - event: TransferSingle(indexed address,indexed address,indexed address,uint256,uint256)
+          handler: handleTransferSingle
+        - event: TransferBatch(indexed address,indexed address,indexed address,uint256[],uint256[])
+          handler: handleTransferBatch
+      file: ./src/carbon-credit.ts
+
+  # Verification Engine Contract
+  - kind: ethereum
+    name: VerificationEngine
+    network: matic-amoy
+    source:
+      address: "0x8dad7E87646e9607Fae225e3A7EAD17ce179dEA8"
+      abi: VerificationEngine
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - VerificationBatch
+        - VerificationPhase
+      abis:
+        - name: VerificationEngine
+          file: ./abis/VerificationEngine.json
+      eventHandlers:
+        - event: VerificationPhaseCompleted(indexed bytes32,indexed bytes32,string,bool,string)
+          handler: handleVerificationPhaseCompleted
+      file: ./src/verification-engine.ts
+
+  # Marketplace Contract
+  - kind: ethereum
+    name: CarbonMarketplace
+    network: matic-amoy
+    source:
+      address: "0x5a4cb32709AB829E2918F0a914FBa1e0Dab2Fdec"
+      abi: CarbonMarketplace
+      startBlock: 0
+    mapping:
+      kind: ethereum/events
+      apiVersion: 0.0.7
+      language: wasm/assemblyscript
+      entities:
+        - Listing
+        - Offer
+        - Purchase
+        - MarketStats
+      abis:
+        - name: CarbonMarketplace
+          file: ./abis/CarbonMarketplace.json
+      eventHandlers:
+        - event: ListingCreated(indexed uint256,indexed address,indexed uint256,uint256,uint256)
+          handler: handleListingCreated
+        - event: ListingCancelled(indexed uint256,indexed address)
+          handler: handleListingCancelled
+        - event: Purchase(indexed uint256,indexed address,indexed address,uint256,uint256,uint256,uint256)
+          handler: handlePurchase
+        - event: OfferCreated(indexed uint256,indexed address,indexed uint256,uint256,uint256)
+          handler: handleOfferCreated
+        - event: OfferAccepted(indexed uint256,indexed address,indexed address,uint256,uint256,uint256)
+          handler: handleOfferAccepted
+        - event: OfferCancelled(indexed uint256,indexed address)
+          handler: handleOfferCancelled
+        - event: PlatformFeeUpdated(uint256,uint256)
+          handler: handlePlatformFeeUpdated
+      file: ./src/marketplace.ts

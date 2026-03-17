@@ -1,0 +1,23 @@
+{
+  "id": "contracts/carbon-credit",
+  "title": "CarbonCredit Contract",
+  "description": "The CarbonCredit contract is an ERC-1155 multi-token contract that represents verified carbon credits.",
+  "source": "@site/docs/contracts/carbon-credit.md",
+  "sourceDirName": "contracts",
+  "slug": "/contracts/carbon-credit",
+  "permalink": "/docs/contracts/carbon-credit",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/terraqura/terraqura/tree/main/apps/docs/docs/contracts/carbon-credit.md",
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 2,
+  "frontMatter": {
+    "sidebar_position": 2
+  },
+  "sidebar": "docsSidebar",
+  "previous": {
+    "title": "Smart Contracts Overview",
+    "permalink": "/docs/contracts/overview"
+  }
+}

@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-label="TerraQura logo">
+  <rect width="120" height="120" rx="20" fill="#1f6f5a" />
+  <path d="M28 74h64v10H28z" fill="#fff" />
+  <path d="M60 24 24 84h14l9-15h26l9 15h14L60 24zm0 20 7 12H53l7-12z" fill="#fff" />
+</svg>

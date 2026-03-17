@@ -1,0 +1,309 @@
+# TerraQura Enterprise Stack
+# Complete development and production infrastructure
+
+version: "3.9"
+
+services:
+  # ============================================
+  # DATABASES
+  # ============================================
+
+  # PostgreSQL with TimescaleDB extension
+  timescaledb:
+    image: timescale/timescaledb:latest-pg15
+    container_name: terraqura-timescaledb
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_USER: terraqura
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-terraqura_dev}
+      POSTGRES_DB: terraqura
+    volumes:
+      - timescaledb_data:/var/lib/postgresql/data
+      - ./packages/database/src/timescale/schema.sql:/docker-entrypoint-initdb.d/01-timescale.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U terraqura"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - terraqura-network
+
+  # Redis for job queues and caching
+  redis:
+    image: redis:7-alpine
+    container_name: terraqura-redis
+    ports:
+      - "6379:6379"
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-terraqura_dev}
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-terraqura_dev}", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - terraqura-network
+
+  # ============================================
+  # BLOCKCHAIN INFRASTRUCTURE
+  # ============================================
+
+  # Local Hardhat node for development
+  hardhat:
+    build:
+      context: ./apps/contracts
+      dockerfile: Dockerfile.dev
+    container_name: terraqura-hardhat
+    ports:
+      - "8545:8545"
+    command: npx hardhat node --hostname 0.0.0.0
+    networks:
+      - terraqura-network
+    profiles:
+      - dev
+
+  # The Graph node for indexing
+  graph-node:
+    image: graphprotocol/graph-node:v0.34.0
+    container_name: terraqura-graph-node
+    ports:
+      - "8000:8000"
+      - "8001:8001"
+      - "8020:8020"
+      - "8030:8030"
+      - "8040:8040"
+    depends_on:
+      - ipfs
+      - timescaledb
+    environment:
+      postgres_host: timescaledb
+      postgres_user: terraqura
+      postgres_pass: ${DB_PASSWORD:-terraqura_dev}
+      postgres_db: graph-node
+      ipfs: "ipfs:5001"
+      ethereum: "matic:${POLYGON_RPC_URL:-http://hardhat:8545}"
+      GRAPH_LOG: info
+    networks:
+      - terraqura-network
+    profiles:
+      - indexing
+
+  # IPFS for decentralized storage
+  ipfs:
+    image: ipfs/kubo:v0.27.0
+    container_name: terraqura-ipfs
+    ports:
+      - "5001:5001"
+      - "8080:8080"
+    volumes:
+      - ipfs_data:/data/ipfs
+    networks:
+      - terraqura-network
+
+  # ============================================
+  # APPLICATIONS
+  # ============================================
+
+  # API Server
+  api:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: terraqura-api
+    ports:
+      - "4000:4000"
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      API_PORT: 4000
+      DATABASE_URL: postgresql://terraqura:${DB_PASSWORD:-terraqura_dev}@timescaledb:5432/terraqura
+      TIMESCALE_URL: postgresql://terraqura:${DB_PASSWORD:-terraqura_dev}@timescaledb:5432/terraqura
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-terraqura_dev}
+      POLYGON_RPC_URL: ${POLYGON_RPC_URL}
+      SUBGRAPH_URL: http://graph-node:8000/subgraphs/name/terraqura/carbon-credits
+      SUMSUB_APP_TOKEN: ${SUMSUB_APP_TOKEN}
+      SUMSUB_SECRET_KEY: ${SUMSUB_SECRET_KEY}
+      JWT_SECRET: ${JWT_SECRET:-dev_jwt_secret}
+    depends_on:
+      - timescaledb
+      - redis
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4000/v1/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    networks:
+      - terraqura-network
+
+  # Worker Service
+  worker:
+    build:
+      context: .
+      dockerfile: apps/worker/Dockerfile
+    container_name: terraqura-worker
+    environment:
+      NODE_ENV: ${NODE_ENV:-development}
+      DATABASE_URL: postgresql://terraqura:${DB_PASSWORD:-terraqura_dev}@timescaledb:5432/terraqura
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-terraqura_dev}
+      POLYGON_RPC_URL: ${POLYGON_RPC_URL}
+      MINTER_PRIVATE_KEY: ${MINTER_PRIVATE_KEY}
+      CARBON_CREDIT_CONTRACT: ${CARBON_CREDIT_CONTRACT}
+      VERIFICATION_ENGINE_CONTRACT: ${VERIFICATION_ENGINE_CONTRACT}
+      SUMSUB_APP_TOKEN: ${SUMSUB_APP_TOKEN}
+      SUMSUB_SECRET_KEY: ${SUMSUB_SECRET_KEY}
+    depends_on:
+      - timescaledb
+      - redis
+    networks:
+      - terraqura-network
+
+  # Web Dashboard
+  web:
+    build:
+      context: .
+      dockerfile: apps/web/Dockerfile
+    container_name: terraqura-web
+    ports:
+      - "3000:3000"
+    environment:
+      NEXT_PUBLIC_API_URL: http://api:4000
+      NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: ${WALLETCONNECT_PROJECT_ID}
+      NEXT_PUBLIC_POLYGON_RPC_URL: ${POLYGON_RPC_URL}
+    depends_on:
+      - api
+    networks:
+      - terraqura-network
+
+  # IoT Simulator (development only)
+  iot-simulator:
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    container_name: terraqura-iot-simulator
+    command: npm run simulate
+    environment:
+      API_URL: http://api:4000
+      SIMULATION_MODE: continuous
+      DAC_UNITS: 3
+    depends_on:
+      - api
+    networks:
+      - terraqura-network
+    profiles:
+      - dev
+
+  # ============================================
+  # MONITORING
+  # ============================================
+
+  # Prometheus for metrics collection
+  prometheus:
+    image: prom/prometheus:v2.49.0
+    container_name: terraqura-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./infrastructure/prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--web.enable-lifecycle"
+    networks:
+      - terraqura-network
+    profiles:
+      - monitoring
+
+  # Grafana for dashboards
+  grafana:
+    image: grafana/grafana:10.3.0
+    container_name: terraqura-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_PASSWORD:-admin}
+      GF_USERS_ALLOW_SIGN_UP: false
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./infrastructure/grafana/provisioning:/etc/grafana/provisioning
+      - ./infrastructure/grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+    networks:
+      - terraqura-network
+    profiles:
+      - monitoring
+
+  # Jaeger for distributed tracing
+  jaeger:
+    image: jaegertracing/all-in-one:1.54
+    container_name: terraqura-jaeger
+    ports:
+      - "16686:16686"
+      - "14268:14268"
+      - "6831:6831/udp"
+    environment:
+      COLLECTOR_OTLP_ENABLED: true
+    networks:
+      - terraqura-network
+    profiles:
+      - monitoring
+
+  # ============================================
+  # UTILITIES
+  # ============================================
+
+  # Redis Commander (development UI for Redis)
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: terraqura-redis-commander
+    ports:
+      - "8081:8081"
+    environment:
+      REDIS_HOSTS: local:redis:6379:0:${REDIS_PASSWORD:-terraqura_dev}
+    depends_on:
+      - redis
+    networks:
+      - terraqura-network
+    profiles:
+      - dev
+
+  # pgAdmin (development UI for PostgreSQL)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: terraqura-pgadmin
+    ports:
+      - "5050:80"
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@terraqura.io
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+    depends_on:
+      - timescaledb
+    networks:
+      - terraqura-network
+    profiles:
+      - dev
+
+# ============================================
+# NETWORKS
+# ============================================
+
+networks:
+  terraqura-network:
+    driver: bridge
+
+# ============================================
+# VOLUMES
+# ============================================
+
+volumes:
+  timescaledb_data:
+  redis_data:
+  ipfs_data:
+  prometheus_data:
+  grafana_data:

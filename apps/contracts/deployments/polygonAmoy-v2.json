@@ -1,0 +1,65 @@
+{
+  "network": "polygonAmoy",
+  "chainId": 80002,
+  "deployedAt": "2026-02-02",
+  "version": "2.0.0",
+  "solidity": "0.8.32",
+  "bugFix": "LostStorageArrayWriteOnSlotOverflow resolved",
+
+  "contracts": {
+    "core": {
+      "TerraQuraAccessControl": {
+        "proxy": "0x55695aAAEC30AB495074c57e85Ae2E1A4866B83b",
+        "implementation": "0x7e3bf0EBAF28bcC9A7d96a54Ad6FFEfA0b4Ebc17",
+        "type": "UUPS"
+      },
+      "VerificationEngine": {
+        "proxy": "0xA348e1c0f31903eCAb1Cb30912249dE548D7e97c",
+        "implementation": "0x8f78979Ec38617Ad114CcbBbf448a26D0001238a",
+        "type": "UUPS"
+      },
+      "CarbonCredit": {
+        "proxy": "0x29B58064fD95b175e5824767d3B18bACFafaF959",
+        "implementation": "0xBF82A70152CAA15cdD8f451128ccF5a7A7b8155c",
+        "type": "UUPS"
+      },
+      "CarbonMarketplace": {
+        "proxy": "0x35c46526B0c17bD893C2d29D428e90ef194F1Ab7",
+        "implementation": "0xb83402330a1d69C6EC455cC1d2cFa4747f1B6626",
+        "type": "UUPS"
+      }
+    },
+    "governance": {
+      "TerraQuraMultisig": {
+        "address": "0x0805E6ffDE71fd798F3Fe787D1dC907aABA65bAD",
+        "type": "Standard",
+        "threshold": "2-of-3"
+      },
+      "TerraQuraTimelock": {
+        "address": "0xb8b01581d61Bf2D58B8B8626Ebb7Ab959ccF6354",
+        "type": "Standard",
+        "minDelay": "3600"
+      }
+    },
+    "security": {
+      "CircuitBreaker": {
+        "proxy": "0x24192ecf06aA782F1dF69878413D217d9319e257",
+        "implementation": "0x324a72C8A99D27C2d285Feb837Ee4243Fb6ee938",
+        "type": "UUPS"
+      }
+    },
+    "gasless": {
+      "GaslessMarketplace": {
+        "proxy": "0xE165dacFfFffbcdf36422E35035c3E61Ca71EaD5",
+        "implementation": "0x5472c5096846f52cef6bc8FD30E95e9DcAda8463",
+        "type": "UUPS"
+      }
+    }
+  },
+
+  "configuration": {
+    "platformFeeBps": 250,
+    "platformFeePercent": "2.5%",
+    "owner": "0x7F6A87fE3191FFBFa06D37939F3a3a4341159ABc"
+  }
+}

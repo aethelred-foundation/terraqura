@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" fill="none">
+  <rect width="1200" height="630" fill="#050810"/>
+  <defs>
+    <linearGradient id="tqog" x1="0" y1="0" x2="1200" y2="630" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#10B981" stop-opacity="0.15"/>
+      <stop offset="1" stop-color="#059669" stop-opacity="0.05"/>
+    </linearGradient>
+    <linearGradient id="accent" x1="80" y1="200" x2="280" y2="430" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#10B981"/>
+      <stop offset="1" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+  <rect width="1200" height="630" fill="url(#tqog)"/>
+  <!-- Grid lines -->
+  <line x1="0" y1="630" x2="1200" y2="630" stroke="#10B981" stroke-opacity="0.1" stroke-width="1"/>
+  <line x1="0" y1="500" x2="1200" y2="500" stroke="#10B981" stroke-opacity="0.05" stroke-width="1"/>
+  <!-- Logo mark -->
+  <path d="M180 200c-56 0-100 44-100 100 0 34 16 64 44 82l0-82c0-31 25-56 56-56s56 25 56 56l0 82c28-18 44-48 44-82 0-56-44-100-100-100z" fill="url(#accent)" opacity="0.9"/>
+  <circle cx="180" cy="328" r="33" fill="#050810"/>
+  <path d="M166 328l10 10 20-20" stroke="#10B981" stroke-width="5" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- Brand text -->
+  <text x="320" y="285" font-family="system-ui, -apple-system, sans-serif" font-size="72" font-weight="700" fill="white" letter-spacing="-2">TerraQura</text>
+  <text x="320" y="340" font-family="system-ui, -apple-system, sans-serif" font-size="24" font-weight="400" fill="#10B981" letter-spacing="4" opacity="0.8">ENGINEERED CARBON TRUTH</text>
+  <!-- Tagline -->
+  <text x="320" y="400" font-family="system-ui, -apple-system, sans-serif" font-size="20" fill="#94A3B8" letter-spacing="0.5">Proof-of-Physics Verification on the Aethelred Blockchain</text>
+  <!-- Footer badge -->
+  <rect x="80" y="540" width="160" height="36" rx="18" fill="#10B981" fill-opacity="0.1" stroke="#10B981" stroke-opacity="0.3" stroke-width="1"/>
+  <text x="112" y="564" font-family="system-ui, -apple-system, sans-serif" font-size="14" font-weight="600" fill="#10B981">Aethelred dApp #5</text>
+  <!-- Border accent -->
+  <rect x="0" y="0" width="1200" height="4" fill="#10B981" opacity="0.6"/>
+</svg>

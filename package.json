@@ -1,0 +1,62 @@
+{
+  "name": "@aethelred/terraqura",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Institutional-Grade Carbon Asset Platform with Proof-of-Physics Verification — Aethelred dApp #5",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/aethelred-io/terraqura.git"
+  },
+  "license": "Apache-2.0",
+  "author": "Aethelred <dev@aethelred.io>",
+  "workspaces": [
+    "apps/*",
+    "packages/*",
+    "packages/config/*"
+  ],
+  "scripts": {
+    "build": "turbo build --filter=!@terraqura/subgraph",
+    "build:subgraph": "pnpm --filter @terraqura/subgraph build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "lint:fix": "turbo lint:fix",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
+    "test": "turbo test",
+    "test:coverage": "turbo test:coverage",
+    "test:python": "cd apps/analytics && python -m pytest tests/ -v",
+    "test:rust": "cd apps/verifier && cargo test",
+    "test:go": "cd apps/indexer && go test ./...",
+    "test:all": "turbo test && pnpm test:python && pnpm test:rust && pnpm test:go",
+    "clean": "turbo clean && rm -rf node_modules",
+    "typecheck": "turbo typecheck",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@changesets/cli": "^2.27.1",
+    "@vitest/coverage-v8": "^4.1.0",
+    "husky": "^9.0.11",
+    "lint-staged": "^15.2.2",
+    "prettier": "^3.2.5",
+    "turbo": "^2.0.0"
+  },
+  "packageManager": "pnpm@9.0.0",
+  "engines": {
+    "node": ">=20.0.0",
+    "pnpm": ">=9.0.0"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx}": [
+      "eslint --fix",
+      "prettier --write"
+    ],
+    "*.{json,md}": [
+      "prettier --write"
+    ]
+  },
+  "pnpm": {
+    "patchedDependencies": {
+      "@graphprotocol/graph-cli@0.67.4": "patches/@graphprotocol__graph-cli@0.67.4.patch"
+    }
+  }
+}

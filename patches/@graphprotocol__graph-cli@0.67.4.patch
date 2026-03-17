@@ -1,0 +1,21 @@
+diff --git a/dist/protocols/ethereum/codegen/abi.js b/dist/protocols/ethereum/codegen/abi.js
+--- a/dist/protocols/ethereum/codegen/abi.js
++++ b/dist/protocols/ethereum/codegen/abi.js
+@@ -29,7 +29,6 @@
+ /* eslint-disable unicorn/no-array-for-each */
+ const fs_1 = __importDefault(require("fs"));
+ const immutable_1 = __importDefault(require("immutable"));
+-const sync_request_1 = __importDefault(require("sync-request"));
+ const web3_eth_abi_1 = __importDefault(require("web3-eth-abi"));
+ const yaml_1 = __importDefault(require("yaml"));
+ const typesCodegen = __importStar(require("../../../codegen/types"));
+@@ -190,7 +189,8 @@
+                 const topic0 = args['topic0'];
+                 const apiKey = args['apiKey'];
+                 const url = `https://api.etherscan.io/api?module=logs&action=getLogs&fromBlock=${blockNumber}&toBlock=${blockNumber}&address=${contractAddr}&${topic0}=topic0&apikey=${apiKey}`;
+-                const resp = (0, sync_request_1.default)('GET', url);
++                const syncRequest = require('sync-request');
++                const resp = syncRequest('GET', url);
+                 const body = JSON.parse(resp.getBody('utf8'));
+                 if (body.status === '0') {
+                     throw new Error(body.result);

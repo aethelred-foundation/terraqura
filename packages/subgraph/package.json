@@ -1,0 +1,24 @@
+{
+  "name": "@terraqura/subgraph",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "codegen": "node ./scripts/run-codegen.cjs",
+    "build": "node ./scripts/run-build.cjs",
+    "deploy": "graph deploy --node https://api.studio.thegraph.com/deploy/ terraqura/carbon-credits",
+    "deploy:hosted": "graph deploy --product hosted-service terraqura/carbon-credits",
+    "create-local": "graph create --node http://localhost:8020/ terraqura/carbon-credits",
+    "remove-local": "graph remove --node http://localhost:8020/ terraqura/carbon-credits",
+    "deploy-local": "graph deploy --node http://localhost:8020/ --ipfs http://localhost:5001 terraqura/carbon-credits",
+    "test": "node ./scripts/run-tests.cjs",
+    "test:coverage": "node ./scripts/run-tests.cjs --coverage",
+    "tools:prefetch": "node ./scripts/run-tests.cjs --download-only"
+  },
+  "dependencies": {
+    "@graphprotocol/graph-cli": "^0.67.1",
+    "@graphprotocol/graph-ts": "^0.32.0"
+  },
+  "devDependencies": {
+    "matchstick-as": "^0.6.0"
+  }
+}

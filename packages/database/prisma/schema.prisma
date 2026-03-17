@@ -1,0 +1,468 @@
+// TerraQura Database Schema
+// Enterprise-grade data model with TimescaleDB integration
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ============================================
+// USER & IDENTITY MANAGEMENT
+// ============================================
+
+model User {
+  id              String    @id @default(cuid())
+  walletAddress   String    @unique @map("wallet_address")
+  email           String?   @unique
+
+  // KYC Status
+  kycStatus       KycStatus @default(PENDING) @map("kyc_status")
+  kycProvider     String?   @map("kyc_provider") // sumsub, onfido
+  kycVerifiedAt   DateTime? @map("kyc_verified_at")
+  kycExpiresAt    DateTime? @map("kyc_expires_at")
+  kycApplicantId  String?   @map("kyc_applicant_id")
+
+  // Risk & Compliance
+  riskScore       Int       @default(0) @map("risk_score")
+  sanctionsCleared Boolean  @default(false) @map("sanctions_cleared")
+  jurisdiction    String?   // ISO country code
+
+  // Roles
+  roles           UserRole[]
+
+  // Relations
+  dacUnits        DacUnit[]
+  carbonCredits   CarbonCredit[]
+  listings        Listing[]
+  purchases       Purchase[]    @relation("BuyerPurchases")
+  sales           Purchase[]    @relation("SellerPurchases")
+  offers          Offer[]
+
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@map("users")
+}
+
+enum KycStatus {
+  PENDING
+  IN_PROGRESS
+  VERIFIED
+  REJECTED
+  EXPIRED
+}
+
+model UserRole {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  role      Role
+  grantedAt DateTime @default(now()) @map("granted_at")
+  grantedBy String?  @map("granted_by")
+
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, role])
+  @@map("user_roles")
+}
+
+enum Role {
+  OPERATOR        // DAC facility operator
+  BUYER           // Carbon credit buyer
+  AUDITOR         // Third-party auditor
+  COMPLIANCE      // Compliance officer
+  ADMIN           // Platform administrator
+}
+
+// ============================================
+// DAC FACILITY MANAGEMENT
+// ============================================
+
+model DacUnit {
+  id                String       @id @default(cuid())
+  ownerId           String       @map("owner_id")
+
+  // Identification
+  name              String
+  registrationId    String       @unique @map("registration_id")
+
+  // Location (ADGM compliant - stored off-chain)
+  latitude          Decimal      @db.Decimal(10, 8)
+  longitude         Decimal      @db.Decimal(11, 8)
+  country           String       // ISO country code
+  region            String?
+
+  // Technical Specifications
+  technologyType    String       @map("technology_type") // solid_sorbent, liquid_solvent, etc.
+  captureCapacity   Decimal      @map("capture_capacity") @db.Decimal(18, 6) // tonnes CO2/year
+  energySource      String       @map("energy_source") // solar, wind, grid, hybrid
+
+  // Status
+  status            DacUnitStatus @default(PENDING_VERIFICATION)
+  verifiedAt        DateTime?    @map("verified_at")
+  lastInspection    DateTime?    @map("last_inspection")
+
+  // Relations
+  owner             User         @relation(fields: [ownerId], references: [id])
+  sensors           Sensor[]
+  verificationBatches VerificationBatch[]
+
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  @@index([ownerId])
+  @@index([status])
+  @@map("dac_units")
+}
+
+enum DacUnitStatus {
+  PENDING_VERIFICATION
+  ACTIVE
+  MAINTENANCE
+  SUSPENDED
+  DECOMMISSIONED
+}
+
+// ============================================
+// IOT SENSOR MANAGEMENT
+// ============================================
+
+model Sensor {
+  id              String       @id @default(cuid())
+  dacUnitId       String       @map("dac_unit_id")
+
+  // Identification
+  serialNumber    String       @unique @map("serial_number")
+  apiKey          String       @unique @map("api_key") // Hashed
+  apiKeyHash      String       @map("api_key_hash")
+
+  // Configuration
+  sensorType      SensorType   @map("sensor_type")
+  manufacturer    String?
+  model           String?
+  calibrationDate DateTime?    @map("calibration_date")
+
+  // Status
+  isActive        Boolean      @default(true) @map("is_active")
+  lastSeen        DateTime?    @map("last_seen")
+
+  // Relations
+  dacUnit         DacUnit      @relation(fields: [dacUnitId], references: [id], onDelete: Cascade)
+
+  createdAt       DateTime     @default(now()) @map("created_at")
+  updatedAt       DateTime     @updatedAt @map("updated_at")
+
+  @@index([dacUnitId])
+  @@index([sensorType])
+  @@map("sensors")
+}
+
+enum SensorType {
+  CO2_FLOW
+  ENERGY_METER
+  TEMPERATURE
+  PRESSURE
+  HUMIDITY
+  AMBIENT_CO2
+}
+
+// ============================================
+// VERIFICATION & MINTING
+// ============================================
+
+model VerificationBatch {
+  id                  String              @id @default(cuid())
+  dacUnitId           String              @map("dac_unit_id")
+
+  // Time Range
+  periodStart         DateTime            @map("period_start")
+  periodEnd           DateTime            @map("period_end")
+
+  // Calculated Metrics
+  totalCO2Captured    Decimal             @map("total_co2_captured") @db.Decimal(18, 6) // tonnes
+  totalEnergyUsed     Decimal             @map("total_energy_used") @db.Decimal(18, 6) // kWh
+  efficiencyFactor    Decimal             @map("efficiency_factor") @db.Decimal(10, 4) // kWh/tonne
+  dataPointCount      Int                 @map("data_point_count")
+
+  // Verification Status
+  status              VerificationStatus  @default(PENDING)
+
+  // Three-Phase Verification
+  sourceCheckPassed   Boolean?            @map("source_check_passed")
+  sourceCheckAt       DateTime?           @map("source_check_at")
+  logicCheckPassed    Boolean?            @map("logic_check_passed")
+  logicCheckAt        DateTime?           @map("logic_check_at")
+  mintCheckPassed     Boolean?            @map("mint_check_passed")
+  mintCheckAt         DateTime?           @map("mint_check_at")
+
+  // Cryptographic Proof
+  dataHash            String              @map("data_hash") // SHA-256 of raw data
+  merkleRoot          String?             @map("merkle_root")
+  ipfsCid             String?             @map("ipfs_cid")
+  arweaveId           String?             @map("arweave_id")
+
+  // Chainlink Verification
+  chainlinkRequestId  String?             @map("chainlink_request_id")
+  oracleVerifiedAt    DateTime?           @map("oracle_verified_at")
+
+  // Relations
+  dacUnit             DacUnit             @relation(fields: [dacUnitId], references: [id])
+  carbonCredits       CarbonCredit[]
+  mintingJob          MintingJob?
+
+  createdAt           DateTime            @default(now()) @map("created_at")
+  updatedAt           DateTime            @updatedAt @map("updated_at")
+
+  @@index([dacUnitId])
+  @@index([status])
+  @@index([periodStart, periodEnd])
+  @@map("verification_batches")
+}
+
+enum VerificationStatus {
+  PENDING
+  SOURCE_CHECK
+  LOGIC_CHECK
+  MINT_CHECK
+  VERIFIED
+  MINTING
+  MINTED
+  FAILED
+}
+
+// ============================================
+// CARBON CREDITS (On-Chain Mirror)
+// ============================================
+
+model CarbonCredit {
+  id                    String              @id @default(cuid())
+
+  // On-Chain Reference
+  tokenId               BigInt              @unique @map("token_id")
+  contractAddress       String              @map("contract_address")
+  chainId               Int                 @map("chain_id")
+
+  // Ownership
+  ownerId               String              @map("owner_id")
+
+  // Credit Details
+  vintage               Int                 // Year of capture
+  amount                Decimal             @db.Decimal(18, 6) // tonnes CO2
+  verificationBatchId   String              @map("verification_batch_id")
+
+  // Status
+  status                CreditStatus        @default(ACTIVE)
+  retiredAt             DateTime?           @map("retired_at")
+  retiredBy             String?             @map("retired_by")
+  retirementReason      String?             @map("retirement_reason")
+
+  // Provenance
+  mintTxHash            String              @map("mint_tx_hash")
+  mintedAt              DateTime            @map("minted_at")
+
+  // Relations
+  owner                 User                @relation(fields: [ownerId], references: [id])
+  verificationBatch     VerificationBatch   @relation(fields: [verificationBatchId], references: [id])
+
+  createdAt             DateTime            @default(now()) @map("created_at")
+  updatedAt             DateTime            @updatedAt @map("updated_at")
+
+  @@index([ownerId])
+  @@index([status])
+  @@index([vintage])
+  @@map("carbon_credits")
+}
+
+enum CreditStatus {
+  ACTIVE
+  LISTED
+  RETIRED
+  TRANSFERRED
+}
+
+// ============================================
+// MARKETPLACE (Off-Chain State)
+// ============================================
+
+model Listing {
+  id                String          @id @default(cuid())
+
+  // On-Chain Reference
+  onChainListingId  BigInt?         @unique @map("on_chain_listing_id")
+
+  // Listing Details
+  sellerId          String          @map("seller_id")
+  tokenId           BigInt          @map("token_id")
+  amount            Decimal         @db.Decimal(18, 6)
+  pricePerUnit      Decimal         @map("price_per_unit") @db.Decimal(18, 6) // In USDC (6 decimals)
+  minPurchaseAmount Decimal?        @map("min_purchase_amount") @db.Decimal(18, 6)
+
+  // Status
+  status            ListingStatus   @default(ACTIVE)
+  expiresAt         DateTime?       @map("expires_at")
+
+  // Relations
+  seller            User            @relation(fields: [sellerId], references: [id])
+  purchases         Purchase[]
+
+  createdAt         DateTime        @default(now()) @map("created_at")
+  updatedAt         DateTime        @updatedAt @map("updated_at")
+
+  @@index([sellerId])
+  @@index([status])
+  @@index([tokenId])
+  @@map("listings")
+}
+
+enum ListingStatus {
+  ACTIVE
+  SOLD
+  CANCELLED
+  EXPIRED
+}
+
+model Offer {
+  id                String       @id @default(cuid())
+
+  // On-Chain Reference
+  onChainOfferId    BigInt?      @unique @map("on_chain_offer_id")
+
+  // Offer Details
+  buyerId           String       @map("buyer_id")
+  tokenId           BigInt       @map("token_id")
+  amount            Decimal      @db.Decimal(18, 6)
+  pricePerUnit      Decimal      @map("price_per_unit") @db.Decimal(18, 6)
+  depositAmount     Decimal      @map("deposit_amount") @db.Decimal(18, 6)
+
+  // Status
+  status            OfferStatus  @default(ACTIVE)
+  expiresAt         DateTime?    @map("expires_at")
+
+  // Relations
+  buyer             User         @relation(fields: [buyerId], references: [id])
+
+  createdAt         DateTime     @default(now()) @map("created_at")
+  updatedAt         DateTime     @updatedAt @map("updated_at")
+
+  @@index([buyerId])
+  @@index([status])
+  @@index([tokenId])
+  @@map("offers")
+}
+
+enum OfferStatus {
+  ACTIVE
+  ACCEPTED
+  REJECTED
+  CANCELLED
+  EXPIRED
+}
+
+model Purchase {
+  id              String    @id @default(cuid())
+
+  // Transaction Reference
+  txHash          String    @unique @map("tx_hash")
+
+  // Parties
+  buyerId         String    @map("buyer_id")
+  sellerId        String    @map("seller_id")
+  listingId       String?   @map("listing_id")
+
+  // Details
+  tokenId         BigInt    @map("token_id")
+  amount          Decimal   @db.Decimal(18, 6)
+  pricePerUnit    Decimal   @map("price_per_unit") @db.Decimal(18, 6)
+  totalPrice      Decimal   @map("total_price") @db.Decimal(18, 6)
+  platformFee     Decimal   @map("platform_fee") @db.Decimal(18, 6)
+
+  // Relations
+  buyer           User      @relation("BuyerPurchases", fields: [buyerId], references: [id])
+  seller          User      @relation("SellerPurchases", fields: [sellerId], references: [id])
+  listing         Listing?  @relation(fields: [listingId], references: [id])
+
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@index([buyerId])
+  @@index([sellerId])
+  @@index([tokenId])
+  @@map("purchases")
+}
+
+// ============================================
+// JOB QUEUE (BullMQ Persistence)
+// ============================================
+
+model MintingJob {
+  id                    String          @id @default(cuid())
+  verificationBatchId   String          @unique @map("verification_batch_id")
+
+  // Job Status
+  status                JobStatus       @default(QUEUED)
+  priority              Int             @default(0)
+  attempts              Int             @default(0)
+  maxAttempts           Int             @default(3) @map("max_attempts")
+
+  // Execution
+  startedAt             DateTime?       @map("started_at")
+  completedAt           DateTime?       @map("completed_at")
+  failedAt              DateTime?       @map("failed_at")
+  errorMessage          String?         @map("error_message")
+
+  // Result
+  txHash                String?         @map("tx_hash")
+  gasUsed               BigInt?         @map("gas_used")
+
+  // Relations
+  verificationBatch     VerificationBatch @relation(fields: [verificationBatchId], references: [id])
+
+  createdAt             DateTime        @default(now()) @map("created_at")
+  updatedAt             DateTime        @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([priority])
+  @@map("minting_jobs")
+}
+
+enum JobStatus {
+  QUEUED
+  PROCESSING
+  COMPLETED
+  FAILED
+  RETRYING
+}
+
+// ============================================
+// AUDIT LOG (Compliance)
+// ============================================
+
+model AuditLog {
+  id            String    @id @default(cuid())
+
+  // Actor
+  userId        String?   @map("user_id")
+  walletAddress String?   @map("wallet_address")
+  ipAddress     String?   @map("ip_address")
+  userAgent     String?   @map("user_agent")
+
+  // Action
+  action        String    // e.g., "kyc.verified", "credit.minted", "listing.created"
+  resource      String    // e.g., "user", "carbon_credit", "listing"
+  resourceId    String?   @map("resource_id")
+
+  // Details
+  oldValue      Json?     @map("old_value")
+  newValue      Json?     @map("new_value")
+  metadata      Json?
+
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  @@index([userId])
+  @@index([action])
+  @@index([resource])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

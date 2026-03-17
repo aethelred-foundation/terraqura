@@ -1,0 +1,12 @@
+{
+  "extends": "@terraqura/typescript-config/node.json",
+  "compilerOptions": {
+    "esModuleInterop": true,
+    "resolveJsonModule": true,
+    "noUncheckedIndexedAccess": false,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false
+  },
+  "include": ["./scripts", "./test", "./typechain-types", "./hardhat.config.ts", "./defender.config.ts"],
+  "files": ["./hardhat.config.ts", "./defender.config.ts"]
+}

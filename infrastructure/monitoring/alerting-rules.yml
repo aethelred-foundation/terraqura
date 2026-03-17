@@ -1,0 +1,356 @@
+# =============================================================================
+# TerraQura Production Alert Rules
+# =============================================================================
+#
+# Severity Levels:
+# - critical: PagerDuty + Slack (immediate response, production impact)
+# - warning: Slack #ops-alerts (investigate within 1 hour)
+# - info: Slack #ops-monitoring (review during business hours)
+#
+# Categories:
+# - Smart Contract Security
+# - API & Worker Health
+# - Database Performance
+# - Blockchain Infrastructure
+# - Business Metrics
+# =============================================================================
+
+groups:
+  # ==========================================================================
+  # CRITICAL: Smart Contract Security Alerts
+  # ==========================================================================
+  - name: smart-contract-security
+    interval: 30s
+    rules:
+      # Circuit Breaker Activation
+      - alert: CircuitBreakerActivated
+        expr: terraqura_circuit_breaker_global_pause == 1
+        for: 0m
+        labels:
+          severity: critical
+          category: security
+          runbook: https://docs.terraqura.io/runbooks/circuit-breaker
+        annotations:
+          summary: "CRITICAL: Circuit Breaker Activated"
+          description: "Global circuit breaker has been activated. All operations are paused. Immediate investigation required."
+          action: "1. Check war room 2. Review recent transactions 3. Assess threat level"
+
+      # Unusual Transaction Volume
+      - alert: UnusualTransactionVolume
+        expr: rate(terraqura_transactions_total[5m]) > 10 * avg_over_time(terraqura_transactions_total[24h])
+        for: 5m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Unusual transaction volume detected"
+          description: "Transaction rate is {{ $value | humanize }} which is 10x higher than 24h average. Possible attack or bug."
+
+      # Large Value Transfer
+      - alert: LargeValueTransfer
+        expr: terraqura_transfer_value_eth > 100000
+        for: 0m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Large value transfer detected"
+          description: "Transfer of {{ $value | humanize }} ETH/MATIC detected. Verify this is authorized."
+
+      # Multisig Threshold Change
+      - alert: MultisigThresholdChanged
+        expr: changes(terraqura_multisig_threshold[1h]) > 0
+        for: 0m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Multisig threshold changed"
+          description: "Multisig threshold was modified. Current threshold: {{ $value }}. Verify this was authorized."
+
+      # Emergency Recovery Initiated
+      - alert: EmergencyRecoveryInitiated
+        expr: terraqura_emergency_recovery_initiated == 1
+        for: 0m
+        labels:
+          severity: critical
+          category: security
+        annotations:
+          summary: "Emergency recovery process initiated"
+          description: "Emergency recovery has been initiated. This will execute in 7 days if not cancelled."
+
+      # Failed Verification Rate High
+      - alert: HighVerificationFailureRate
+        expr: rate(terraqura_verification_failures_total[1h]) / rate(terraqura_verifications_total[1h]) > 0.1
+        for: 15m
+        labels:
+          severity: warning
+          category: security
+        annotations:
+          summary: "High verification failure rate"
+          description: "{{ $value | humanizePercentage }} of verifications are failing. Check for potential fraud attempts."
+
+  # ==========================================================================
+  # API & Worker Health
+  # ==========================================================================
+  - name: api-health
+    interval: 15s
+    rules:
+      # API High Error Rate
+      - alert: APIHighErrorRate
+        expr: sum(rate(http_requests_total{status=~"5.."}[5m])) / sum(rate(http_requests_total[5m])) > 0.05
+        for: 5m
+        labels:
+          severity: critical
+          category: api
+        annotations:
+          summary: "API error rate above 5%"
+          description: "{{ $value | humanizePercentage }} of API requests are returning 5xx errors."
+
+      # API High Latency
+      - alert: APIHighLatency
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 2
+        for: 10m
+        labels:
+          severity: warning
+          category: api
+        annotations:
+          summary: "API latency above 2 seconds (P95)"
+          description: "95th percentile latency is {{ $value | humanizeDuration }}."
+
+      # API Down
+      - alert: APIDown
+        expr: up{job="terraqura-api"} == 0
+        for: 1m
+        labels:
+          severity: critical
+          category: api
+        annotations:
+          summary: "API server is down"
+          description: "API server {{ $labels.pod }} is not responding."
+
+      # Worker Queue Backlog
+      - alert: WorkerQueueBacklog
+        expr: terraqura_worker_queue_size > 1000
+        for: 10m
+        labels:
+          severity: warning
+          category: worker
+        annotations:
+          summary: "Worker queue backlog growing"
+          description: "{{ $value }} jobs in queue. Workers may be unable to keep up."
+
+      # Worker Job Failures
+      - alert: WorkerJobFailures
+        expr: rate(terraqura_worker_job_failures_total[5m]) > 0.1
+        for: 10m
+        labels:
+          severity: warning
+          category: worker
+        annotations:
+          summary: "Worker job failure rate high"
+          description: "{{ $value | humanize }} job failures per second."
+
+  # ==========================================================================
+  # Database Performance
+  # ==========================================================================
+  - name: database-health
+    interval: 30s
+    rules:
+      # Database Connection Saturation
+      - alert: DatabaseConnectionSaturation
+        expr: pg_stat_activity_count / pg_settings_max_connections > 0.8
+        for: 5m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "Database connections above 80%"
+          description: "{{ $value | humanizePercentage }} of database connections in use."
+
+      # Database High CPU
+      - alert: DatabaseHighCPU
+        expr: aws_rds_cpuutilization_average > 80
+        for: 10m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "Database CPU above 80%"
+          description: "RDS CPU utilization is {{ $value }}%."
+
+      # Database Replication Lag
+      - alert: DatabaseReplicationLag
+        expr: pg_replication_lag > 30
+        for: 5m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "Database replication lag above 30 seconds"
+          description: "Replication lag is {{ $value | humanizeDuration }}."
+
+      # Slow Queries
+      - alert: SlowQueries
+        expr: rate(pg_stat_activity_max_tx_duration{state="active"}[5m]) > 30
+        for: 10m
+        labels:
+          severity: warning
+          category: database
+        annotations:
+          summary: "Slow queries detected"
+          description: "Queries running longer than 30 seconds."
+
+  # ==========================================================================
+  # Redis Cache
+  # ==========================================================================
+  - name: redis-health
+    interval: 15s
+    rules:
+      # Redis High Memory
+      - alert: RedisHighMemory
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.9
+        for: 5m
+        labels:
+          severity: warning
+          category: redis
+        annotations:
+          summary: "Redis memory usage above 90%"
+          description: "Redis is using {{ $value | humanizePercentage }} of available memory."
+
+      # Redis Connection Limit
+      - alert: RedisConnectionLimit
+        expr: redis_connected_clients > 1000
+        for: 5m
+        labels:
+          severity: warning
+          category: redis
+        annotations:
+          summary: "Redis connections above 1000"
+          description: "{{ $value }} clients connected to Redis."
+
+      # Redis Replication Broken
+      - alert: RedisReplicationBroken
+        expr: redis_connected_slaves < 1
+        for: 5m
+        labels:
+          severity: critical
+          category: redis
+        annotations:
+          summary: "Redis replication broken"
+          description: "Redis primary has no connected replicas."
+
+  # ==========================================================================
+  # Blockchain Infrastructure
+  # ==========================================================================
+  - name: blockchain-health
+    interval: 30s
+    rules:
+      # RPC Node Down
+      - alert: RPCNodeDown
+        expr: polygon_rpc_healthy == 0
+        for: 2m
+        labels:
+          severity: critical
+          category: blockchain
+        annotations:
+          summary: "Polygon RPC node is down"
+          description: "Primary RPC node is not responding. Failover should be active."
+
+      # Block Lag
+      - alert: BlockLag
+        expr: polygon_latest_block - terraqura_indexed_block > 100
+        for: 10m
+        labels:
+          severity: warning
+          category: blockchain
+        annotations:
+          summary: "Block indexing is lagging"
+          description: "Indexer is {{ $value }} blocks behind the chain."
+
+      # Gas Price Spike
+      - alert: GasPriceSpike
+        expr: polygon_gas_price_gwei > 500
+        for: 5m
+        labels:
+          severity: warning
+          category: blockchain
+        annotations:
+          summary: "Gas price spike detected"
+          description: "Gas price is {{ $value }} gwei. Consider delaying non-urgent transactions."
+
+      # The Graph Node Unhealthy
+      - alert: GraphNodeUnhealthy
+        expr: graph_node_chain_head_update_duration_seconds > 60
+        for: 5m
+        labels:
+          severity: warning
+          category: blockchain
+        annotations:
+          summary: "The Graph node is lagging"
+          description: "Graph node chain head update is taking {{ $value | humanizeDuration }}."
+
+  # ==========================================================================
+  # Business Metrics
+  # ==========================================================================
+  - name: business-metrics
+    interval: 1m
+    rules:
+      # Low Credit Minting Rate
+      - alert: LowCreditMintingRate
+        expr: sum(increase(terraqura_credits_minted_total[24h])) < 100
+        for: 1h
+        labels:
+          severity: info
+          category: business
+        annotations:
+          summary: "Low credit minting activity"
+          description: "Only {{ $value }} credits minted in the last 24 hours."
+
+      # No Trading Activity
+      - alert: NoTradingActivity
+        expr: sum(increase(terraqura_trades_total[6h])) == 0
+        for: 1h
+        labels:
+          severity: info
+          category: business
+        annotations:
+          summary: "No trading activity"
+          description: "No trades executed in the last 6 hours."
+
+      # High Retirement Rate
+      - alert: HighRetirementRate
+        expr: sum(rate(terraqura_credits_retired_total[1h])) / sum(rate(terraqura_credits_minted_total[1h])) > 0.5
+        for: 6h
+        labels:
+          severity: info
+          category: business
+        annotations:
+          summary: "High credit retirement rate"
+          description: "{{ $value | humanizePercentage }} of minted credits are being retired."
+
+  # ==========================================================================
+  # SSL Certificate Expiry
+  # ==========================================================================
+  - name: ssl-certificates
+    interval: 6h
+    rules:
+      - alert: SSLCertificateExpiringSoon
+        expr: probe_ssl_earliest_cert_expiry - time() < 86400 * 30
+        for: 1h
+        labels:
+          severity: warning
+          category: infrastructure
+        annotations:
+          summary: "SSL certificate expiring within 30 days"
+          description: "Certificate for {{ $labels.instance }} expires in {{ $value | humanizeDuration }}."
+
+      - alert: SSLCertificateExpiryCritical
+        expr: probe_ssl_earliest_cert_expiry - time() < 86400 * 7
+        for: 1h
+        labels:
+          severity: critical
+          category: infrastructure
+        annotations:
+          summary: "SSL certificate expiring within 7 days"
+          description: "Certificate for {{ $labels.instance }} expires in {{ $value | humanizeDuration }}. Immediate renewal required."

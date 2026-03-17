@@ -1,0 +1,27 @@
+{
+  "id": "contracts/overview",
+  "title": "Smart Contracts Overview",
+  "description": "TerraQura's smart contracts are deployed on Polygon PoS and implement institutional-grade security and upgradeability patterns.",
+  "source": "@site/docs/contracts/overview.md",
+  "sourceDirName": "contracts",
+  "slug": "/contracts/overview",
+  "permalink": "/docs/contracts/overview",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/terraqura/terraqura/tree/main/apps/docs/docs/contracts/overview.md",
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 1,
+  "frontMatter": {
+    "sidebar_position": 1
+  },
+  "sidebar": "docsSidebar",
+  "previous": {
+    "title": "Getting Started",
+    "permalink": "/docs/getting-started"
+  },
+  "next": {
+    "title": "CarbonCredit Contract",
+    "permalink": "/docs/contracts/carbon-credit"
+  }
+}

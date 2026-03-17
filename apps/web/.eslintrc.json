@@ -1,0 +1,3 @@
+{
+  "extends": ["@terraqura/eslint-config/next"]
+}

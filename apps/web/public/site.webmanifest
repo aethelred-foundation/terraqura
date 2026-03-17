@@ -1,0 +1,16 @@
+{
+  "name": "TerraQura",
+  "short_name": "TerraQura",
+  "description": "Institutional-Grade Carbon Asset Platform with Proof-of-Physics Verification on the Aethelred Blockchain",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#050810",
+  "theme_color": "#050810",
+  "icons": [
+    {
+      "src": "/favicon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml"
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" fill="none">
+  <rect width="512" height="512" rx="96" fill="#050810"/>
+  <defs>
+    <linearGradient id="tq" x1="128" y1="128" x2="384" y2="384" gradientUnits="userSpaceOnUse">
+      <stop stop-color="#10B981"/>
+      <stop offset="1" stop-color="#059669"/>
+    </linearGradient>
+  </defs>
+  <!-- Leaf / Carbon capture symbol -->
+  <path d="M256 112c-80 0-144 64-144 144 0 48 24 92 64 118l0-118c0-44 36-80 80-80s80 36 80 80l0 118c40-26 64-70 64-118 0-80-64-144-144-144z" fill="url(#tq)" opacity="0.9"/>
+  <!-- Inner circle — verification check -->
+  <circle cx="256" cy="296" r="48" fill="#050810"/>
+  <path d="M236 296l14 14 28-28" stroke="#10B981" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+  <!-- "T" letterform hint -->
+  <rect x="240" y="392" width="32" height="8" rx="4" fill="#10B981" opacity="0.6"/>
+</svg>

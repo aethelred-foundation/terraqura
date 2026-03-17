@@ -1,0 +1,59 @@
+{
+  "$schema": "https://turbo.build/schema.json",
+  "globalDependencies": ["**/.env.*local"],
+  "globalEnv": [
+    "NODE_ENV",
+    "POLYGON_RPC_URL",
+    "POLYGON_MAINNET_RPC_URL",
+    "PRIVATE_KEY",
+    "POLYGONSCAN_API_KEY",
+    "DATABASE_URL",
+    "NEXTAUTH_SECRET",
+    "NEXTAUTH_URL",
+    "SUMSUB_APP_TOKEN",
+    "SUMSUB_SECRET_KEY",
+    "IPFS_API_URL",
+    "ARWEAVE_WALLET_KEY"
+  ],
+  "tasks": {
+    "build": {
+      "dependsOn": ["^build"],
+      "outputs": ["dist/**", ".next/**", "!.next/cache/**", "artifacts/**", "typechain-types/**"]
+    },
+    "dev": {
+      "cache": false,
+      "persistent": true
+    },
+    "lint": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "lint:fix": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "test": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "test:coverage": {
+      "dependsOn": ["^build"],
+      "outputs": ["coverage/**"]
+    },
+    "typecheck": {
+      "dependsOn": ["^build"],
+      "outputs": []
+    },
+    "clean": {
+      "cache": false
+    },
+    "compile": {
+      "dependsOn": ["^build"],
+      "outputs": ["artifacts/**", "typechain-types/**"]
+    },
+    "deploy": {
+      "dependsOn": ["compile"],
+      "outputs": []
+    }
+  }
+}

@@ -1,0 +1,24 @@
+{
+  "id": "intro",
+  "title": "TerraQura Documentation",
+  "description": "Welcome to the TerraQura documentation. TerraQura is an Institutional-Grade Carbon Asset Platform that transforms carbon credits from vague paper promises into high-fidelity digital assets using blockchain technology and IoT verification.",
+  "source": "@site/docs/intro.md",
+  "sourceDirName": ".",
+  "slug": "/",
+  "permalink": "/docs/",
+  "draft": false,
+  "unlisted": false,
+  "editUrl": "https://github.com/terraqura/terraqura/tree/main/apps/docs/docs/intro.md",
+  "tags": [],
+  "version": "current",
+  "sidebarPosition": 1,
+  "frontMatter": {
+    "sidebar_position": 1,
+    "slug": "/"
+  },
+  "sidebar": "docsSidebar",
+  "next": {
+    "title": "Getting Started",
+    "permalink": "/docs/getting-started"
+  }
+}

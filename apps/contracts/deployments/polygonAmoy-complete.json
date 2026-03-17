@@ -1,0 +1,99 @@
+{
+  "network": "polygonAmoy",
+  "chainId": 80002,
+  "deployedAt": "2026-02-02",
+  "version": "1.0.0",
+
+  "contracts": {
+    "core": {
+      "TerraQuraAccessControl": {
+        "proxy": "0x6098a0cF16D90817f4C8d730DeA998453F2DE904",
+        "implementation": "0x5496df693526eBB2bC3f12453629219276ff4552",
+        "type": "UUPS"
+      },
+      "VerificationEngine": {
+        "proxy": "0xcB746aB50254A735566676979e69aD6F5842080d",
+        "implementation": "0x8f78979Ec38617Ad114CcbBbf448a26D0001238a",
+        "type": "UUPS"
+      },
+      "CarbonCredit": {
+        "proxy": "0xfc0CaCA6C6abc035562F4a47e12a0d8f7Cd51036",
+        "implementation": "0x4874BA9447E2f023C8A4D7a842F1C8eCb4E671F3",
+        "type": "UUPS"
+      },
+      "CarbonMarketplace": {
+        "proxy": "0xABc0Fa37a6B78DA9514ee36974DAf16ABafFd682",
+        "implementation": "0xb83402330a1d69C6EC455cC1d2cFa4747f1B6626",
+        "type": "UUPS"
+      }
+    },
+    "governance": {
+      "TerraQuraMultisig": {
+        "address": "0xBcCeB8cc6995c54467D144De05eD0325f0448a05",
+        "type": "Standard",
+        "threshold": "2-of-3",
+        "signers": [
+          "0x7F6A87fE3191FFBFa06D37939F3a3a4341159ABc",
+          "0x1111111111111111111111111111111111111111",
+          "0x2222222222222222222222222222222222222222"
+        ]
+      },
+      "TerraQuraTimelock": {
+        "address": "0x57AA5593dD9a8cBB6080247cb2CD2F2a7D21Ac31",
+        "type": "Standard",
+        "minDelay": "3600",
+        "minDelayHuman": "1 hour (testnet)",
+        "proposers": ["0xBcCeB8cc6995c54467D144De05eD0325f0448a05"],
+        "executors": ["0x0000000000000000000000000000000000000000"]
+      }
+    },
+    "security": {
+      "CircuitBreaker": {
+        "proxy": "0xa0489d8a69075908926bCDdAe2D6BD61EbBb550B",
+        "implementation": "0x8a02DD0A8C24478F4d0271a584b04A42a275dBc3",
+        "type": "UUPS"
+      }
+    },
+    "gasless": {
+      "GaslessMarketplace": {
+        "proxy": "0x7Cc37886335C9fC5142D54c972A67625276bb87C",
+        "implementation": "0x5472c5096846f52cef6bc8FD30E95e9DcAda8463",
+        "type": "UUPS",
+        "trustedForwarder": "0x7F6A87fE3191FFBFa06D37939F3a3a4341159ABc"
+      }
+    }
+  },
+
+  "configuration": {
+    "platformFeeBps": 250,
+    "platformFeePercent": "2.5%",
+    "feeRecipient": "0x7F6A87fE3191FFBFa06D37939F3a3a4341159ABc",
+    "owner": "0x7F6A87fE3191FFBFa06D37939F3a3a4341159ABc",
+    "testDacId": "0x45ccede947d5f744703ab7f5ba091940677382ac34daf7f8de21769129b88c55"
+  },
+
+  "testCoverage": {
+    "statements": "100%",
+    "branches": "82.36%",
+    "functions": "96.25%",
+    "lines": "100%",
+    "totalTests": 562,
+    "allPassing": true
+  },
+
+  "verification": {
+    "testMintTxHash": "0x7100551076ac5a4129d8498369098fa99afaa0bc6aa35236d35dbfb94af2a0d0",
+    "testMintBlock": 33201985,
+    "testTokenId": "41026877200893154473076554262386697368627741192364320104672419990764443973203"
+  },
+
+  "polygonscanLinks": {
+    "accessControl": "https://amoy.polygonscan.com/address/0x6098a0cF16D90817f4C8d730DeA998453F2DE904",
+    "verificationEngine": "https://amoy.polygonscan.com/address/0xcB746aB50254A735566676979e69aD6F5842080d",
+    "carbonCredit": "https://amoy.polygonscan.com/address/0xfc0CaCA6C6abc035562F4a47e12a0d8f7Cd51036",
+    "carbonMarketplace": "https://amoy.polygonscan.com/address/0xABc0Fa37a6B78DA9514ee36974DAf16ABafFd682",
+    "multisig": "https://amoy.polygonscan.com/address/0xBcCeB8cc6995c54467D144De05eD0325f0448a05",
+    "timelock": "https://amoy.polygonscan.com/address/0x57AA5593dD9a8cBB6080247cb2CD2F2a7D21Ac31",
+    "circuitBreaker": "https://amoy.polygonscan.com/address/0xa0489d8a69075908926bCDdAe2D6BD61EbBb550B"
+  }
+}

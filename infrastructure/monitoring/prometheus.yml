@@ -1,0 +1,216 @@
+# =============================================================================
+# TerraQura Production Prometheus Configuration
+# =============================================================================
+#
+# This configuration provides comprehensive monitoring for:
+# - Smart contract events (via The Graph)
+# - API server metrics
+# - Worker queue metrics
+# - Database performance
+# - Redis cache metrics
+# - Blockchain node health
+# - Security monitoring
+#
+# Alert Rules:
+# - High severity: PagerDuty (immediate response required)
+# - Medium severity: Slack #ops-alerts
+# - Low severity: Slack #ops-monitoring
+# =============================================================================
+
+global:
+  scrape_interval: 15s
+  evaluation_interval: 15s
+  external_labels:
+    monitor: 'terraqura-production'
+    environment: 'production'
+
+# Alertmanager configuration
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets:
+            - alertmanager:9093
+      scheme: http
+      timeout: 10s
+      api_version: v2
+
+# Rule files for alerts
+rule_files:
+  - '/etc/prometheus/rules/*.yml'
+
+# Scrape configurations
+scrape_configs:
+  # ==========================================================================
+  # Prometheus self-monitoring
+  # ==========================================================================
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+    metrics_path: /metrics
+    scheme: http
+
+  # ==========================================================================
+  # TerraQura API Server
+  # ==========================================================================
+  - job_name: 'terraqura-api'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - terraqura
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: terraqura-api
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_container_port_number]
+        regex: '4000'
+        action: keep
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+    metrics_path: /metrics
+    scheme: http
+
+  # ==========================================================================
+  # TerraQura Worker Service
+  # ==========================================================================
+  - job_name: 'terraqura-worker'
+    kubernetes_sd_configs:
+      - role: pod
+        namespaces:
+          names:
+            - terraqura
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_label_app]
+        regex: terraqura-worker
+        action: keep
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: pod
+    metrics_path: /metrics
+    scheme: http
+
+  # ==========================================================================
+  # PostgreSQL / TimescaleDB
+  # ==========================================================================
+  - job_name: 'postgres-exporter'
+    static_configs:
+      - targets: ['postgres-exporter:9187']
+    metrics_path: /metrics
+
+  # ==========================================================================
+  # Redis
+  # ==========================================================================
+  - job_name: 'redis-exporter'
+    static_configs:
+      - targets: ['redis-exporter:9121']
+    metrics_path: /metrics
+
+  # ==========================================================================
+  # The Graph Node (Blockchain Indexer)
+  # ==========================================================================
+  - job_name: 'graph-node'
+    static_configs:
+      - targets: ['graph-node:8040']
+    metrics_path: /metrics
+
+  # ==========================================================================
+  # Polygon RPC Node Health
+  # ==========================================================================
+  - job_name: 'polygon-rpc'
+    static_configs:
+      - targets: ['polygon-rpc-health:9100']
+    metrics_path: /metrics
+    scrape_interval: 30s
+
+  # ==========================================================================
+  # IPFS Node
+  # ==========================================================================
+  - job_name: 'ipfs'
+    static_configs:
+      - targets: ['ipfs:5001']
+    metrics_path: /debug/metrics/prometheus
+
+  # ==========================================================================
+  # Kubernetes Cluster Metrics
+  # ==========================================================================
+  - job_name: 'kubernetes-apiservers'
+    kubernetes_sd_configs:
+      - role: endpoints
+    scheme: https
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_namespace, __meta_kubernetes_service_name, __meta_kubernetes_endpoint_port_name]
+        regex: default;kubernetes;https
+        action: keep
+
+  - job_name: 'kubernetes-nodes'
+    kubernetes_sd_configs:
+      - role: node
+    scheme: https
+    tls_config:
+      ca_file: /var/run/secrets/kubernetes.io/serviceaccount/ca.crt
+    bearer_token_file: /var/run/secrets/kubernetes.io/serviceaccount/token
+    relabel_configs:
+      - action: labelmap
+        regex: __meta_kubernetes_node_label_(.+)
+      - target_label: __address__
+        replacement: kubernetes.default.svc:443
+      - source_labels: [__meta_kubernetes_node_name]
+        regex: (.+)
+        target_label: __metrics_path__
+        replacement: /api/v1/nodes/${1}/proxy/metrics
+
+  - job_name: 'kubernetes-pods'
+    kubernetes_sd_configs:
+      - role: pod
+    relabel_configs:
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+        regex: 'true'
+        action: keep
+      - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_path]
+        regex: (.+)
+        target_label: __metrics_path__
+      - source_labels: [__address__, __meta_kubernetes_pod_annotation_prometheus_io_port]
+        regex: ([^:]+)(?::\d+)?;(\d+)
+        replacement: $1:$2
+        target_label: __address__
+      - action: labelmap
+        regex: __meta_kubernetes_pod_label_(.+)
+      - source_labels: [__meta_kubernetes_namespace]
+        target_label: kubernetes_namespace
+      - source_labels: [__meta_kubernetes_pod_name]
+        target_label: kubernetes_pod_name
+
+  # ==========================================================================
+  # Blackbox Exporter (External Endpoint Monitoring)
+  # ==========================================================================
+  - job_name: 'blackbox-http'
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets:
+          - https://app.terraqura.io/health
+          - https://api.terraqura.io/health
+          - https://docs.terraqura.io
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: blackbox-exporter:9115
+
+  # ==========================================================================
+  # Smart Contract Event Monitoring (Custom Exporter)
+  # ==========================================================================
+  - job_name: 'contract-events'
+    static_configs:
+      - targets: ['contract-monitor:9200']
+    metrics_path: /metrics
+    scrape_interval: 30s
