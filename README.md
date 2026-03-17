@@ -15,9 +15,9 @@
     <img src="https://img.shields.io/badge/React-19-61DAFB?style=flat-square&logo=react&logoColor=white" alt="React">
   </p>
   <p>
-    <a href="https://terraqura.aethelred.io">App</a> &middot;
-    <a href="https://docs.aethelred.io">Docs</a> &middot;
-    <a href="https://api.terraqura.aethelred.io/docs">API Reference</a> &middot;
+    <a href="https://app.terraqura.com">App</a> &middot;
+    <a href="https://github.com/aethelred-foundation/terraqura/tree/main/docs">Docs</a> &middot;
+    <a href="https://github.com/aethelred-foundation/terraqura/tree/main/docs/api">API Reference</a> &middot;
     <a href="https://discord.gg/aethelred">Discord</a>
   </p>
 </div>
@@ -333,7 +333,7 @@ All contracts target the Aethelred L1 EVM and are written in Solidity 0.8.28 wit
 </tr>
 </table>
 
-Full reference: [api.terraqura.aethelred.io/docs](https://api.terraqura.aethelred.io/docs)
+Full reference: [docs/api](https://github.com/aethelred-foundation/terraqura/tree/main/docs/api)
 
 ---
 
@@ -464,8 +464,8 @@ Apache 2.0 &mdash; see [LICENSE](LICENSE) for details.
 ---
 
 <p align="center">
-  <a href="https://terraqura.aethelred.io">App</a> &middot;
-  <a href="https://docs.aethelred.io">Docs</a> &middot;
+  <a href="https://app.terraqura.com">App</a> &middot;
+  <a href="https://github.com/aethelred-foundation/terraqura/tree/main/docs">Docs</a> &middot;
   <a href="https://discord.gg/aethelred">Discord</a> &middot;
   <a href="https://twitter.com/aethelred">Twitter</a> &middot;
   <a href="mailto:support@aethelred.io">Support</a>
