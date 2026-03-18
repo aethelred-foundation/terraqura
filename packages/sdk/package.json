@@ -32,10 +32,10 @@
   "devDependencies": {
     "@terraqura/eslint-config": "workspace:*",
     "@terraqura/typescript-config": "workspace:*",
-    "@vitest/coverage-v8": "^1.6.1",
+    "@vitest/coverage-v8": "^3.2.4",
     "eslint": "^8.57.0",
     "tsup": "^8.0.2",
     "typescript": "^5.3.3",
-    "vitest": "^1.2.2"
+    "vitest": "^3.2.4"
   }
 }
