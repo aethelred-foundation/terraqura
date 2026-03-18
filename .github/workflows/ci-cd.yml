@@ -24,8 +24,9 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
-      - run: pnpm audit --audit-level=moderate
-        continue-on-error: true
+      - name: NPM Security Audit
+        run: pnpm audit --audit-level=moderate
+        # Security audits are merge-blocking. Fix vulnerabilities before merging.
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
@@ -49,7 +50,7 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
       - run: pnpm lint
-      - run: pnpm type-check
+      - run: pnpm typecheck
 
   test-api:
     name: Test API

@@ -2,7 +2,7 @@
   "name": "@aethelred/terraqura",
   "version": "1.0.0",
   "private": true,
-  "description": "Institutional-Grade Carbon Asset Platform with Proof-of-Physics Verification — Aethelred dApp #5",
+  "description": "Institutional-Grade Carbon Asset Platform with Proof-of-Physics Verification \u2014 Aethelred dApp #5",
   "repository": {
     "type": "git",
     "url": "https://github.com/aethelred-io/terraqura.git"
@@ -57,6 +57,30 @@
   "pnpm": {
     "patchedDependencies": {
       "@graphprotocol/graph-cli@0.67.4": "patches/@graphprotocol__graph-cli@0.67.4.patch"
+    },
+    "overrides": {
+      "fast-xml-parser": ">=5.3.5",
+      "tar": ">=7.5.8",
+      "underscore": ">=1.13.7",
+      "minimatch": ">=9.0.6",
+      "cross-spawn": ">=7.0.5",
+      "semver": ">=7.5.2",
+      "serialize-javascript": ">=7.0.4",
+      "undici": ">=7.10.0",
+      "flatted": ">=3.4.2",
+      "flat-cache": ">=6.1.0",
+      "svgo": ">=3.3.3",
+      "@hono/node-server": ">=1.14.1",
+      "hono": ">=4.12.4",
+      "axios": ">=1.13.5",
+      "immutable": ">=5.0.0",
+      "@openzeppelin/contracts-upgradeable": ">=4.8.3",
+      "parse-duration": ">=2.1.3",
+      "fastify": ">=5.7.2",
+      "rollup": ">=4.59.0",
+      "h3": ">=1.15.6",
+      "socket.io-parser": ">=4.2.6",
+      "socket.io-client": ">=4.8.3"
     }
   }
 }
