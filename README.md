@@ -1,5 +1,5 @@
 <div align="center">
-  <img src="TerraQura Logo.png" alt="TerraQura" width="200" />
+  <img src="README-logo.png" alt="TerraQura" width="200" />
   <h1>TerraQura</h1>
   <p><strong>Institutional-grade carbon credit platform with Proof-of-Physics verification on the Aethelred network.</strong></p>
   <p>
