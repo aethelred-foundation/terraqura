@@ -21,10 +21,9 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm install --frozen-lockfile
       - name: NPM Security Audit
         run: pnpm audit --audit-level=high
-        continue-on-error: true
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
@@ -33,7 +32,6 @@ jobs:
         uses: github/codeql-action/autobuild@v3
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v3
-        continue-on-error: true
 
   lint-format:
     name: Lint & Format
@@ -45,9 +43,9 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-      - run: pnpm install --no-frozen-lockfile
-      - run: pnpm lint || true
-      - run: pnpm typecheck || true
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm lint
+      - run: pnpm typecheck
 
   test-api:
     name: Test API
@@ -73,9 +71,8 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @terraqura/api test -- --coverage
-        continue-on-error: true
         env:
           DATABASE_URL: postgresql://terraqura:terraqura@localhost:5432/terraqura_test
 
@@ -89,9 +86,8 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @terraqura/sdk test -- --coverage
-        continue-on-error: true
 
   test-worker:
     name: Test Worker
@@ -103,7 +99,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @terraqura/worker test -- --coverage
 
   test-contracts:
@@ -116,11 +112,9 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-      - run: pnpm install --no-frozen-lockfile
+      - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @terraqura/contracts test
-        continue-on-error: true
       - run: pnpm --filter @terraqura/contracts coverage
-        continue-on-error: true
 
   build:
     name: Build
@@ -133,10 +127,9 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-      - run: pnpm install --no-frozen-lockfile
-      - run: pnpm --filter @terraqura/api exec prisma generate || true
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @terraqura/api exec prisma generate
       - run: pnpm build
-        continue-on-error: true
 
   deploy-preview:
     name: Deploy Preview
@@ -157,7 +150,6 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build, security-scan]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
       - name: Deploy to Vercel Production

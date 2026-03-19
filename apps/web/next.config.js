@@ -40,13 +40,13 @@ const nextConfig = {
     root: path.resolve(__dirname, "../../"),
   },
 
-  // TypeScript & ESLint
+  // TypeScript & ESLint — build must fail on real errors
   typescript: {
-    ignoreBuildErrors: true,
+    ignoreBuildErrors: false,
   },
 
   eslint: {
-    ignoreDuringBuilds: true,
+    ignoreDuringBuilds: false,
   },
 
   // Security headers
