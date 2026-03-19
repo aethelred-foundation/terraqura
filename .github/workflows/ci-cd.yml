@@ -50,6 +50,7 @@ jobs:
       - run: pnpm install
       - run: pnpm --filter @terraqura/types build
       - run: pnpm --filter @terraqura/database exec prisma generate
+      - run: pnpm --filter @terraqura/contracts run build
       - run: pnpm lint
       - run: pnpm typecheck
 
