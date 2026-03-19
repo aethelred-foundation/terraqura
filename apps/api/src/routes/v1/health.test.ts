@@ -44,7 +44,7 @@ describe("GET /v1/health", () => {
   });
 
   afterAll(async () => {
-    await server.close();
+    await server?.close();
   });
 
   it("returns 200 with healthy status", async () => {
@@ -105,7 +105,7 @@ describe("GET /v1/health/ready", () => {
   });
 
   afterAll(async () => {
-    await server.close();
+    await server?.close();
   });
 
   it("returns ready:true when both subsystems are reachable", async () => {

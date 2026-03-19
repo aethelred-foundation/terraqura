@@ -24,7 +24,7 @@ describe("DAC Units routes", () => {
   });
 
   afterAll(async () => {
-    await server.close();
+    await server?.close();
   });
 
   // -----------------------------------------------------------------------

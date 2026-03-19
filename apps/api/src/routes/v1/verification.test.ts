@@ -25,7 +25,7 @@ describe("Verification routes", () => {
   });
 
   afterAll(async () => {
-    await server.close();
+    await server?.close();
   });
 
   // -----------------------------------------------------------------------
