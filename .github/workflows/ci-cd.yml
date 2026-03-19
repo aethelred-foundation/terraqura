@@ -48,6 +48,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
       - run: pnpm install
+      - run: pnpm --filter @terraqura/types build
       - run: pnpm --filter @terraqura/database exec prisma generate
       - run: pnpm lint
       - run: pnpm typecheck
@@ -77,6 +78,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
       - run: pnpm install
+      - run: pnpm --filter @terraqura/types build
       - run: pnpm --filter @terraqura/database exec prisma generate
       - run: pnpm --filter @terraqura/api test -- --coverage
         env:
@@ -93,6 +95,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
       - run: pnpm install
+      - run: pnpm --filter @terraqura/types build
       - run: pnpm --filter @terraqura/sdk test -- --coverage
 
   test-worker:
@@ -134,6 +137,7 @@ jobs:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
       - run: pnpm install
+      - run: pnpm --filter @terraqura/types build
       - run: pnpm --filter @terraqura/database exec prisma generate
       - run: pnpm build
 
