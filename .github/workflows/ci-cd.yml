@@ -27,7 +27,7 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install
       - name: NPM Security Audit
-        run: pnpm audit --audit-level=high
+        run: pnpm audit --audit-level=high --prod
       - name: Initialize CodeQL
         uses: github/codeql-action/init@v3
         with:
