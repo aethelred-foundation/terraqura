@@ -8,7 +8,7 @@ module.exports = {
     "plugin:react/recommended",
     "plugin:react-hooks/recommended",
     "plugin:jsx-a11y/recommended",
-    "next/core-web-vitals",
+    "next",
   ],
   plugins: ["@typescript-eslint", "react", "react-hooks", "jsx-a11y", "only-warn"],
   parserOptions: {
@@ -52,6 +52,9 @@ module.exports = {
         aspects: ["invalidHref", "preferButton"],
       },
     ],
+    // Disabled: eslint-plugin-jsx-a11y uses minimatch v3 API but our security
+    // override forces minimatch>=9 which changed its exports
+    "jsx-a11y/label-has-associated-control": "off",
 
     // Next.js specific
     "@next/next/no-html-link-for-pages": "off",
