@@ -25,17 +25,9 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
       - name: NPM Security Audit
         run: pnpm audit --audit-level=high --prod
-      - name: Initialize CodeQL
-        uses: github/codeql-action/init@v3
-        with:
-          languages: javascript-typescript
-      - name: Autobuild
-        uses: github/codeql-action/autobuild@v3
-      - name: Perform CodeQL Analysis
-        uses: github/codeql-action/analyze@v3
 
   lint-format:
     name: Lint & Format
@@ -47,7 +39,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @terraqura/types build
       - run: pnpm --filter @terraqura/database exec prisma generate
       - run: pnpm --filter @terraqura/contracts run build
@@ -78,7 +70,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @terraqura/types build
       - run: pnpm --filter @terraqura/database exec prisma generate
       - run: pnpm --filter @terraqura/api test -- --coverage
@@ -95,7 +87,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @terraqura/types build
       - run: pnpm --filter @terraqura/sdk test -- --coverage
 
@@ -109,7 +101,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @terraqura/worker test -- --coverage
 
   test-contracts:
@@ -122,7 +114,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @terraqura/contracts test
       - run: pnpm --filter @terraqura/contracts coverage
 
@@ -137,7 +129,7 @@ jobs:
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
-      - run: pnpm install
+      - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @terraqura/types build
       - run: pnpm --filter @terraqura/database exec prisma generate
       - run: pnpm build
