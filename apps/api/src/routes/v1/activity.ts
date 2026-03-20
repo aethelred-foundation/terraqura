@@ -202,6 +202,13 @@ export async function activityRoutes(
               },
             },
           },
+          401: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
         },
       },
     },

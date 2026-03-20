@@ -157,6 +157,13 @@ export async function webhooksRoutes(
               },
             },
           },
+          401: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
         },
       },
     },
@@ -268,6 +275,13 @@ export async function webhooksRoutes(
               },
             },
           },
+          401: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
         },
       },
     },
@@ -350,6 +364,27 @@ export async function webhooksRoutes(
                   deletedAt: { type: "string" },
                 },
               },
+            },
+          },
+          401: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
+          403: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
+          404: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
             },
           },
         },
@@ -440,6 +475,27 @@ export async function webhooksRoutes(
                   note: { type: "string" },
                 },
               },
+            },
+          },
+          401: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
+          403: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
+          404: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
             },
           },
         },

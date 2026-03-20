@@ -4,7 +4,7 @@ import jwt from "@fastify/jwt";
 import rateLimit from "@fastify/rate-limit";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
-import Fastify from "fastify";
+import Fastify, { FastifyError } from "fastify";
 
 import { getApiRuntimeEnv } from "./lib/runtime-env.js";
 import { activityRoutes } from "./routes/v1/activity.js";
@@ -166,7 +166,7 @@ async function buildServer() {
   await fastify.register(apiKeysRoutes, { prefix: "/v1/api-keys" });
 
   // Global error handler
-  fastify.setErrorHandler((error, _request, reply) => {
+  fastify.setErrorHandler((error: FastifyError, _request, reply) => {
     fastify.log.error(error);
 
     const statusCode = error.statusCode || 500;

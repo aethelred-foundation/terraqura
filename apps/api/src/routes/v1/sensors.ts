@@ -295,6 +295,13 @@ export async function sensorsRoutes(
               },
             },
           },
+          401: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
         },
       },
     },

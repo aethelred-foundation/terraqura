@@ -240,6 +240,13 @@ export async function creditsRoutes(
               },
             },
           },
+          404: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
         },
       },
     },
@@ -302,6 +309,13 @@ export async function creditsRoutes(
                   },
                 },
               },
+            },
+          },
+          404: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
             },
           },
         },
@@ -403,6 +417,41 @@ export async function creditsRoutes(
                   explorerUrl: { type: "string" },
                 },
               },
+            },
+          },
+          400: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
+          401: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
+          403: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
+          404: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
+          409: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
             },
           },
         },
@@ -557,6 +606,34 @@ export async function creditsRoutes(
                   certificateUrl: { type: "string" },
                 },
               },
+            },
+          },
+          400: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
+          401: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
+          403: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
+          404: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
             },
           },
         },
