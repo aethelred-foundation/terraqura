@@ -124,10 +124,13 @@ export class GraphClient {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
         }
 
-        const result = await response.json();
+        const result = (await response.json()) as {
+          data?: T;
+          errors?: Array<{ message: string }>;
+        };
 
         if (result.errors) {
-          throw new Error(result.errors[0].message);
+          throw new Error(result.errors[0]?.message ?? "Unknown graph error");
         }
 
         return result.data as T;
