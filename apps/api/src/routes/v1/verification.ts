@@ -206,6 +206,13 @@ export async function verificationRoutes(
               },
             },
           },
+          400: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
         },
       },
     },
@@ -393,6 +400,13 @@ export async function verificationRoutes(
                   avgPurity: { type: "number", nullable: true },
                 },
               },
+            },
+          },
+          404: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
             },
           },
         },

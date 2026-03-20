@@ -84,7 +84,7 @@ export function cleanupMockRuntimeEnv(): void {
 /**
  * Creates a mock ethers provider with common methods stubbed.
  */
-export function createMockProvider() {
+export function createMockProvider(): Record<string, unknown> {
   return {
     getNetwork: vi.fn().mockResolvedValue({ chainId: 1n, name: "aethelred" }),
     getBlockNumber: vi.fn().mockResolvedValue(1000),
@@ -116,7 +116,7 @@ export function createMockContract(methods?: Record<string, unknown>) {
 /**
  * Creates a mock transaction response from ethers.
  */
-export function createMockTxResponse(overrides?: Record<string, unknown>) {
+export function createMockTxResponse(overrides?: Record<string, unknown>): Record<string, unknown> {
   return {
     hash: "0xmocktxhash123456789",
     wait: vi.fn().mockResolvedValue({
