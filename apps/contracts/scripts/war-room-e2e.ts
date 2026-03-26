@@ -48,8 +48,10 @@ const WAR_ROOM_CONFIG = {
   sensorSimulation: {
     durationMinutes: 60, // 1 hour of data
     intervalSeconds: 300, // 5-minute readings
-    co2BaseRate: 12.5, // kg/hr base capture rate
-    energyBaseRate: 4.5, // kWh per 5-min interval
+    // Keep the simulated plant inside the on-chain 200-600 kWh/tonne envelope
+    // after the verifier rounds capture volumes up to whole tonnes.
+    co2BaseRate: 1550, // kg/hr base capture rate
+    energyBaseRate: 58.5, // kWh per 5-min interval
   },
 
   // Verification parameters
@@ -237,7 +239,8 @@ async function phase1DataIngestion(): Promise<{
   const totalCo2Tonnes = totalCo2Kg / 1000;
 
   const totalEnergyKwh = energyReadings.reduce((sum, r) => sum + r.value, 0);
-  const efficiency = totalEnergyKwh / totalCo2Tonnes;
+  const effectiveTonnesForVerification = Math.max(1, Math.ceil(totalCo2Kg / 1000));
+  const efficiency = totalEnergyKwh / effectiveTonnesForVerification;
 
   logSuccess("Phase1", `Total readings: ${readings.length}`);
   logSuccess("Phase1", `Anomalies detected: ${anomalyCount}`);
@@ -366,15 +369,19 @@ async function phase3CreditMinting(
   deployer: any,
   aggregates: { totalCo2: number; totalEnergy: number },
   verificationResult: VerificationResult
-): Promise<{ tokenId: bigint; txHash: string }> {
+): Promise<{ tokenId: bigint; mintedCredits: bigint; txHash: string }> {
   logHeader("PHASE 3: CARBON CREDIT MINTING");
 
   if (!verificationResult.passed) {
     throw new Error("Cannot mint - verification failed");
   }
 
-  const co2AmountWei = BigInt(Math.floor(aggregates.totalCo2 * 10 ** 18));
-  const energyUsedWei = BigInt(Math.floor(aggregates.totalEnergy * 10 ** 18));
+  const co2AmountKg = BigInt(Math.floor(aggregates.totalCo2 * 1000));
+  const energyUsedKwh = BigInt(Math.floor(aggregates.totalEnergy));
+  const dacUnitId = generateHash(WAR_ROOM_CONFIG.dacUnit.id);
+  const captureTimestamp = BigInt(Math.floor(Date.now() / 1000));
+  const averagePurity = 99;
+  const gridIntensityGco2PerKwh = 50n;
 
   log("Phase3", `Minting ${aggregates.totalCo2.toFixed(3)} tonnes of carbon credits...`);
   log("Phase3", `Recipient: ${deployer.address}`);
@@ -390,37 +397,45 @@ async function phase3CreditMinting(
 
   log("Phase3", "Submitting mint transaction...");
 
-  const tx = await carbonCredit.mintFromVerification(
+  const tx = await carbonCredit.mintVerifiedCredits(
     deployer.address,
-    co2AmountWei,
-    energyUsedWei,
+    dacUnitId,
     verificationResult.dataHash,
-    ipfsCid
+    captureTimestamp,
+    co2AmountKg,
+    energyUsedKwh,
+    BigInt(Math.round(WAR_ROOM_CONFIG.dacUnit.location.lat * 1_000_000)),
+    BigInt(Math.round(WAR_ROOM_CONFIG.dacUnit.location.lng * 1_000_000)),
+    averagePurity,
+    gridIntensityGco2PerKwh,
+    ipfsCid,
+    ""
   );
 
   log("Phase3", `Transaction submitted: ${tx.hash}`);
 
   const receipt = await tx.wait();
 
-  // Extract token ID from events
-  let tokenId = BigInt(0);
-  try {
-    const nextId = await carbonCredit.nextTokenId();
-    tokenId = nextId - 1n;
-  } catch {
-    // Fallback
-    tokenId = BigInt(Date.now());
-  }
+  const tokenId = BigInt(
+    keccak256(
+      ethers.solidityPacked(
+        ["bytes32", "uint256", "bytes32"],
+        [dacUnitId, captureTimestamp, verificationResult.dataHash]
+      )
+    )
+  );
+  const mintedCredits = await carbonCredit.balanceOf(deployer.address, tokenId);
 
   logSuccess("Phase3", `✅ CREDIT MINTED SUCCESSFULLY`);
   logSuccess("Phase3", `Token ID: ${tokenId}`);
+  logSuccess("Phase3", `Credits Minted: ${mintedCredits.toString()}`);
   logSuccess("Phase3", `TX Hash: ${receipt.hash}`);
   logSuccess("Phase3", `Block: ${receipt.blockNumber}`);
   logSuccess("Phase3", `Gas Used: ${receipt.gasUsed.toString()}`);
 
   await pause(WAR_ROOM_CONFIG.phasePauseDuration);
 
-  return { tokenId, txHash: receipt.hash };
+  return { tokenId, mintedCredits, txHash: receipt.hash };
 }
 
 // ============================================
@@ -433,12 +448,12 @@ async function phase4MarketplaceTrading(
   deployer: any,
   buyer: any,
   tokenId: bigint,
-  creditAmount: number
-): Promise<{ listingId: bigint; purchaseAmount: number; purchaseTxHash: string }> {
+  creditAmount: bigint
+): Promise<{ listingId: bigint; purchaseAmount: bigint; purchaseTxHash: string }> {
   logHeader("PHASE 4: MARKETPLACE TRADING");
 
-  const pricePerUnit = parseEther(WAR_ROOM_CONFIG.credit.pricePerTonne);
-  const purchaseAmount = Math.floor(creditAmount / 2); // Purchase half
+  const pricePerUnit = parseEther(WAR_ROOM_CONFIG.credit.pricePerTonne) / 1000n;
+  const purchaseAmount = creditAmount / 2n; // Purchase half
 
   // Step 4.1: Approve marketplace
   log("Phase4", "Approving marketplace for credit transfers...");
@@ -461,10 +476,10 @@ async function phase4MarketplaceTrading(
 
   // Step 4.3: Create listing
   const sellAmount = creditAmount;
-  const minPurchase = 1;
+  const minPurchase = 1n;
   const duration = 30 * 24 * 60 * 60; // 30 days
 
-  log("Phase4", `Creating listing for ${sellAmount} credits...`);
+  log("Phase4", `Creating listing for ${sellAmount.toString()} credits...`);
   log("Phase4", `Price: ${formatEther(pricePerUnit)} AETH per credit`);
 
   const listingTx = await marketplace.createListing(
@@ -485,9 +500,9 @@ async function phase4MarketplaceTrading(
   await pause(500);
 
   // Step 4.4: Execute purchase
-  log("Phase4", `Buyer purchasing ${purchaseAmount} credits...`);
+  log("Phase4", `Buyer purchasing ${purchaseAmount.toString()} credits...`);
 
-  const totalCost = pricePerUnit * BigInt(purchaseAmount);
+  const totalCost = pricePerUnit * purchaseAmount;
   log("Phase4", `Total cost: ${formatEther(totalCost)} AETH`);
 
   const purchaseTx = await marketplace.connect(buyer).purchase(listingId, purchaseAmount, {
@@ -497,7 +512,7 @@ async function phase4MarketplaceTrading(
 
   logSuccess("Phase4", `✅ PURCHASE SUCCESSFUL`);
   logSuccess("Phase4", `Buyer: ${buyer.address}`);
-  logSuccess("Phase4", `Amount: ${purchaseAmount} credits`);
+  logSuccess("Phase4", `Amount: ${purchaseAmount.toString()} credits`);
   logSuccess("Phase4", `TX: ${purchaseReceipt.hash}`);
 
   // Verify balances
@@ -524,11 +539,11 @@ async function phase5Retirement(
   carbonCredit: any,
   buyer: any,
   tokenId: bigint,
-  retireAmount: number
+  retireAmount: bigint
 ): Promise<{ retired: boolean; certificateHash: string; txHash: string }> {
   logHeader("PHASE 5: CREDIT RETIREMENT");
 
-  log("Phase5", `Retiring ${retireAmount} credits for carbon offset...`);
+  log("Phase5", `Retiring ${retireAmount.toString()} credits for carbon offset...`);
   log("Phase5", `Account: ${buyer.address}`);
 
   const retirementReason = `Carbon offset for Q1 2026 - War Room Demo ${new Date().toISOString()}`;
@@ -537,7 +552,7 @@ async function phase5Retirement(
   await pause(500);
 
   // Execute retirement
-  const retireTx = await carbonCredit.connect(buyer).retire(
+  const retireTx = await carbonCredit.connect(buyer).retireCredits(
     tokenId,
     retireAmount,
     retirementReason
@@ -549,7 +564,7 @@ async function phase5Retirement(
   const certificateHash = generateHash(certificateData);
 
   logSuccess("Phase5", `✅ CREDITS RETIRED SUCCESSFULLY`);
-  logSuccess("Phase5", `Amount: ${retireAmount} credits`);
+  logSuccess("Phase5", `Amount: ${retireAmount.toString()} credits`);
   logSuccess("Phase5", `TX: ${retireReceipt.hash}`);
   logSuccess("Phase5", `Certificate Hash: ${certificateHash.slice(0, 30)}...`);
 
@@ -605,7 +620,11 @@ async function runWarRoomSimulation() {
   log("Setup", "Deploying fresh contracts for war room...");
 
   const VerificationEngine = await ethers.getContractFactory("VerificationEngine");
-  const verificationEngine = await VerificationEngine.deploy();
+  const verificationEngine = await upgrades.deployProxy(
+    VerificationEngine,
+    [ethers.ZeroAddress, ethers.ZeroAddress],
+    { initializer: "initialize", kind: "uups" }
+  );
   await verificationEngine.waitForDeployment();
 
   const CarbonCredit = await ethers.getContractFactory("CarbonCredit");
@@ -625,7 +644,9 @@ async function runWarRoomSimulation() {
   await marketplace.waitForDeployment();
 
   // Configure
+  const warRoomDacUnitId = generateHash(WAR_ROOM_CONFIG.dacUnit.id);
   await verificationEngine.setCarbonCreditContract(await carbonCredit.getAddress());
+  await verificationEngine.whitelistDacUnit(warRoomDacUnitId, deployer.address);
   await carbonCredit.setMinter(deployer.address, true);
   await marketplace.setKycRequired(true);
 
@@ -657,7 +678,7 @@ async function runWarRoomSimulation() {
     // PHASE 4: Marketplace Trading (only if buyer available)
     let phase4Result = {
       listingId: BigInt(0),
-      purchaseAmount: 0,
+      purchaseAmount: 0n,
       purchaseTxHash: "",
     };
 
@@ -668,7 +689,7 @@ async function runWarRoomSimulation() {
         deployer,
         buyer,
         phase3Result.tokenId,
-        Math.floor(phase1Result.aggregates.totalCo2)
+        phase3Result.mintedCredits
       );
     } else {
       logWarning("Phase4", "Skipping marketplace - no buyer signer available");
@@ -682,7 +703,7 @@ async function runWarRoomSimulation() {
     };
 
     if (buyer && phase4Result.purchaseAmount > 0) {
-      const retireAmount = Math.floor(phase4Result.purchaseAmount / 2);
+      const retireAmount = phase4Result.purchaseAmount / 2n;
       phase5Result = await phase5Retirement(
         carbonCredit,
         buyer,
@@ -776,7 +797,10 @@ async function runWarRoomSimulation() {
 
 runWarRoomSimulation()
   .then((result) => {
-    console.log("\nFinal Result:", JSON.stringify(result, null, 2));
+    console.log(
+      "\nFinal Result:",
+      JSON.stringify(result, (_key, value) => (typeof value === "bigint" ? value.toString() : value), 2)
+    );
     process.exit(0);
   })
   .catch((error) => {

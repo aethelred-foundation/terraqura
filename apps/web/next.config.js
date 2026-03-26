@@ -2,6 +2,7 @@ const path = require("path");
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  output: 'standalone',
   reactStrictMode: true,
   transpilePackages: ["@terraqura/types"],
 
@@ -40,13 +41,9 @@ const nextConfig = {
     root: path.resolve(__dirname, "../../"),
   },
 
-  // TypeScript & ESLint — build must fail on real errors
+  // TypeScript
   typescript: {
     ignoreBuildErrors: false,
-  },
-
-  eslint: {
-    ignoreDuringBuilds: false,
   },
 
   // Security headers
