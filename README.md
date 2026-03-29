@@ -3,8 +3,8 @@
   <h1>TerraQura</h1>
   <p><strong>Institutional-grade carbon credit platform with Proof-of-Physics verification on the Aethelred network.</strong></p>
   <p>
-    <a href="https://github.com/aethelred-foundation/terraqura/actions/workflows/ci-cd.yml"><img src="https://img.shields.io/github/actions/workflow/status/aethelred-foundation/terraqura/ci-cd.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
-    <a href="https://codecov.io/gh/aethelred-foundation/terraqura"><img src="https://img.shields.io/codecov/c/github/aethelred-foundation/terraqura?style=flat-square&label=coverage" alt="Coverage"></a>
+    <a href="https://github.com/aethelred-foundation/terraqura/actions/workflows/ci-cd.yml"><img src="https://github.com/aethelred-foundation/terraqura/actions/workflows/ci-cd.yml/badge.svg?branch=main" alt="CI"></a>
+    <a href="#overview"><img src="https://img.shields.io/badge/status-pre--mainnet-f59e0b?style=flat-square" alt="Status"></a>
     <a href="SECURITY.md"><img src="https://img.shields.io/badge/audit-25_contracts_reviewed-informational?style=flat-square" alt="Audit"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License"></a>
   </p>
