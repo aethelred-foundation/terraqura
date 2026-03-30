@@ -7,8 +7,10 @@ on:
     branches: [main, develop]
 
 env:
-  NODE_VERSION: '20'
+  NODE_VERSION: '20.18'
   PNPM_VERSION: '9'
+  # Retry Solidity compiler downloads (fixes undici transient failures)
+  HARDHAT_EXPERIMENTAL_ALLOW_NON_LOCAL_INSTALLATION: '1'
 
 jobs:
   security-scan:
@@ -38,7 +40,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @terraqura/types build
       - run: pnpm --filter @terraqura/database exec prisma generate
-      - run: pnpm --filter @terraqura/contracts run build
+      - name: Build contracts (with compiler download retry)
+        run: pnpm --filter @terraqura/contracts run build || pnpm --filter @terraqura/contracts run build
       - run: pnpm lint
       - run: pnpm typecheck
 
