@@ -19,6 +19,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -35,6 +37,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -67,6 +71,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -77,6 +83,16 @@ jobs:
       - run: pnpm --filter @terraqura/api test -- --coverage
         env:
           DATABASE_URL: postgresql://terraqura:terraqura@localhost:5432/terraqura_test
+      - name: Upload API coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./apps/api/coverage/lcov.info
+          flags: api
+          name: api-coverage
+          fail_ci_if_error: false
+          disable_search: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   test-sdk:
     name: Test SDK
@@ -84,6 +100,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -91,6 +109,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @terraqura/types build
       - run: pnpm --filter @terraqura/sdk test -- --coverage
+      - name: Upload SDK coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./packages/sdk/coverage/lcov.info
+          flags: sdk
+          name: sdk-coverage
+          fail_ci_if_error: false
+          disable_search: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   test-worker:
     name: Test Worker
@@ -98,12 +126,24 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @terraqura/worker test -- --coverage
+      - name: Upload worker coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./apps/worker/coverage/lcov.info
+          flags: worker
+          name: worker-coverage
+          fail_ci_if_error: false
+          disable_search: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   test-contracts:
     name: Test Smart Contracts
@@ -111,6 +151,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -118,6 +160,16 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @terraqura/contracts test
       - run: pnpm --filter @terraqura/contracts coverage
+      - name: Upload contracts coverage to Codecov
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./apps/contracts/coverage/lcov.info
+          flags: contracts
+          name: contracts-coverage
+          fail_ci_if_error: false
+          disable_search: true
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
 
   build:
     name: Build
@@ -126,6 +178,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
@@ -141,9 +195,15 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build]
     if: github.event_name == 'pull_request'
+    env:
+      HAS_VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
+      - name: Skip preview deploy when Vercel secrets are not configured
+        if: env.HAS_VERCEL_TOKEN != 'true'
+        run: echo "Skipping preview deploy because Vercel secrets are not configured."
       - name: Deploy to Vercel Preview
+        if: env.HAS_VERCEL_TOKEN == 'true'
         uses: amondnet/vercel-action@v25
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
@@ -156,9 +216,15 @@ jobs:
     runs-on: ubuntu-latest
     needs: [build, security-scan]
     if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    env:
+      HAS_VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN != '' }}
     steps:
       - uses: actions/checkout@v4
+      - name: Skip production deploy when Vercel secrets are not configured
+        if: env.HAS_VERCEL_TOKEN != 'true'
+        run: echo "Skipping production deploy because Vercel secrets are not configured."
       - name: Deploy to Vercel Production
+        if: env.HAS_VERCEL_TOKEN == 'true'
         uses: amondnet/vercel-action@v25
         with:
           vercel-token: ${{ secrets.VERCEL_TOKEN }}
