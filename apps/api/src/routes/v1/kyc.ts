@@ -388,6 +388,10 @@ export async function kycRoutes(fastify: FastifyInstance) {
   fastify.post<{ Body: WebhookBody }>(
     "/webhook/sumsub",
     {
+      preHandler: fastify.rateLimit({
+        max: 30,
+        timeWindow: "1 minute",
+      }),
       config: {
         rateLimit: {
           max: 30,
