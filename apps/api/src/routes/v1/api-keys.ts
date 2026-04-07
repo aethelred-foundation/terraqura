@@ -1,8 +1,9 @@
-import { createHash, randomBytes } from "crypto";
+import { randomBytes, scryptSync } from "crypto";
 
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
+import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
 import { mutateState, readState } from "../../lib/state-store.js";
 
 const ApiKeyType = z.enum(["sensor", "read-only", "full-access"]);
@@ -65,6 +66,7 @@ interface StoredApiKey {
   type: ApiKeyTypeValue;
   description: string | null;
   keyHash: string;
+  keySalt: string;
   keyPrefix: string;
   permissions: string[];
   rateLimit: {
@@ -136,8 +138,8 @@ function generateApiKey(type: ApiKeyTypeValue): string {
   return `${prefix}_${randomBytes(32).toString("hex")}`;
 }
 
-function hashApiKey(key: string): string {
-  return createHash("sha256").update(key).digest("hex");
+function hashApiKey(key: string, salt: string): string {
+  return scryptSync(key, salt, 64).toString("hex");
 }
 
 function maskApiKey(prefix: string): string {
@@ -227,6 +229,8 @@ export async function apiKeysRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const userId = getAuthenticatedUserId(request);
@@ -239,7 +243,8 @@ export async function apiKeysRoutes(
 
       const body = CreateApiKeySchema.parse(request.body);
       const rawKey = generateApiKey(body.type);
-      const keyHash = hashApiKey(rawKey);
+      const keySalt = randomBytes(16).toString("hex");
+      const keyHash = hashApiKey(rawKey, keySalt);
       const keyPrefix = rawKey.slice(0, 8);
 
       const permissions = body.permissions || DEFAULT_PERMISSIONS[body.type];
@@ -265,6 +270,7 @@ export async function apiKeysRoutes(
             type: body.type,
             description: body.description || null,
             keyHash,
+            keySalt,
             keyPrefix,
             permissions,
             rateLimit,
@@ -373,6 +379,8 @@ export async function apiKeysRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const userId = getAuthenticatedUserId(request);
@@ -493,6 +501,8 @@ export async function apiKeysRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const userId = getAuthenticatedUserId(request);
@@ -509,7 +519,8 @@ export async function apiKeysRoutes(
         API_KEYS_STORE_KEY,
         DEFAULT_API_KEYS_STATE,
         async (state) => {
-          const key = state.keys[params.id];
+          const keys = new Map(Object.entries(state.keys));
+          const key = keys.get(params.id);
           if (!key) {
             return { kind: "not_found" as const };
           }
@@ -524,7 +535,8 @@ export async function apiKeysRoutes(
 
           key.isActive = false;
           key.updatedAt = new Date().toISOString();
-          state.keys[params.id] = key;
+          keys.set(params.id, key);
+          state.keys = Object.fromEntries(keys);
           return { kind: "success" as const, key };
         }
       );
@@ -660,6 +672,8 @@ export async function apiKeysRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const userId = getAuthenticatedUserId(request);
@@ -677,7 +691,8 @@ export async function apiKeysRoutes(
         API_KEYS_STORE_KEY,
         DEFAULT_API_KEYS_STATE,
         async (state) => {
-          const key = state.keys[params.id];
+          const keys = new Map(Object.entries(state.keys));
+          const key = keys.get(params.id);
           if (!key) {
             return { kind: "not_found" as const };
           }
@@ -709,7 +724,8 @@ export async function apiKeysRoutes(
           }
 
           key.updatedAt = nowIso;
-          state.keys[params.id] = key;
+          keys.set(params.id, key);
+          state.keys = Object.fromEntries(keys);
           return { kind: "success" as const, key };
         }
       );

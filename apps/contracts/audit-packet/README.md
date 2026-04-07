@@ -38,8 +38,7 @@ audit-packet/
 │   ├── governance/
 │   └── security/
 ├── coverage/                    # Test coverage report (HTML)
-├── coverage.json                # Raw coverage data
-└── SolidityMetrics.html         # Code complexity analysis
+└── coverage.json                # Raw coverage data for local metrics generation
 ```
 
 ---

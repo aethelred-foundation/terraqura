@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
+import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
 import { readState } from "../../lib/state-store.js";
 
 const ActivityActionType = z.enum([
@@ -211,6 +212,8 @@ export async function activityRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const userId = getAuthenticatedUserId(request);
@@ -321,6 +324,8 @@ export async function activityRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const userId = getAuthenticatedUserId(request);

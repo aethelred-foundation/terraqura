@@ -29,7 +29,7 @@
     "@terraqura/types": "workspace:*",
     "drizzle-orm": "^0.29.3",
     "ethers": "^6.10.0",
-    "fastify": "^4.26.0",
+    "fastify": "^4.29.1",
     "pg": "^8.11.3",
     "pino": "^8.18.0",
     "siwe": "^2.1.4",

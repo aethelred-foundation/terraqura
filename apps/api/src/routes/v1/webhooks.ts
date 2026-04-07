@@ -3,6 +3,7 @@ import { createHmac, randomBytes } from "crypto";
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
+import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
 import { mutateState, readState } from "../../lib/state-store.js";
 
 const WebhookEventType = z.enum([
@@ -166,6 +167,8 @@ export async function webhooksRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const userId = getAuthenticatedUserId(request);
@@ -284,6 +287,8 @@ export async function webhooksRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const userId = getAuthenticatedUserId(request);
@@ -389,6 +394,8 @@ export async function webhooksRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const userId = getAuthenticatedUserId(request);
@@ -405,7 +412,8 @@ export async function webhooksRoutes(
         WEBHOOKS_STORE_KEY,
         DEFAULT_WEBHOOKS_STATE,
         async (state) => {
-          const webhook = state.webhooks[params.id];
+          const webhooks = new Map(Object.entries(state.webhooks));
+          const webhook = webhooks.get(params.id);
           if (!webhook) {
             return { kind: "not_found" as const };
           }
@@ -414,7 +422,8 @@ export async function webhooksRoutes(
             return { kind: "forbidden" as const };
           }
 
-          delete state.webhooks[params.id];
+          webhooks.delete(params.id);
+          state.webhooks = Object.fromEntries(webhooks);
           return { kind: "success" as const };
         }
       );
@@ -500,6 +509,8 @@ export async function webhooksRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const userId = getAuthenticatedUserId(request);
@@ -512,7 +523,8 @@ export async function webhooksRoutes(
 
       const params = request.params as { id: string };
       const state = await readState(WEBHOOKS_STORE_KEY, DEFAULT_WEBHOOKS_STATE);
-      const webhook = state.webhooks[params.id];
+      const webhooks = new Map(Object.entries(state.webhooks));
+      const webhook = webhooks.get(params.id);
 
       if (!webhook) {
         return reply.status(404).send({
@@ -546,12 +558,14 @@ export async function webhooksRoutes(
         WEBHOOKS_STORE_KEY,
         DEFAULT_WEBHOOKS_STATE,
         async (state) => {
-          const wh = state.webhooks[params.id];
+          const webhooks = new Map(Object.entries(state.webhooks));
+          const wh = webhooks.get(params.id);
           if (wh) {
             wh.lastTriggeredAt = new Date().toISOString();
             wh.totalDeliveries += 1;
             wh.updatedAt = new Date().toISOString();
-            state.webhooks[params.id] = wh;
+            webhooks.set(params.id, wh);
+            state.webhooks = Object.fromEntries(webhooks);
           }
 
           state.deliveries.push({

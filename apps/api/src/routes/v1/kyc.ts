@@ -3,6 +3,7 @@
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 
+import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
 import { getApiRuntimeEnv } from "../../lib/runtime-env.js";
 import { createSumsubService } from "../../services/kyc/sumsub.service.js";
 
@@ -129,6 +130,8 @@ export async function kycRoutes(fastify: FastifyInstance) {
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const { walletAddress, email, firstName, lastName, country } = request.body;
@@ -235,6 +238,8 @@ export async function kycRoutes(fastify: FastifyInstance) {
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const { walletAddress } = request.params;
@@ -333,6 +338,8 @@ export async function kycRoutes(fastify: FastifyInstance) {
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const { walletAddress } = request.params;
@@ -381,6 +388,12 @@ export async function kycRoutes(fastify: FastifyInstance) {
   fastify.post<{ Body: WebhookBody }>(
     "/webhook/sumsub",
     {
+      config: {
+        rateLimit: {
+          max: 30,
+          timeWindow: "1 minute",
+        },
+      },
       schema: {
         description: "Sumsub webhook handler",
         tags: ["KYC"],
@@ -483,6 +496,8 @@ export async function kycRoutes(fastify: FastifyInstance) {
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const { walletAddress } = request.params;

@@ -4,7 +4,10 @@
  * Flow: register DAC unit -> submit sensor readings -> verify ->
  *       mint credits -> list on marketplace -> purchase -> retire
  */
-import { describe, it, expect, vi, beforeAll } from "vitest";
+import jwt from "@fastify/jwt";
+import rateLimit from "@fastify/rate-limit";
+import Fastify, { type FastifyInstance } from "fastify";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Shared in-memory store used across all route modules
@@ -50,13 +53,11 @@ vi.mock("../../src/services/gasless/relayer.service.js", () => ({
 // Set env for sensor API key mapping before importing routes
 process.env.SENSOR_API_KEYS = "sensor-key-001:__DAC_UNIT_ID__";
 
-import Fastify, { type FastifyInstance } from "fastify";
-import jwt from "@fastify/jwt";
+import { creditsRoutes } from "../../src/routes/v1/credits.js";
 import { dacUnitsRoutes } from "../../src/routes/v1/dac-units.js";
+import { marketplaceRoutes } from "../../src/routes/v1/marketplace.js";
 import { sensorsRoutes } from "../../src/routes/v1/sensors.js";
 import { verificationRoutes } from "../../src/routes/v1/verification.js";
-import { creditsRoutes } from "../../src/routes/v1/credits.js";
-import { marketplaceRoutes } from "../../src/routes/v1/marketplace.js";
 
 const JWT_SECRET = "a]ks8d7f6g5h4j3k2l1m0n9b8v7c6x5z4";
 const OPERATOR_WALLET = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -68,26 +69,11 @@ function sign(app: FastifyInstance, payload: object): string {
 
 async function buildApp() {
   const app = Fastify({ logger: false });
-  await app.register(jwt, { secret: JWT_SECRET });
-
-  app.addHook("preHandler", async (request, reply) => {
-    const routeSchema = request.routeOptions.schema as
-      | { security?: Array<Record<string, unknown>> }
-      | undefined;
-    const security = routeSchema?.security || [];
-    const requiresBearerAuth = security.some((s) =>
-      Object.prototype.hasOwnProperty.call(s, "bearerAuth"),
-    );
-    if (!requiresBearerAuth) return;
-    try {
-      await request.jwtVerify();
-    } catch {
-      return reply.status(401).send({
-        success: false,
-        error: { code: "UNAUTHORIZED", message: "Missing or invalid bearer token" },
-      });
-    }
+  await app.register(rateLimit, {
+    max: 100,
+    timeWindow: "1 minute",
   });
+  await app.register(jwt, { secret: JWT_SECRET });
 
   await app.register(dacUnitsRoutes, { prefix: "/v1/dac-units" });
   await app.register(sensorsRoutes, { prefix: "/v1/sensors" });

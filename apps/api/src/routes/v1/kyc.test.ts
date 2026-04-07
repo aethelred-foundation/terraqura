@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import jwt from "@fastify/jwt";
+import rateLimit from "@fastify/rate-limit";
+import Fastify from "fastify";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Mock runtime-env and sumsub service BEFORE importing the route
@@ -41,8 +44,6 @@ vi.mock("../../services/kyc/sumsub.service.js", () => ({
   createSumsubService: () => mockSumsubServiceInstance,
 }));
 
-import Fastify from "fastify";
-import jwt from "@fastify/jwt";
 import { kycRoutes } from "./kyc.js";
 
 const WALLET_A = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -51,26 +52,11 @@ const JWT_SECRET = "a]ks8d7f6g5h4j3k2l1m0n9b8v7c6x5z4";
 
 async function buildApp() {
   const app = Fastify({ logger: false });
-  await app.register(jwt, { secret: JWT_SECRET });
-
-  app.addHook("preHandler", async (request, reply) => {
-    const routeSchema = request.routeOptions.schema as
-      | { security?: Array<Record<string, unknown>> }
-      | undefined;
-    const security = routeSchema?.security || [];
-    const requiresBearerAuth = security.some((s) =>
-      Object.prototype.hasOwnProperty.call(s, "bearerAuth"),
-    );
-    if (!requiresBearerAuth) return;
-    try {
-      await request.jwtVerify();
-    } catch {
-      return reply.status(401).send({
-        success: false,
-        error: { code: "UNAUTHORIZED", message: "Missing or invalid bearer token" },
-      });
-    }
+  await app.register(rateLimit, {
+    max: 100,
+    timeWindow: "1 minute",
   });
+  await app.register(jwt, { secret: JWT_SECRET });
 
   await app.register(kycRoutes, { prefix: "/v1/kyc" });
   await app.ready();

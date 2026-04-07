@@ -3,6 +3,7 @@ import { Pool } from "pg";
 import { generateNonce, SiweMessage } from "siwe";
 import { z } from "zod";
 
+import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
 import { getApiRuntimeEnv } from "../../lib/runtime-env.js";
 
 const NONCE_TTL_MS = 10 * 60 * 1000;
@@ -133,6 +134,12 @@ export async function authRoutes(
   fastify.post(
     "/verify",
     {
+      config: {
+        rateLimit: {
+          max: 10,
+          timeWindow: "1 minute",
+        },
+      },
       schema: {
         tags: ["Auth"],
         summary: "Verify SIWE signature",
@@ -254,6 +261,8 @@ export async function authRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, _reply) => {
       const tokenPayload = readTokenPayload(request);

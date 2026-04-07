@@ -319,8 +319,11 @@ export function getExplorerTokenUrl(
   chainId?: number
 ): string {
   const chain = resolveChain(chainId);
-  const baseUrl = `${chain.explorerUrl}/token/${address}`;
-  return tokenId ? `${baseUrl}?a=${tokenId}` : baseUrl;
+  const url = new URL(`/token/${address}`, chain.explorerUrl);
+  if (tokenId) {
+    url.searchParams.set("a", tokenId);
+  }
+  return url.toString();
 }
 
 // ============================================
