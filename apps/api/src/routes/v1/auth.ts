@@ -134,6 +134,10 @@ export async function authRoutes(
   fastify.post(
     "/verify",
     {
+      preHandler: fastify.rateLimit({
+        max: 10,
+        timeWindow: "1 minute",
+      }),
       config: {
         rateLimit: {
           max: 10,
