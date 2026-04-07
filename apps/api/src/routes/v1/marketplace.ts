@@ -8,6 +8,7 @@ import {
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
+import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
 import { mutateState, readState } from "../../lib/state-store.js";
 
 const CreateListingSchema = z.object({
@@ -322,6 +323,8 @@ export async function marketplaceRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const body = CreateListingSchema.parse(request.body);
@@ -416,6 +419,8 @@ export async function marketplaceRoutes(
         security: [{ bearerAuth: [] }],
         params: { type: "object", properties: { id: { type: "string" } } },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const params = request.params as { id: string };
@@ -506,6 +511,8 @@ export async function marketplaceRoutes(
           properties: { amount: { type: "number" } },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const params = request.params as { id: string };
@@ -707,6 +714,8 @@ export async function marketplaceRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const body = CreateOfferSchema.parse(request.body);
@@ -781,6 +790,8 @@ export async function marketplaceRoutes(
         security: [{ bearerAuth: [] }],
         params: { type: "object", properties: { id: { type: "string" } } },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const params = request.params as { id: string };
@@ -896,6 +907,8 @@ export async function marketplaceRoutes(
         security: [{ bearerAuth: [] }],
         params: { type: "object", properties: { id: { type: "string" } } },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const params = request.params as { id: string };

@@ -4,6 +4,7 @@ import { DACStatus } from "@terraqura/types";
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
+import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
 import { mutateState, readState } from "../../lib/state-store.js";
 
 const CreateDACUnitSchema = z.object({
@@ -213,6 +214,8 @@ export async function dacUnitsRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const body = CreateDACUnitSchema.parse(request.body);
@@ -384,6 +387,8 @@ export async function dacUnitsRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       if (!isAdmin(request)) {

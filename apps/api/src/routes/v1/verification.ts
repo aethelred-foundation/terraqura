@@ -4,6 +4,7 @@ import { VerificationStatus, calculateEfficiencyFactor } from "@terraqura/types"
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
+import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
 import { mutateState, readState } from "../../lib/state-store.js";
 
 const VerificationRequestSchema = z.object({
@@ -215,6 +216,8 @@ export async function verificationRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const body = VerificationRequestSchema.parse(request.body);

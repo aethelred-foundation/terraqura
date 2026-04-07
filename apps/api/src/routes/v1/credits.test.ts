@@ -1,5 +1,5 @@
-import rateLimit from "@fastify/rate-limit";
 import jwt from "@fastify/jwt";
+import rateLimit from "@fastify/rate-limit";
 import Fastify from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -53,34 +53,6 @@ async function buildApp() {
     timeWindow: "1 minute",
   });
   await app.register(jwt, { secret: JWT_SECRET });
-  const authenticateBearerRequest = app
-    .rateLimit({
-      max: 100,
-      timeWindow: "1 minute",
-    })
-    .bind(app);
-
-  // Replicate the auth preHandler from server.ts
-  app.addHook("preHandler", async (request, reply) => {
-    const routeSchema = request.routeOptions.schema as
-      | { security?: Array<Record<string, unknown>> }
-      | undefined;
-    const security = routeSchema?.security || [];
-    const requiresBearerAuth = security.some((s) =>
-      Object.prototype.hasOwnProperty.call(s, "bearerAuth"),
-    );
-    if (!requiresBearerAuth) return;
-    await authenticateBearerRequest(request, reply);
-    if (reply.sent) return;
-    try {
-      await request.jwtVerify();
-    } catch {
-      return reply.status(401).send({
-        success: false,
-        error: { code: "UNAUTHORIZED", message: "Missing or invalid bearer token" },
-      });
-    }
-  });
 
   await app.register(creditsRoutes, { prefix: "/v1/credits" });
   await app.ready();

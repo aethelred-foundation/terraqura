@@ -7,6 +7,7 @@ import {
   resetStateStore,
   setSiweVerifyResult,
 } from "../../../test/helpers.js";
+
 import type { FastifyInstance } from "fastify";
 
 describe("Auth routes", () => {
@@ -284,8 +285,7 @@ describe("Auth routes", () => {
         url: "/v1/auth/session",
       });
 
-      // The session route has security: [{ bearerAuth: [] }], so the
-      // preHandler hook should reject with 401.
+      // The session route is protected by explicit bearer auth middleware.
       expect(response.statusCode).toBe(401);
     });
 

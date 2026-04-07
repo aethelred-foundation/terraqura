@@ -3,6 +3,7 @@ import { createHmac, randomBytes } from "crypto";
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
+import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
 import { mutateState, readState } from "../../lib/state-store.js";
 
 const WebhookEventType = z.enum([
@@ -166,6 +167,8 @@ export async function webhooksRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const userId = getAuthenticatedUserId(request);
@@ -284,6 +287,8 @@ export async function webhooksRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const userId = getAuthenticatedUserId(request);
@@ -389,6 +394,8 @@ export async function webhooksRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const userId = getAuthenticatedUserId(request);
@@ -502,6 +509,8 @@ export async function webhooksRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const userId = getAuthenticatedUserId(request);

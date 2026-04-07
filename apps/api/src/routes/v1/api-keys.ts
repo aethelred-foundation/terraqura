@@ -3,6 +3,7 @@ import { randomBytes, scryptSync } from "crypto";
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
+import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
 import { mutateState, readState } from "../../lib/state-store.js";
 
 const ApiKeyType = z.enum(["sensor", "read-only", "full-access"]);
@@ -228,6 +229,8 @@ export async function apiKeysRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const userId = getAuthenticatedUserId(request);
@@ -376,6 +379,8 @@ export async function apiKeysRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const userId = getAuthenticatedUserId(request);
@@ -496,6 +501,8 @@ export async function apiKeysRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const userId = getAuthenticatedUserId(request);
@@ -665,6 +672,8 @@ export async function apiKeysRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const userId = getAuthenticatedUserId(request);

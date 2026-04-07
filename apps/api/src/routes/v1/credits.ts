@@ -4,6 +4,7 @@ import { CreditStatus, ProvenanceEvent, VerificationStatus } from "@terraqura/ty
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
+import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
 import { mutateState, readState } from "../../lib/state-store.js";
 
 const MintCreditsSchema = z.object({
@@ -458,6 +459,8 @@ export async function creditsRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const body = MintCreditsSchema.parse(request.body);
@@ -644,6 +647,8 @@ export async function creditsRoutes(
           },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const params = request.params as { id: string };

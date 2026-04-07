@@ -69,44 +69,6 @@ async function buildServer() {
     },
   });
 
-  const authenticateBearerRequest = fastify
-    .rateLimit({
-      max: 20,
-      timeWindow: "1 minute",
-    })
-    .bind(fastify);
-
-  fastify.addHook("preHandler", async (request, reply) => {
-    const routeSchema = request.routeOptions.schema as
-      | { security?: Array<Record<string, unknown>> }
-      | undefined;
-    const security = routeSchema?.security || [];
-    const requiresBearerAuth = security.some((securityOption) =>
-      Object.prototype.hasOwnProperty.call(securityOption, "bearerAuth")
-    );
-
-    if (!requiresBearerAuth) {
-      return;
-    }
-
-    await authenticateBearerRequest(request, reply);
-    if (reply.sent) {
-      return;
-    }
-
-    try {
-      await request.jwtVerify();
-    } catch {
-      return reply.status(401).send({
-        success: false,
-        error: {
-          code: "UNAUTHORIZED",
-          message: "Missing or invalid bearer token",
-        },
-      });
-    }
-  });
-
   // Swagger documentation
   await fastify.register(swagger, {
     openapi: {
