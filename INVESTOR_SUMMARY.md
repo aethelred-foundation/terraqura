@@ -135,7 +135,7 @@ npx hardhat run scripts/investor-demo.ts --network polygonAmoy
 | Security Audit Report | `apps/contracts/audit-packet/SECURITY_AUDIT_REPORT.md` |
 | Deployment Records | `apps/contracts/deployments/polygonAmoy-v3-final.json` |
 | Test Coverage | `apps/contracts/coverage/` |
-| Solidity Metrics | `apps/contracts/audit-packet/SolidityMetrics.html` |
+| Solidity Metrics Source | Generate locally from `apps/contracts/coverage.json` and contract sources |
 | API Documentation | `http://localhost:4000/docs` (when running) |
 
 ---

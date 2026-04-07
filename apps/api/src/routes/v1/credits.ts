@@ -253,7 +253,8 @@ export async function creditsRoutes(
     async (request, reply) => {
       const params = request.params as { id: string };
       const state = await readState(CREDITS_STORE_KEY, DEFAULT_CREDITS_STATE);
-      const credit = state.credits[params.id];
+      const credits = new Map(Object.entries(state.credits));
+      const credit = credits.get(params.id);
 
       if (!credit) {
         return reply.status(404).send({
@@ -324,7 +325,8 @@ export async function creditsRoutes(
     async (request, reply) => {
       const params = request.params as { id: string };
       const state = await readState(CREDITS_STORE_KEY, DEFAULT_CREDITS_STATE);
-      const credit = state.credits[params.id];
+      const credits = new Map(Object.entries(state.credits));
+      const credit = credits.get(params.id);
 
       if (!credit) {
         return reply.status(404).send({
@@ -506,7 +508,8 @@ export async function creditsRoutes(
         CREDITS_STORE_KEY,
         DEFAULT_CREDITS_STATE,
         async (state) => {
-          if (state.verificationToCredit[body.verificationId]) {
+          const verificationToCredit = new Map(Object.entries(state.verificationToCredit));
+          if (verificationToCredit.has(body.verificationId)) {
             return null;
           }
 
@@ -515,6 +518,7 @@ export async function creditsRoutes(
           const tokenId = numberToTokenId(state.nextTokenId);
           state.nextTokenId += 1;
           const txHash = generateTxHash();
+          const credits = new Map(Object.entries(state.credits));
 
           const credit: StoredCredit = {
             id,
@@ -543,8 +547,10 @@ export async function creditsRoutes(
             updatedAt: nowIso,
           };
 
-          state.credits[id] = credit;
-          state.verificationToCredit[body.verificationId] = id;
+          credits.set(id, credit);
+          verificationToCredit.set(body.verificationId, id);
+          state.credits = Object.fromEntries(credits);
+          state.verificationToCredit = Object.fromEntries(verificationToCredit);
           return credit;
         }
       );
@@ -651,7 +657,8 @@ export async function creditsRoutes(
       }
 
       const result = await mutateState(CREDITS_STORE_KEY, DEFAULT_CREDITS_STATE, async (state) => {
-        const credit = state.credits[params.id];
+        const credits = new Map(Object.entries(state.credits));
+        const credit = credits.get(params.id);
         if (!credit) {
           return { kind: "not_found" as const };
         }
@@ -683,7 +690,8 @@ export async function creditsRoutes(
           credit.verificationStatus = CreditStatus.RETIRED;
         }
 
-        state.credits[params.id] = credit;
+        credits.set(params.id, credit);
+        state.credits = Object.fromEntries(credits);
         return {
           kind: "success" as const,
           credit,

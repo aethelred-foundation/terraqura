@@ -4,7 +4,10 @@
  * Flow: register DAC unit -> submit sensor readings -> verify ->
  *       mint credits -> list on marketplace -> purchase -> retire
  */
-import { describe, it, expect, vi, beforeAll } from "vitest";
+import rateLimit from "@fastify/rate-limit";
+import jwt from "@fastify/jwt";
+import Fastify, { type FastifyInstance } from "fastify";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Shared in-memory store used across all route modules
@@ -50,8 +53,6 @@ vi.mock("../../src/services/gasless/relayer.service.js", () => ({
 // Set env for sensor API key mapping before importing routes
 process.env.SENSOR_API_KEYS = "sensor-key-001:__DAC_UNIT_ID__";
 
-import Fastify, { type FastifyInstance } from "fastify";
-import jwt from "@fastify/jwt";
 import { dacUnitsRoutes } from "../../src/routes/v1/dac-units.js";
 import { sensorsRoutes } from "../../src/routes/v1/sensors.js";
 import { verificationRoutes } from "../../src/routes/v1/verification.js";
@@ -68,7 +69,17 @@ function sign(app: FastifyInstance, payload: object): string {
 
 async function buildApp() {
   const app = Fastify({ logger: false });
+  await app.register(rateLimit, {
+    max: 100,
+    timeWindow: "1 minute",
+  });
   await app.register(jwt, { secret: JWT_SECRET });
+  const authenticateBearerRequest = app
+    .rateLimit({
+      max: 100,
+      timeWindow: "1 minute",
+    })
+    .bind(app);
 
   app.addHook("preHandler", async (request, reply) => {
     const routeSchema = request.routeOptions.schema as
@@ -79,6 +90,8 @@ async function buildApp() {
       Object.prototype.hasOwnProperty.call(s, "bearerAuth"),
     );
     if (!requiresBearerAuth) return;
+    await authenticateBearerRequest(request, reply);
+    if (reply.sent) return;
     try {
       await request.jwtVerify();
     } catch {

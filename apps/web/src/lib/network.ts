@@ -49,6 +49,9 @@ export function getExplorerTokenUrl(
     chainId === aethelred.id
       ? SUPPORTED_CHAINS.aethelred
       : SUPPORTED_CHAINS.aethelredTestnet;
-  const baseUrl = `${chain.explorerUrl}/token/${address}`;
-  return tokenId ? `${baseUrl}?a=${tokenId}` : baseUrl;
+  const url = new URL(`/token/${address}`, chain.explorerUrl);
+  if (tokenId) {
+    url.searchParams.set("a", tokenId);
+  }
+  return url.toString();
 }

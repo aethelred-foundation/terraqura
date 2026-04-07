@@ -1,4 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import rateLimit from "@fastify/rate-limit";
+import jwt from "@fastify/jwt";
+import Fastify from "fastify";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Mock state-store with in-memory Maps before any route code is imported
@@ -33,8 +36,6 @@ vi.mock("../../lib/runtime-env.js", () => ({
   }),
 }));
 
-import Fastify from "fastify";
-import jwt from "@fastify/jwt";
 import { creditsRoutes } from "./credits.js";
 
 // ---------------------------------------------------------------------------
@@ -47,7 +48,17 @@ const JWT_SECRET = "a]ks8d7f6g5h4j3k2l1m0n9b8v7c6x5z4";
 
 async function buildApp() {
   const app = Fastify({ logger: false });
+  await app.register(rateLimit, {
+    max: 100,
+    timeWindow: "1 minute",
+  });
   await app.register(jwt, { secret: JWT_SECRET });
+  const authenticateBearerRequest = app
+    .rateLimit({
+      max: 100,
+      timeWindow: "1 minute",
+    })
+    .bind(app);
 
   // Replicate the auth preHandler from server.ts
   app.addHook("preHandler", async (request, reply) => {
@@ -59,6 +70,8 @@ async function buildApp() {
       Object.prototype.hasOwnProperty.call(s, "bearerAuth"),
     );
     if (!requiresBearerAuth) return;
+    await authenticateBearerRequest(request, reply);
+    if (reply.sent) return;
     try {
       await request.jwtVerify();
     } catch {

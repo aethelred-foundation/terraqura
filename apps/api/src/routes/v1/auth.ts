@@ -133,6 +133,12 @@ export async function authRoutes(
   fastify.post(
     "/verify",
     {
+      config: {
+        rateLimit: {
+          max: 10,
+          timeWindow: "1 minute",
+        },
+      },
       schema: {
         tags: ["Auth"],
         summary: "Verify SIWE signature",

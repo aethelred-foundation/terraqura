@@ -69,6 +69,13 @@ async function buildServer() {
     },
   });
 
+  const authenticateBearerRequest = fastify
+    .rateLimit({
+      max: 20,
+      timeWindow: "1 minute",
+    })
+    .bind(fastify);
+
   fastify.addHook("preHandler", async (request, reply) => {
     const routeSchema = request.routeOptions.schema as
       | { security?: Array<Record<string, unknown>> }
@@ -79,6 +86,11 @@ async function buildServer() {
     );
 
     if (!requiresBearerAuth) {
+      return;
+    }
+
+    await authenticateBearerRequest(request, reply);
+    if (reply.sent) {
       return;
     }
 

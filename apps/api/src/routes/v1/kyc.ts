@@ -381,6 +381,12 @@ export async function kycRoutes(fastify: FastifyInstance) {
   fastify.post<{ Body: WebhookBody }>(
     "/webhook/sumsub",
     {
+      config: {
+        rateLimit: {
+          max: 30,
+          timeWindow: "1 minute",
+        },
+      },
       schema: {
         description: "Sumsub webhook handler",
         tags: ["KYC"],

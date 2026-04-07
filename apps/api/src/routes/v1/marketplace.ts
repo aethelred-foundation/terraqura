@@ -393,7 +393,8 @@ export async function marketplaceRoutes(
     async (request, reply) => {
       const params = request.params as { id: string };
       const state = await readState(MARKETPLACE_STORE_KEY, DEFAULT_MARKETPLACE_STATE);
-      const listing = state.listings[params.id];
+      const listings = new Map(Object.entries(state.listings));
+      const listing = listings.get(params.id);
 
       if (!listing) {
         return reply.status(404).send({ success: false, error: "Listing not found" });
@@ -430,7 +431,8 @@ export async function marketplaceRoutes(
         MARKETPLACE_STORE_KEY,
         DEFAULT_MARKETPLACE_STATE,
         async (state) => {
-          const listing = state.listings[params.id];
+          const listings = new Map(Object.entries(state.listings));
+          const listing = listings.get(params.id);
           if (!listing) {
             return { kind: "not_found" as const };
           }
@@ -438,7 +440,8 @@ export async function marketplaceRoutes(
           const effectiveStatus = getActiveListingStatus(listing);
           if (effectiveStatus === ListingStatus.EXPIRED) {
             listing.status = ListingStatus.EXPIRED;
-            state.listings[params.id] = listing;
+            listings.set(params.id, listing);
+            state.listings = Object.fromEntries(listings);
             return { kind: "expired" as const };
           }
 
@@ -453,7 +456,8 @@ export async function marketplaceRoutes(
 
           listing.status = ListingStatus.CANCELLED;
           listing.cancelledAt = new Date().toISOString();
-          state.listings[params.id] = listing;
+          listings.set(params.id, listing);
+          state.listings = Object.fromEntries(listings);
           return { kind: "success" as const, listing };
         }
       );
@@ -518,7 +522,8 @@ export async function marketplaceRoutes(
         MARKETPLACE_STORE_KEY,
         DEFAULT_MARKETPLACE_STATE,
         async (state) => {
-          const listing = state.listings[params.id];
+          const listings = new Map(Object.entries(state.listings));
+          const listing = listings.get(params.id);
           if (!listing) {
             return { kind: "not_found" as const };
           }
@@ -526,7 +531,8 @@ export async function marketplaceRoutes(
           const effectiveStatus = getActiveListingStatus(listing);
           if (effectiveStatus === ListingStatus.EXPIRED) {
             listing.status = ListingStatus.EXPIRED;
-            state.listings[params.id] = listing;
+            listings.set(params.id, listing);
+            state.listings = Object.fromEntries(listings);
             return { kind: "expired" as const };
           }
 
@@ -556,7 +562,8 @@ export async function marketplaceRoutes(
             listing.status = ListingStatus.SOLD;
             listing.soldAt = new Date().toISOString();
           }
-          state.listings[params.id] = listing;
+          listings.set(params.id, listing);
+          state.listings = Object.fromEntries(listings);
 
           const purchase: StoredPurchase = {
             id: `purchase_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -789,7 +796,8 @@ export async function marketplaceRoutes(
         MARKETPLACE_STORE_KEY,
         DEFAULT_MARKETPLACE_STATE,
         async (state) => {
-          const offer = state.offers[params.id];
+          const offers = new Map(Object.entries(state.offers));
+          const offer = offers.get(params.id);
           if (!offer) {
             return { kind: "not_found" as const };
           }
@@ -797,7 +805,8 @@ export async function marketplaceRoutes(
           const effectiveStatus = getActiveOfferStatus(offer);
           if (effectiveStatus === OfferStatus.EXPIRED) {
             offer.status = OfferStatus.EXPIRED;
-            state.offers[params.id] = offer;
+            offers.set(params.id, offer);
+            state.offers = Object.fromEntries(offers);
             return { kind: "expired" as const };
           }
 
@@ -819,7 +828,8 @@ export async function marketplaceRoutes(
           offer.acceptedByWallet = sellerWallet;
           offer.acceptedAt = acceptedAt;
           offer.acceptTxHash = acceptTxHash;
-          state.offers[params.id] = offer;
+          offers.set(params.id, offer);
+          state.offers = Object.fromEntries(offers);
 
           const purchase: StoredPurchase = {
             id: `purchase_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
@@ -901,7 +911,8 @@ export async function marketplaceRoutes(
         MARKETPLACE_STORE_KEY,
         DEFAULT_MARKETPLACE_STATE,
         async (state) => {
-          const offer = state.offers[params.id];
+          const offers = new Map(Object.entries(state.offers));
+          const offer = offers.get(params.id);
           if (!offer) {
             return { kind: "not_found" as const };
           }
@@ -909,7 +920,8 @@ export async function marketplaceRoutes(
           const effectiveStatus = getActiveOfferStatus(offer);
           if (effectiveStatus === OfferStatus.EXPIRED) {
             offer.status = OfferStatus.EXPIRED;
-            state.offers[params.id] = offer;
+            offers.set(params.id, offer);
+            state.offers = Object.fromEntries(offers);
             return { kind: "expired" as const };
           }
 
@@ -924,7 +936,8 @@ export async function marketplaceRoutes(
 
           offer.status = OfferStatus.CANCELLED;
           offer.cancelledAt = new Date().toISOString();
-          state.offers[params.id] = offer;
+          offers.set(params.id, offer);
+          state.offers = Object.fromEntries(offers);
           return { kind: "success" as const, offer };
         }
       );
