@@ -5,6 +5,7 @@ import rateLimit from "@fastify/rate-limit";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import Fastify, { FastifyError } from "fastify";
+import { fileURLToPath } from "node:url";
 
 import { getApiRuntimeEnv } from "./lib/runtime-env.js";
 import { activityRoutes } from "./routes/v1/activity.js";
@@ -179,10 +180,16 @@ async function start() {
     `);
 }
 
-void start().catch((err) => {
-  const message = err instanceof Error ? err.stack ?? err.message : String(err);
-  process.stderr.write(`Failed to start server: ${message}\n`);
-  process.exitCode = 1;
-});
+const isEntrypoint = process.argv[1]
+  ? fileURLToPath(import.meta.url) === process.argv[1]
+  : false;
+
+if (isEntrypoint) {
+  void start().catch((err) => {
+    const message = err instanceof Error ? err.stack ?? err.message : String(err);
+    process.stderr.write(`Failed to start server: ${message}\n`);
+    process.exitCode = 1;
+  });
+}
 
 export { buildServer };
