@@ -81,6 +81,11 @@ const EIP712_TYPES = {
   ],
 };
 
+const FORWARDER_DOMAIN = {
+  name: "MinimalForwarder",
+  version: "0.0.1",
+} as const;
+
 export class GaslessRelayer {
   private config: RelayerConfig;
   private provider: ethers.JsonRpcProvider;
@@ -150,8 +155,8 @@ export class GaslessRelayer {
     };
 
     const domain = {
-      name: "TerraQuraForwarder",
-      version: "1",
+      name: FORWARDER_DOMAIN.name,
+      version: FORWARDER_DOMAIN.version,
       chainId: this.config.chainId,
       verifyingContract: this.config.forwarderAddress,
     };
@@ -286,8 +291,8 @@ export class GaslessRelayer {
    */
   getSigningDomain() {
     return {
-      name: "TerraQuraForwarder",
-      version: "1",
+      name: FORWARDER_DOMAIN.name,
+      version: FORWARDER_DOMAIN.version,
       chainId: this.config.chainId,
       verifyingContract: this.config.forwarderAddress,
     };

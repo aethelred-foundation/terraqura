@@ -1,4 +1,10 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+
+const mockWhitelistDacUnitOnChain = vi.fn();
+
+vi.mock("../../services/blockchain/contracts.js", () => ({
+  whitelistDacUnitOnChain: mockWhitelistDacUnitOnChain,
+}));
 
 import {
   createTestServer,
@@ -21,6 +27,10 @@ describe("DAC Units routes", () => {
 
   afterEach(() => {
     resetStateStore();
+    mockWhitelistDacUnitOnChain.mockReset();
+    mockWhitelistDacUnitOnChain.mockResolvedValue({
+      txHash: "0x" + "1".repeat(64),
+    });
   });
 
   afterAll(async () => {
@@ -260,6 +270,24 @@ describe("DAC Units routes", () => {
 
       expect(response.statusCode).toBe(201);
     });
+
+    it("returns 403 when KYC is not approved", async () => {
+      const token = generateAuthToken(server, { kycStatus: "pending" });
+
+      const response = await server.inject({
+        method: "POST",
+        url: "/v1/dac-units",
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          name: "Pending Facility",
+          latitude: 25.0,
+          longitude: 55.0,
+          countryCode: "AE",
+        },
+      });
+
+      expect(response.statusCode).toBe(403);
+    });
   });
 
   // -----------------------------------------------------------------------
@@ -339,6 +367,22 @@ describe("DAC Units routes", () => {
       expect(body.data.status).toBe("active");
       expect(body.data.whitelistedAt).toBeTruthy();
       expect(body.data.txHash).toMatch(/^0x[a-f0-9]{64}$/);
+    });
+
+    it("returns 503 when on-chain whitelisting is unavailable", async () => {
+      mockWhitelistDacUnitOnChain.mockRejectedValueOnce(new Error("rpc unavailable"));
+      const unit = makeDacUnit({ id: "dac_wl_fail" });
+      seedState(DAC_UNITS_STORE_KEY, { units: { dac_wl_fail: unit } });
+
+      const adminToken = generateAdminToken(server);
+      const response = await server.inject({
+        method: "POST",
+        url: "/v1/dac-units/dac_wl_fail/whitelist",
+        headers: { authorization: `Bearer ${adminToken}` },
+      });
+
+      expect(response.statusCode).toBe(503);
+      expect(response.json().error).toMatch(/unavailable/i);
     });
 
     it("returns 403 when called by a non-admin operator", async () => {

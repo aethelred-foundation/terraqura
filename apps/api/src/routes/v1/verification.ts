@@ -1,9 +1,14 @@
 import { createHash } from "crypto";
 
-import { VerificationStatus, calculateEfficiencyFactor } from "@terraqura/types";
+import { DACStatus, VerificationStatus, calculateEfficiencyFactor } from "@terraqura/types";
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
+import {
+  ensureApprovedKyc,
+  getAuthenticatedAddress,
+  isAdmin,
+} from "../../lib/auth-context.js";
 import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
 import { mutateState, readState } from "../../lib/state-store.js";
 
@@ -46,10 +51,22 @@ interface SensorsState {
   readings: Array<{
     time: string;
     dacUnitId: string;
+    sensorId: string;
     co2CaptureRateKgHour: number;
     energyConsumptionKwh: number;
     co2PurityPercentage: number;
+    dataHash?: string;
   }>;
+}
+
+interface StoredDacUnit {
+  id: string;
+  operatorWallet: string;
+  status: DACStatus;
+}
+
+interface DacUnitsState {
+  units: Record<string, StoredDacUnit>;
 }
 
 const VERIFICATIONS_STORE_KEY = "verification:v1";
@@ -60,9 +77,46 @@ const SENSORS_STORE_KEY = "sensors:v1";
 const DEFAULT_SENSORS_STATE: SensorsState = {
   readings: [],
 };
+const DAC_UNITS_STORE_KEY = "dac-units:v1";
+const DEFAULT_DAC_UNITS_STATE: DacUnitsState = {
+  units: {},
+};
 
-function buildVerificationHash(dacUnitId: string, startTime: string, endTime: string): string {
-  return `0x${createHash("sha256").update(`${dacUnitId}:${startTime}:${endTime}`).digest("hex")}`;
+function normalizeReadingHash(reading: SensorsState["readings"][number]): string {
+  if (reading.dataHash) {
+    return reading.dataHash.toLowerCase();
+  }
+
+  return `0x${createHash("sha256")
+    .update(
+      JSON.stringify({
+        time: reading.time,
+        sensorId: reading.sensorId,
+        co2CaptureRateKgHour: reading.co2CaptureRateKgHour,
+        energyConsumptionKwh: reading.energyConsumptionKwh,
+        co2PurityPercentage: reading.co2PurityPercentage,
+      })
+    )
+    .digest("hex")}`;
+}
+
+function buildVerificationHash(
+  dacUnitId: string,
+  readings: SensorsState["readings"],
+): string {
+  const digest = createHash("sha256");
+  digest.update(dacUnitId.toLowerCase());
+
+  for (const reading of readings) {
+    digest.update("|");
+    digest.update(reading.time);
+    digest.update("|");
+    digest.update(reading.sensorId);
+    digest.update("|");
+    digest.update(normalizeReadingHash(reading));
+  }
+
+  return `0x${digest.digest("hex")}`;
 }
 
 function computeVerificationResult(input: {
@@ -87,16 +141,25 @@ function computeVerificationResult(input: {
 } {
   const start = new Date(input.startTime);
   const end = new Date(input.endTime);
-  const sourceDataHash = buildVerificationHash(input.dacUnitId, input.startTime, input.endTime);
   const nowIso = new Date().toISOString();
 
-  const scopedReadings = input.readings.filter((reading) => {
-    if (reading.dacUnitId !== input.dacUnitId) {
-      return false;
-    }
-    const readingTime = new Date(reading.time);
-    return readingTime >= start && readingTime <= end;
-  });
+  const scopedReadings = input.readings
+    .filter((reading) => {
+      if (reading.dacUnitId !== input.dacUnitId) {
+        return false;
+      }
+      const readingTime = new Date(reading.time);
+      return readingTime >= start && readingTime <= end;
+    })
+    .sort((left, right) => {
+      const timeOrder = left.time.localeCompare(right.time);
+      if (timeOrder !== 0) {
+        return timeOrder;
+      }
+
+      return left.sensorId.localeCompare(right.sensorId);
+    });
+  const sourceDataHash = buildVerificationHash(input.dacUnitId, scopedReadings);
 
   const sourcePassed = scopedReadings.length > 0;
   if (!sourcePassed) {
@@ -207,7 +270,35 @@ export async function verificationRoutes(
               },
             },
           },
+          401: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
+          403: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
+          404: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
           400: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
+          409: {
             type: "object",
             properties: {
               success: { type: "boolean" },
@@ -225,6 +316,45 @@ export async function verificationRoutes(
         return reply.status(400).send({
           success: false,
           error: "endTime must be after startTime",
+        });
+      }
+
+      const callerWallet = getAuthenticatedAddress(request);
+      if (!callerWallet) {
+        return reply.status(401).send({
+          success: false,
+          error: "Missing authenticated operator wallet",
+        });
+      }
+
+      if (
+        !ensureApprovedKyc(request, reply, {
+          message: "Approved KYC is required before initiating verification",
+        })
+      ) {
+        return;
+      }
+
+      const dacUnitsState = await readState(DAC_UNITS_STORE_KEY, DEFAULT_DAC_UNITS_STATE);
+      const dacUnit = dacUnitsState.units[body.dacUnitId];
+      if (!dacUnit) {
+        return reply.status(404).send({
+          success: false,
+          error: "DAC unit not found",
+        });
+      }
+
+      if (dacUnit.status !== DACStatus.ACTIVE) {
+        return reply.status(409).send({
+          success: false,
+          error: "DAC unit must be active before verification can be initiated",
+        });
+      }
+
+      if (!isAdmin(request) && dacUnit.operatorWallet.toLowerCase() !== callerWallet) {
+        return reply.status(403).send({
+          success: false,
+          error: "Only the DAC operator or an admin can initiate verification",
         });
       }
 

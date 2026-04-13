@@ -40,8 +40,10 @@ export const ABIS = {
     "function symbol() view returns (string)",
     "function balanceOf(address account, uint256 id) view returns (uint256)",
     "function uri(uint256 tokenId) view returns (string)",
-    "function mintVerifiedCredits(address recipient, bytes32 dacId, bytes32 dataHash, uint256 captureTimestamp, uint256 co2AmountKg, uint256 energyConsumedKwh, int256 latitude, int256 longitude, uint256 purityPercentage, string metadataUri, string arweaveBackup) external returns (uint256)",
-    "event CreditMinted(uint256 indexed tokenId, address indexed recipient, bytes32 indexed dacId, uint256 co2AmountKg, uint256 efficiencyScore)",
+    "function mintVerifiedCredits(address recipient, bytes32 dacId, bytes32 dataHash, uint256 captureTimestamp, uint256 co2AmountKg, uint256 energyConsumedKwh, int256 latitude, int256 longitude, uint8 purityPercentage, uint256 gridIntensityGCO2PerKwh, string metadataUri, string arweaveBackup) external returns (uint256)",
+    "function retireCredits(uint256 tokenId, uint256 amount, string reason) external",
+    "event CreditMinted(uint256 indexed tokenId, bytes32 indexed dacUnitId, address indexed operator, uint256 co2AmountKg, bytes32 sourceDataHash)",
+    "event CreditRetired(uint256 indexed tokenId, address indexed retiredBy, uint256 amount, string retirementReason)",
     "event Transfer(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)",
   ],
   carbonMarketplace: [
@@ -69,6 +71,27 @@ export const ABIS = {
 
 // Provider singleton
 let provider: ethers.JsonRpcProvider | null = null;
+
+export interface WhitelistDacUnitParams {
+  unitId: string;
+  operator: string;
+  location: string;
+}
+
+export interface MintVerifiedCreditsParams {
+  recipient: string;
+  dacUnitId: string;
+  sourceDataHash: string;
+  captureTimestamp: number;
+  co2AmountKg: number;
+  energyConsumedKwh: number;
+  latitude: number;
+  longitude: number;
+  purityPercentage: number;
+  gridIntensityGco2PerKwh: number;
+  metadataUri: string;
+  arweaveBackupTxId?: string | null;
+}
 
 export function getProvider(): ethers.JsonRpcProvider {
   if (!provider) {
@@ -119,6 +142,23 @@ export function getSigner(): ethers.Wallet {
   return new ethers.Wallet(privateKey, getProvider());
 }
 
+function assertBlockchainExecutionConfigured(): void {
+  if (!process.env.PRIVATE_KEY) {
+    throw new Error("Blockchain signer is not configured");
+  }
+}
+
+function assertSuccessfulReceipt(
+  receipt: ethers.TransactionReceipt | null,
+  operation: string,
+): ethers.TransactionReceipt {
+  if (!receipt || receipt.status !== 1) {
+    throw new Error(`${operation} transaction was not confirmed on-chain`);
+  }
+
+  return receipt;
+}
+
 // Check if operations are allowed (circuit breaker)
 export async function isSystemOperational(): Promise<boolean> {
   try {
@@ -132,8 +172,96 @@ export async function isSystemOperational(): Promise<boolean> {
     return !isGloballyPaused;
   } catch (error) {
     console.error("Error checking system status:", error);
-    return true; // Default to operational if check fails
+    return false;
   }
+}
+
+async function assertSystemOperationalOrThrow(): Promise<void> {
+  const operational = await isSystemOperational();
+  if (!operational) {
+    throw new Error("Circuit breaker is active or unavailable");
+  }
+}
+
+export async function whitelistDacUnitOnChain(
+  params: WhitelistDacUnitParams,
+): Promise<{ txHash: string }> {
+  assertBlockchainExecutionConfigured();
+  await assertSystemOperationalOrThrow();
+
+  const contract = getVerificationEngineContract(getSigner()) as ethers.Contract & {
+    whitelistDacUnit: (
+      unitId: string,
+      operator: string,
+      location: string,
+    ) => Promise<ethers.ContractTransactionResponse>;
+  };
+  const tx = await contract.whitelistDacUnit(
+    params.unitId,
+    params.operator,
+    params.location,
+  );
+  const receipt = assertSuccessfulReceipt(
+    await tx.wait(),
+    "DAC unit whitelist",
+  );
+
+  return { txHash: receipt.hash };
+}
+
+export async function mintVerifiedCreditsOnChain(
+  params: MintVerifiedCreditsParams,
+): Promise<{ txHash: string; tokenId: string }> {
+  assertBlockchainExecutionConfigured();
+  await assertSystemOperationalOrThrow();
+
+  const contract = getCarbonCreditContract(getSigner()) as ethers.Contract & {
+    mintVerifiedCredits: (
+      recipient: string,
+      dacUnitId: string,
+      sourceDataHash: string,
+      captureTimestamp: number,
+      co2AmountKg: number,
+      energyConsumedKwh: number,
+      latitude: number,
+      longitude: number,
+      purityPercentage: number,
+      gridIntensityGco2PerKwh: number,
+      metadataUri: string,
+      arweaveBackupTxId: string,
+    ) => Promise<ethers.ContractTransactionResponse>;
+  };
+  const tx = await contract.mintVerifiedCredits(
+    params.recipient,
+    params.dacUnitId,
+    params.sourceDataHash,
+    params.captureTimestamp,
+    params.co2AmountKg,
+    params.energyConsumedKwh,
+    params.latitude,
+    params.longitude,
+    params.purityPercentage,
+    params.gridIntensityGco2PerKwh,
+    params.metadataUri,
+    params.arweaveBackupTxId || "",
+  );
+  const receipt = assertSuccessfulReceipt(await tx.wait(), "Carbon credit mint");
+
+  for (const log of receipt.logs) {
+    try {
+      const parsed = contract.interface.parseLog(log);
+      if (parsed?.name === "CreditMinted") {
+        return {
+          txHash: receipt.hash,
+          tokenId: ethers.toBeHex(parsed.args.tokenId, 32),
+        };
+      }
+    } catch {
+      // Ignore unrelated logs.
+    }
+  }
+
+  throw new Error("Mint transaction confirmed without a CreditMinted event");
 }
 
 // Get explorer link for transaction

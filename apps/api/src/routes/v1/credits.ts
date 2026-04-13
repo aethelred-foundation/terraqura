@@ -1,11 +1,18 @@
-import { randomBytes } from "crypto";
-
-import { CreditStatus, ProvenanceEvent, VerificationStatus } from "@terraqura/types";
+import { CreditStatus, DACStatus, ProvenanceEvent, VerificationStatus } from "@terraqura/types";
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
+import {
+  ensureApprovedKyc,
+  getAuthenticatedAddress,
+  isAdmin,
+} from "../../lib/auth-context.js";
 import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
 import { mutateState, readState } from "../../lib/state-store.js";
+import {
+  getExplorerTxLink,
+  mintVerifiedCreditsOnChain,
+} from "../../services/blockchain/contracts.js";
 
 const MintCreditsSchema = z.object({
   verificationId: z.string().min(1),
@@ -66,9 +73,24 @@ interface VerificationsState {
       creditsToMint: number | null;
       totalCo2CapturedKg: number;
       totalEnergyKwh: number;
+      avgPurity?: number | null;
       completedAt: string | null;
     }
   >;
+}
+
+interface StoredDacUnit {
+  id: string;
+  unitId: string;
+  operatorWallet: string;
+  status: DACStatus;
+  latitude: number;
+  longitude: number;
+  gridIntensityGco2PerKwh: number | null;
+}
+
+interface DacUnitsState {
+  units: Record<string, StoredDacUnit>;
 }
 
 const CREDITS_STORE_KEY = "credits:v1";
@@ -81,23 +103,13 @@ const VERIFICATIONS_STORE_KEY = "verification:v1";
 const DEFAULT_VERIFICATIONS_STATE: VerificationsState = {
   verifications: {},
 };
+const DAC_UNITS_STORE_KEY = "dac-units:v1";
+const DEFAULT_DAC_UNITS_STATE: DacUnitsState = {
+  units: {},
+};
 
-function getAuthenticatedAddress(request: { user?: unknown }): string | null {
-  const user = request.user as { address?: string } | undefined;
-  return typeof user?.address === "string" ? user.address.toLowerCase() : null;
-}
-
-function isAdmin(request: { user?: unknown }): boolean {
-  const user = request.user as { userType?: string } | undefined;
-  return user?.userType === "admin";
-}
-
-function generateTxHash(): string {
-  return `0x${randomBytes(32).toString("hex")}`;
-}
-
-function numberToTokenId(value: number): string {
-  return `0x${BigInt(value).toString(16).padStart(64, "0")}`;
+function normalizeIpfsMetadataUri(value: string): string {
+  return value.startsWith("ipfs://") ? value : `ipfs://${value}`;
 }
 
 export async function creditsRoutes(
@@ -457,6 +469,20 @@ export async function creditsRoutes(
               error: { type: "string" },
             },
           },
+          500: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
+          503: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
         },
       },
       config: bearerAuthRateLimit,
@@ -472,8 +498,17 @@ export async function creditsRoutes(
         });
       }
 
+      if (
+        !ensureApprovedKyc(request, reply, {
+          message: "Approved KYC is required before minting credits",
+        })
+      ) {
+        return;
+      }
+
+      const callerIsAdmin = isAdmin(request);
       const recipientWallet = body.recipientWallet.toLowerCase();
-      if (!isAdmin(request) && recipientWallet !== callerWallet) {
+      if (!callerIsAdmin && recipientWallet !== callerWallet) {
         return reply.status(403).send({
           success: false,
           error: "Recipient wallet must match authenticated wallet",
@@ -507,25 +542,113 @@ export async function creditsRoutes(
       }
       const creditsToMint = verification.creditsToMint;
 
+      const dacUnitsState = await readState(DAC_UNITS_STORE_KEY, DEFAULT_DAC_UNITS_STATE);
+      const dacUnit = dacUnitsState.units[verification.dacUnitId];
+      if (!dacUnit) {
+        return reply.status(404).send({
+          success: false,
+          error: "DAC unit not found for verification",
+        });
+      }
+
+      if (dacUnit.status !== DACStatus.ACTIVE) {
+        return reply.status(409).send({
+          success: false,
+          error: "DAC unit must be active before minting credits",
+        });
+      }
+
+      if (!callerIsAdmin && dacUnit.operatorWallet.toLowerCase() !== callerWallet) {
+        return reply.status(403).send({
+          success: false,
+          error: "Only the DAC operator or an admin can mint credits",
+        });
+      }
+
+      if (dacUnit.gridIntensityGco2PerKwh === null) {
+        return reply.status(409).send({
+          success: false,
+          error: "DAC unit is missing verified grid intensity configuration",
+        });
+      }
+
+      const avgPurity = Math.round(verification.avgPurity ?? 0);
+      if (avgPurity <= 0 || avgPurity > 100) {
+        return reply.status(409).send({
+          success: false,
+          error: "Verification is missing a valid average purity value",
+        });
+      }
+
+      const reservationId = `pending:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+      const reserved = await mutateState(
+        CREDITS_STORE_KEY,
+        DEFAULT_CREDITS_STATE,
+        async (state) => {
+          if (state.verificationToCredit[body.verificationId]) {
+            return false;
+          }
+
+          state.verificationToCredit[body.verificationId] = reservationId;
+          return true;
+        }
+      );
+
+      if (!reserved) {
+        return reply.status(409).send({
+          success: false,
+          error: "Verification is already minted",
+        });
+      }
+
+      let onChainMint: { txHash: string; tokenId: string };
+      try {
+        onChainMint = await mintVerifiedCreditsOnChain({
+          recipient: recipientWallet,
+          dacUnitId: dacUnit.unitId ?? verification.dacUnitId,
+          sourceDataHash: verification.sourceDataHash,
+          captureTimestamp: Math.floor(new Date(verification.endTime).getTime() / 1000),
+          co2AmountKg: Math.round(verification.totalCo2CapturedKg),
+          energyConsumedKwh: Math.round(verification.totalEnergyKwh),
+          latitude: Math.round(dacUnit.latitude),
+          longitude: Math.round(dacUnit.longitude),
+          purityPercentage: avgPurity,
+          gridIntensityGco2PerKwh: dacUnit.gridIntensityGco2PerKwh,
+          metadataUri: normalizeIpfsMetadataUri(body.ipfsMetadataCid),
+          arweaveBackupTxId: body.arweaveTxId || null,
+        });
+      } catch (error) {
+        request.log.error(
+          { err: error, verificationId: verification.id },
+          "Failed to mint credits on-chain",
+        );
+        await mutateState(CREDITS_STORE_KEY, DEFAULT_CREDITS_STATE, async (state) => {
+          if (state.verificationToCredit[body.verificationId] === reservationId) {
+            delete state.verificationToCredit[body.verificationId];
+          }
+        });
+
+        return reply.status(503).send({
+          success: false,
+          error: "On-chain credit minting is unavailable",
+        });
+      }
+
       const mintedCredit = await mutateState(
         CREDITS_STORE_KEY,
         DEFAULT_CREDITS_STATE,
         async (state) => {
-          const verificationToCredit = new Map(Object.entries(state.verificationToCredit));
-          if (verificationToCredit.has(body.verificationId)) {
+          if (state.verificationToCredit[body.verificationId] !== reservationId) {
             return null;
           }
 
           const nowIso = new Date().toISOString();
           const id = `cred_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-          const tokenId = numberToTokenId(state.nextTokenId);
-          state.nextTokenId += 1;
-          const txHash = generateTxHash();
           const credits = new Map(Object.entries(state.credits));
 
           const credit: StoredCredit = {
             id,
-            tokenId,
+            tokenId: onChainMint.tokenId,
             verificationId: body.verificationId,
             dacUnitId: verification.dacUnitId,
             captureStartTime: verification.startTime,
@@ -538,8 +661,8 @@ export async function creditsRoutes(
             sourceDataHash: verification.sourceDataHash,
             verificationStatus: CreditStatus.MINTED,
             efficiencyFactor: verification.efficiencyFactor ?? 10000,
-            mintTxHash: txHash,
-            ipfsMetadataCid: body.ipfsMetadataCid,
+            mintTxHash: onChainMint.txHash,
+            ipfsMetadataCid: normalizeIpfsMetadataUri(body.ipfsMetadataCid),
             arweaveTxId: body.arweaveTxId || null,
             currentOwnerId: `user_${recipientWallet.slice(2, 10)}`,
             currentOwnerWallet: recipientWallet,
@@ -551,17 +674,20 @@ export async function creditsRoutes(
           };
 
           credits.set(id, credit);
-          verificationToCredit.set(body.verificationId, id);
           state.credits = Object.fromEntries(credits);
-          state.verificationToCredit = Object.fromEntries(verificationToCredit);
+          state.verificationToCredit[body.verificationId] = id;
           return credit;
         }
       );
 
       if (!mintedCredit) {
-        return reply.status(409).send({
+        request.log.error(
+          { verificationId: body.verificationId, txHash: onChainMint.txHash },
+          "Credit minted on-chain but local state finalization failed",
+        );
+        return reply.status(500).send({
           success: false,
-          error: "Verification is already minted",
+          error: "Credit was minted on-chain but local state synchronization failed",
         });
       }
 
@@ -572,7 +698,7 @@ export async function creditsRoutes(
           tokenId: mintedCredit.tokenId,
           txHash: mintedCredit.mintTxHash,
           creditsIssued: mintedCredit.creditsIssued,
-          explorerUrl: `https://explorer.aethelred.network/tx/${mintedCredit.mintTxHash}`,
+          explorerUrl: getExplorerTxLink(mintedCredit.mintTxHash ?? ""),
         },
       });
     }
@@ -645,6 +771,13 @@ export async function creditsRoutes(
               error: { type: "string" },
             },
           },
+          503: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
         },
       },
       config: bearerAuthRateLimit,
@@ -661,88 +794,50 @@ export async function creditsRoutes(
         });
       }
 
-      const result = await mutateState(CREDITS_STORE_KEY, DEFAULT_CREDITS_STATE, async (state) => {
-        const credits = new Map(Object.entries(state.credits));
-        const credit = credits.get(params.id);
-        if (!credit) {
-          return { kind: "not_found" as const };
-        }
+      if (
+        !ensureApprovedKyc(request, reply, {
+          message: "Approved KYC is required before retiring credits",
+        })
+      ) {
+        return;
+      }
 
-        if (credit.isRetired) {
-          return { kind: "already_retired" as const };
-        }
-
-        const ownedByCaller = credit.currentOwnerWallet?.toLowerCase() === callerWallet;
-        if (!ownedByCaller && !isAdmin(request)) {
-          return { kind: "forbidden" as const };
-        }
-
-        if (body.amount > credit.creditsIssued) {
-          return { kind: "amount_too_large" as const };
-        }
-
-        const nowIso = new Date().toISOString();
-        const txHash = generateTxHash();
-        const remaining = credit.creditsIssued - body.amount;
-
-        credit.creditsIssued = remaining;
-        credit.retiredAmount += body.amount;
-        credit.updatedAt = nowIso;
-        if (remaining === 0) {
-          credit.isRetired = true;
-          credit.retiredAt = nowIso;
-          credit.retirementReason = body.reason;
-          credit.verificationStatus = CreditStatus.RETIRED;
-        }
-
-        credits.set(params.id, credit);
-        state.credits = Object.fromEntries(credits);
-        return {
-          kind: "success" as const,
-          credit,
-          txHash,
-          retiredAt: nowIso,
-        };
-      });
-
-      if (result.kind === "not_found") {
+      const creditsState = await readState(CREDITS_STORE_KEY, DEFAULT_CREDITS_STATE);
+      const credit = creditsState.credits[params.id];
+      if (!credit) {
         return reply.status(404).send({
           success: false,
           error: "Credit not found",
         });
       }
 
-      if (result.kind === "already_retired") {
+      if (credit.isRetired) {
         return reply.status(400).send({
           success: false,
           error: "Credit already retired",
         });
       }
 
-      if (result.kind === "forbidden") {
+      const ownedByCaller = credit.currentOwnerWallet?.toLowerCase() === callerWallet;
+      if (!ownedByCaller && !isAdmin(request)) {
         return reply.status(403).send({
           success: false,
           error: "Only the credit owner or an admin can retire credits",
         });
       }
 
-      if (result.kind === "amount_too_large") {
+      if (body.amount > credit.creditsIssued) {
         return reply.status(400).send({
           success: false,
           error: "Retire amount exceeds available credit balance",
         });
       }
 
-      return {
-        success: true,
-        data: {
-          creditId: result.credit.id,
-          amountRetired: body.amount,
-          txHash: result.txHash,
-          retiredAt: result.retiredAt,
-          certificateUrl: `https://terraqura.io/certificates/${result.credit.id}`,
-        },
-      };
+      return reply.status(503).send({
+        success: false,
+        error:
+          "Server-side retirement is disabled until a user-signed on-chain retirement flow is configured",
+      });
     }
   );
 }

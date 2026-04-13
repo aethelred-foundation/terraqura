@@ -5,6 +5,7 @@ import { z } from "zod";
 
 import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
 import { getApiRuntimeEnv } from "../../lib/runtime-env.js";
+import { createSumsubService } from "../../services/kyc/sumsub.service.js";
 
 const NONCE_TTL_MS = 10 * 60 * 1000;
 const runtimeEnv = getApiRuntimeEnv();
@@ -89,6 +90,39 @@ function readTokenPayload(request: FastifyRequest): AuthTokenPayload | null {
     userType: user.userType || "operator",
     kycStatus: user.kycStatus || "pending",
   };
+}
+
+async function resolveKycStatus(
+  walletAddress: string
+): Promise<AuthTokenPayload["kycStatus"]> {
+  if (runtimeEnv.KYC_PROVIDER !== "sumsub") {
+    return "pending";
+  }
+
+  const sumsubService = createSumsubService();
+  if (!sumsubService) {
+    return "pending";
+  }
+
+  try {
+    const applicant = await sumsubService.getApplicantByExternalId(walletAddress);
+    if (!applicant) {
+      return "pending";
+    }
+
+    const verificationStatus = await sumsubService.getVerificationStatus(applicant.id);
+    if (verificationStatus.status === "verified") {
+      return "approved";
+    }
+    if (verificationStatus.status === "rejected") {
+      return "rejected";
+    }
+
+    return "pending";
+  } catch (error) {
+    console.warn("Failed to resolve KYC status during auth verification", error);
+    return "pending";
+  }
 }
 
 export async function authRoutes(
@@ -208,12 +242,13 @@ export async function authRoutes(
         }
 
         const normalizedAddress = verifiedMessage.address.toLowerCase();
+        const kycStatus = await resolveKycStatus(normalizedAddress);
         const tokenPayload: AuthTokenPayload = {
           sub: normalizedAddress,
           address: normalizedAddress,
           chainId: verifiedMessage.chainId,
           userType: "operator",
-          kycStatus: "pending",
+          kycStatus,
         };
         const token = fastify.jwt.sign(tokenPayload);
 
