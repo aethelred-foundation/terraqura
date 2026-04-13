@@ -46,7 +46,7 @@ describe("ChainlinkVerifier - Error Path Coverage", function () {
             // Encode a valid response
             const response = ethers.AbiCoder.defaultAbiCoder().encode(
                 ["bool", "uint256", "uint256", "bytes32"],
-                [true, ethers.parseEther("100"), 3000000n, ethers.ZeroHash]
+                [true, ethers.parseEther("100"), 3000000n, ethers.keccak256(ethers.toUtf8Bytes("non-existent-request"))]
             );
 
             // Try to fulfill a non-existent request via direct fulfillment

@@ -63,6 +63,12 @@ describe("CircuitBreaker", function () {
         it("should set default volume limit", async function () {
             expect(await circuitBreaker.defaultVolumeLimit()).to.equal(ethers.parseEther("1000"));
         });
+
+        it("should track registered contracts explicitly", async function () {
+            expect(await circuitBreaker.isContractRegistered(contract1.address)).to.be.true;
+            expect(await circuitBreaker.isContractRegistered(contract2.address)).to.be.true;
+            expect(await circuitBreaker.isContractRegistered(unauthorized.address)).to.be.false;
+        });
     });
 
     describe("Pauser Management", function () {
@@ -252,6 +258,16 @@ describe("CircuitBreaker", function () {
 
             const allowed = await circuitBreaker.checkRateLimit.staticCall(contract1.address);
             expect(allowed).to.be.false;
+        });
+    });
+
+    describe("Registration", function () {
+        it("should treat duplicate registration as idempotent", async function () {
+            const before = await circuitBreaker.getStatus();
+            await circuitBreaker.registerContract(contract1.address);
+            const after = await circuitBreaker.getStatus();
+
+            expect(after.monitoredCount).to.equal(before.monitoredCount);
         });
     });
 

@@ -265,12 +265,11 @@ describe("ChainlinkVerifier", function () {
         it("should fulfill request with success", async function () {
             const co2Verified = ethers.parseEther("995"); // Within 5% tolerance
             const efficiencyVerified = 3450000n;
-            const verifiedHash = ethers.keccak256(ethers.toUtf8Bytes("verified-data"));
 
             // Encode response: (bool passed, uint256 co2Verified, uint256 efficiencyVerified, bytes32 dataHash)
             const response = ethers.AbiCoder.defaultAbiCoder().encode(
                 ["bool", "uint256", "uint256", "bytes32"],
-                [true, co2Verified, efficiencyVerified, verifiedHash]
+                [true, co2Verified, efficiencyVerified, dataHash]
             );
 
             await expect(
@@ -292,7 +291,7 @@ describe("ChainlinkVerifier", function () {
         it("should fulfill request with failure", async function () {
             const response = ethers.AbiCoder.defaultAbiCoder().encode(
                 ["bool", "uint256", "uint256", "bytes32"],
-                [false, 0, 0, ethers.ZeroHash]
+                [false, 0, 0, dataHash]
             );
 
             await mockRouter.fulfillRequestWithResponse(requestId, response);
@@ -315,6 +314,18 @@ describe("ChainlinkVerifier", function () {
             const [, , fulfilled, passed] = await verifier.getRequestStatus(requestId);
             expect(fulfilled).to.be.true;
             expect(passed).to.be.false;
+        });
+
+        it("should reject fulfillment if oracle returns a different data hash", async function () {
+            const mismatchedHash = ethers.keccak256(ethers.toUtf8Bytes("tampered-data"));
+            const response = ethers.AbiCoder.defaultAbiCoder().encode(
+                ["bool", "uint256", "uint256", "bytes32"],
+                [true, ethers.parseEther("995"), 3450000n, mismatchedHash]
+            );
+
+            await expect(
+                mockRouter.fulfillRequestWithResponse(requestId, response)
+            ).to.be.revertedWithCustomError(verifier, "DataHashMismatch");
         });
     });
 
@@ -383,7 +394,7 @@ describe("ChainlinkVerifier", function () {
                 const requestId = await mockRouter.getLatestRequestId();
                 const response = ethers.AbiCoder.defaultAbiCoder().encode(
                     ["bool", "uint256", "uint256", "bytes32"],
-                    [false, 0, 0, ethers.ZeroHash]
+                    [false, 0, 0, dataHash]
                 );
 
                 await mockRouter.fulfillRequestWithResponse(requestId, response);
@@ -472,7 +483,7 @@ describe("ChainlinkVerifier", function () {
             // Fulfill batch2 as failed
             const failResponse = ethers.AbiCoder.defaultAbiCoder().encode(
                 ["bool", "uint256", "uint256", "bytes32"],
-                [false, 0, 0, ethers.ZeroHash]
+                [false, 0, 0, ethers.keccak256(ethers.toUtf8Bytes("data2"))]
             );
             await mockRouter.fulfillRequestWithResponse(requestId2, failResponse);
 

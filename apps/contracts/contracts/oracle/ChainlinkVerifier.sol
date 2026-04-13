@@ -129,6 +129,7 @@ contract ChainlinkVerifier is FunctionsClient, ConfirmedOwner {
         address operator;
         uint256 co2Claimed;
         uint256 efficiencyClaimed;
+        bytes32 requestedDataHash;
         uint256 timestamp;
         bool fulfilled;
         bool passed;
@@ -210,6 +211,7 @@ contract ChainlinkVerifier is FunctionsClient, ConfirmedOwner {
     error TechTypeNotRegistered();
     error InvalidTimeout();
     error InvalidCooldown();
+    error DataHashMismatch();
 
     // ============================================
     // CONSTRUCTOR
@@ -428,6 +430,7 @@ contract ChainlinkVerifier is FunctionsClient, ConfirmedOwner {
             operator: msg.sender,
             co2Claimed: co2Claimed,
             efficiencyClaimed: efficiencyClaimed,
+            requestedDataHash: dataHash,
             timestamp: block.timestamp,
             fulfilled: false,
             passed: false,
@@ -495,7 +498,7 @@ contract ChainlinkVerifier is FunctionsClient, ConfirmedOwner {
         args[1] = _uint256ToString(original.co2Claimed);
         args[2] = _uint256ToString(original.efficiencyClaimed);
         args[3] = apiEndpoint;
-        args[4] = _bytes32ToString(keccak256(abi.encodePacked(original.batchId, block.timestamp))); // Updated hash
+        args[4] = _bytes32ToString(original.requestedDataHash);
         args[5] = _uint256ToString(uint256(original.techType));
 
         if (oracleTechBounds[original.techType].isActive) {
@@ -525,6 +528,7 @@ contract ChainlinkVerifier is FunctionsClient, ConfirmedOwner {
             operator: original.operator,
             co2Claimed: original.co2Claimed,
             efficiencyClaimed: original.efficiencyClaimed,
+            requestedDataHash: original.requestedDataHash,
             timestamp: block.timestamp,
             fulfilled: false,
             passed: false,
@@ -560,9 +564,8 @@ contract ChainlinkVerifier is FunctionsClient, ConfirmedOwner {
             revert RequestAlreadyFulfilled();
         }
 
-        request.fulfilled = true;
-
         if (err.length > 0) {
+            request.fulfilled = true;
             emit VerificationFailed(requestId, request.batchId, err);
             return;
         }
@@ -585,6 +588,11 @@ contract ChainlinkVerifier is FunctionsClient, ConfirmedOwner {
                 abi.decode(response, (bool, uint256, uint256, bytes32));
         }
 
+        if (dataHash != request.requestedDataHash) {
+            revert DataHashMismatch();
+        }
+
+        request.fulfilled = true;
         request.passed = passed;
 
         // Store enhanced result
@@ -708,6 +716,13 @@ contract ChainlinkVerifier is FunctionsClient, ConfirmedOwner {
             request.previousRequestId,
             request.timestamp
         );
+    }
+
+    /**
+     * @notice Get the raw data hash originally bound to the request lifecycle
+     */
+    function getRequestedDataHash(bytes32 requestId) external view returns (bytes32) {
+        return requests[requestId].requestedDataHash;
     }
 
     function isVerified(bytes32 batchId) external view returns (bool) {

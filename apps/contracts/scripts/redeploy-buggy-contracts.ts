@@ -13,6 +13,7 @@ import { ethers, upgrades } from "hardhat";
 const CURRENT = {
   accessControl: "0x55695aAAEC30AB495074c57e85Ae2E1A4866B83b",
   carbonCredit: "0x29B58064fD95b175e5824767d3B18bACFafaF959",
+  circuitBreaker: ethers.ZeroAddress,
 };
 
 async function main() {
@@ -49,7 +50,7 @@ async function main() {
   const CarbonMarketplace = await ethers.getContractFactory("CarbonMarketplace");
   const carbonMarketplace = await upgrades.deployProxy(
     CarbonMarketplace,
-    [CURRENT.carbonCredit, CURRENT.accessControl, 250, deployer.address],
+    [CURRENT.carbonCredit, deployer.address, 250, deployer.address],
     { kind: "uups" }
   );
   await carbonMarketplace.waitForDeployment();
@@ -59,13 +60,23 @@ async function main() {
   console.log("   Impl:", carbonMarketplaceImpl);
 
   // ============================================
-  // 3. Deploy fresh GaslessMarketplace
+  // 3. Deploy TerraQuraForwarder
   // ============================================
-  console.log("\n3. Deploying fresh GaslessMarketplace...");
+  console.log("\n3. Deploying TerraQuraForwarder...");
+  const TerraQuraForwarder = await ethers.getContractFactory("TerraQuraForwarder");
+  const forwarder = await TerraQuraForwarder.deploy();
+  await forwarder.waitForDeployment();
+  const forwarderAddr = await forwarder.getAddress();
+  console.log("   Address:", forwarderAddr);
+
+  // ============================================
+  // 4. Deploy fresh GaslessMarketplace
+  // ============================================
+  console.log("\n4. Deploying fresh GaslessMarketplace...");
   const GaslessMarketplace = await ethers.getContractFactory("GaslessMarketplace");
   const gaslessMarketplace = await upgrades.deployProxy(
     GaslessMarketplace,
-    [CURRENT.accessControl, CURRENT.carbonCredit, deployer.address],
+    [CURRENT.accessControl, CURRENT.carbonCredit, forwarderAddr],
     { kind: "uups" }
   );
   await gaslessMarketplace.waitForDeployment();
@@ -73,6 +84,24 @@ async function main() {
   const gaslessMarketplaceImpl = await upgrades.erc1967.getImplementationAddress(gaslessMarketplaceAddr);
   console.log("   Proxy:", gaslessMarketplaceAddr);
   console.log("   Impl:", gaslessMarketplaceImpl);
+
+  if (CURRENT.circuitBreaker !== ethers.ZeroAddress) {
+    console.log("\n5. Linking redeployed contracts to CircuitBreaker...");
+    const circuitBreaker = await ethers.getContractAt("CircuitBreaker", CURRENT.circuitBreaker);
+
+    await circuitBreaker.registerContract(verificationEngineAddr);
+    await verificationEngine.setCircuitBreaker(CURRENT.circuitBreaker);
+
+    await circuitBreaker.registerContract(carbonMarketplaceAddr);
+    await carbonMarketplace.setCircuitBreaker(CURRENT.circuitBreaker);
+
+    await circuitBreaker.registerContract(gaslessMarketplaceAddr);
+    await gaslessMarketplace.setCircuitBreaker(CURRENT.circuitBreaker);
+
+    console.log("   CircuitBreaker linkage complete");
+  } else {
+    console.log("\n5. CircuitBreaker address not configured - skipping linkage");
+  }
 
   // ============================================
   // Summary
@@ -89,6 +118,7 @@ async function main() {
   console.log("\nNEW PROXY ADDRESSES:");
   console.log("  VerificationEngine:", verificationEngineAddr);
   console.log("  CarbonMarketplace:", carbonMarketplaceAddr);
+  console.log("  TerraQuraForwarder:", forwarderAddr);
   console.log("  GaslessMarketplace:", gaslessMarketplaceAddr);
   console.log("\nGas used:", ethers.formatEther(balance - finalBalance), "POL");
 

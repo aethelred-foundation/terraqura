@@ -212,13 +212,13 @@ async function runPreflightChecks(): Promise<boolean> {
   // 4. Multisig signers check
   log(`Multisig signers: ${MAINNET_CONFIG.multisigSigners.length}`);
   const invalidSigners = MAINNET_CONFIG.multisigSigners.filter(
-    (s) => !s || !ethers.isAddress(s)
+    (s) => !s.address || !ethers.isAddress(s.address)
   );
   if (invalidSigners.length > 0) {
     log("❌ Invalid multisig signer addresses", "error");
     checksPass = false;
-  } else if (MAINNET_CONFIG.multisigSigners.length < 3) {
-    log("❌ Need at least 3 multisig signers for mainnet", "error");
+  } else if (MAINNET_CONFIG.multisigSigners.length < 5) {
+    log("❌ Need at least 5 multisig signers for mainnet", "error");
     checksPass = false;
   } else {
     log("✅ Multisig signers configured", "success");
@@ -237,6 +237,10 @@ async function runPreflightChecks(): Promise<boolean> {
     await ethers.getContractFactory("CarbonMarketplace");
     await ethers.getContractFactory("VerificationEngine");
     await ethers.getContractFactory("TerraQuraAccessControl");
+    await ethers.getContractFactory("TerraQuraMultisigMainnet");
+    await ethers.getContractFactory("TerraQuraTimelockMainnet");
+    await ethers.getContractFactory("TerraQuraForwarder");
+    await ethers.getContractFactory("GaslessMarketplace");
     log("✅ All contracts compiled", "success");
   } catch (error) {
     log("❌ Contract compilation error", "error");
@@ -367,11 +371,54 @@ async function main() {
 
   try {
     // ============================================
-    // PHASE 1: CORE CONTRACTS
+    // PHASE 1: GOVERNANCE CONTRACTS
     // ============================================
-    logSection("📦 PHASE 1: CORE CONTRACTS");
+    logSection("🏛️ PHASE 1: GOVERNANCE CONTRACTS");
 
-    // 1. Access Control
+    if (MAINNET_CONFIG.deployGovernance) {
+      const signerAddresses = MAINNET_CONFIG.multisigSigners.map((signer) => signer.address);
+      const signerCountries = MAINNET_CONFIG.multisigSigners.map((signer) => signer.countryCode);
+      const signerWalletTypes = MAINNET_CONFIG.multisigSigners.map((signer) => signer.walletType);
+
+      // 1. Multisig
+      const multisig = await deployStandardContract(
+        "TerraQuraMultisigMainnet",
+        "TerraQuraMultisigMainnet",
+        [signerAddresses, signerCountries, signerWalletTypes, MAINNET_CONFIG.multisigThreshold]
+      );
+      deployments.contracts.governance["multisig"] = multisig;
+      totalGasUsed += multisig.gasUsed;
+      await sleep(5000);
+
+      // 2. Timelock
+      const timelock = await deployStandardContract(
+        "TerraQuraTimelockMainnet",
+        "TerraQuraTimelockMainnet",
+        [
+          MAINNET_CONFIG.timelockDelay,
+          [multisig.address], // Proposers
+          [ethers.ZeroAddress], // Executors (anyone)
+          multisig.address, // Governance-controlled admin from genesis
+        ]
+      );
+      deployments.contracts.governance["timelock"] = timelock;
+      totalGasUsed += timelock.gasUsed;
+      await sleep(5000);
+    }
+
+    const governanceMultisig = deployments.contracts.governance["multisig"]?.address;
+    const governanceTimelock = deployments.contracts.governance["timelock"]?.address;
+
+    if (!governanceMultisig || !governanceTimelock) {
+      throw new Error("Mainnet deployment requires governance contracts");
+    }
+
+    // ============================================
+    // PHASE 2: CORE CONTRACTS
+    // ============================================
+    logSection("📦 PHASE 2: CORE CONTRACTS");
+
+    // 3. Access Control (bootstrapped by deployer, handed to governance below)
     const accessControl = await deployUUPSProxy(
       "TerraQuraAccessControl",
       "TerraQuraAccessControl",
@@ -379,9 +426,9 @@ async function main() {
     );
     deployments.contracts.core["accessControl"] = accessControl;
     totalGasUsed += accessControl.gasUsed;
-    await sleep(5000); // Rate limiting
+    await sleep(5000);
 
-    // 2. Verification Engine
+    // 4. Verification Engine
     const verificationEngine = await deployUUPSProxy(
       "VerificationEngine",
       "VerificationEngine",
@@ -391,17 +438,17 @@ async function main() {
     totalGasUsed += verificationEngine.gasUsed;
     await sleep(5000);
 
-    // 3. Carbon Credit
+    // 5. Carbon Credit
     const carbonCredit = await deployUUPSProxy(
       "CarbonCredit",
       "CarbonCredit",
-      [verificationEngine.proxy, MAINNET_CONFIG.metadataBaseUri, deployer.address]
+      [verificationEngine.proxy, MAINNET_CONFIG.metadataBaseUri, governanceTimelock]
     );
     deployments.contracts.core["carbonCredit"] = carbonCredit;
     totalGasUsed += carbonCredit.gasUsed;
     await sleep(5000);
 
-    // Set CarbonCredit in VerificationEngine
+    // Set CarbonCredit in VerificationEngine before handing ownership to governance
     log("Setting CarbonCredit in VerificationEngine...");
     const veContract = await ethers.getContractAt(
       "VerificationEngine",
@@ -412,53 +459,20 @@ async function main() {
     log("  ✅ CarbonCredit set in VerificationEngine", "success");
     await sleep(5000);
 
-    // 4. Carbon Marketplace
+    // 6. Carbon Marketplace
     const carbonMarketplace = await deployUUPSProxy(
       "CarbonMarketplace",
       "CarbonMarketplace",
       [
         carbonCredit.proxy,
-        accessControl.proxy,
+        governanceMultisig,
         MAINNET_CONFIG.platformFeeBps,
-        deployer.address, // Fee recipient (update to multisig later)
+        governanceTimelock, // Upgrades/admin changes remain time-locked
       ]
     );
     deployments.contracts.core["carbonMarketplace"] = carbonMarketplace;
     totalGasUsed += carbonMarketplace.gasUsed;
     await sleep(5000);
-
-    // ============================================
-    // PHASE 2: GOVERNANCE CONTRACTS
-    // ============================================
-    if (MAINNET_CONFIG.deployGovernance) {
-      logSection("🏛️ PHASE 2: GOVERNANCE CONTRACTS");
-
-      // 5. Multisig
-      const multisig = await deployStandardContract(
-        "TerraQuraMultisig",
-        "TerraQuraMultisig",
-        [MAINNET_CONFIG.multisigSigners, MAINNET_CONFIG.multisigThreshold]
-      );
-      deployments.contracts.governance["multisig"] = multisig;
-      totalGasUsed += multisig.gasUsed;
-      await sleep(5000);
-
-      // 6. Timelock
-      const timelock = await deployStandardContract(
-        "TerraQuraTimelock",
-        "TerraQuraTimelock",
-        [
-          MAINNET_CONFIG.timelockDelay,
-          [multisig.address], // Proposers
-          [ethers.ZeroAddress], // Executors (anyone)
-          deployer.address, // Admin (transfer to multisig later)
-          MAINNET_CONFIG.isProduction,
-        ]
-      );
-      deployments.contracts.governance["timelock"] = timelock;
-      totalGasUsed += timelock.gasUsed;
-      await sleep(5000);
-    }
 
     // ============================================
     // PHASE 3: SECURITY CONTRACTS
@@ -484,10 +498,11 @@ async function main() {
       );
       await cbContract.registerContract(carbonCredit.proxy!);
       await cbContract.registerContract(carbonMarketplace.proxy!);
-
-      if (MAINNET_CONFIG.deployGovernance) {
-        await cbContract.addPauser(deployments.contracts.governance["multisig"].address!);
-      }
+      await cbContract.registerContract(verificationEngine.proxy!);
+      await veContract.setCircuitBreaker(circuitBreaker.proxy!);
+      await (await ethers.getContractAt("CarbonCredit", carbonCredit.proxy!)).setCircuitBreaker(circuitBreaker.proxy!);
+      await (await ethers.getContractAt("CarbonMarketplace", carbonMarketplace.proxy!)).setCircuitBreaker(circuitBreaker.proxy!);
+      await cbContract.addPauser(governanceMultisig);
       log("  ✅ CircuitBreaker configured", "success");
       await sleep(5000);
     }
@@ -498,11 +513,21 @@ async function main() {
     if (MAINNET_CONFIG.deployGaslessMarketplace) {
       logSection("⛽ PHASE 4: GASLESS CONTRACTS");
 
-      // 8. Gasless Marketplace
+      // 8. Trusted Forwarder
+      const forwarder = await deployStandardContract(
+        "TerraQuraForwarder",
+        "TerraQuraForwarder",
+        []
+      );
+      deployments.contracts.gasless["forwarder"] = forwarder;
+      totalGasUsed += forwarder.gasUsed;
+      await sleep(5000);
+
+      // 9. Gasless Marketplace
       const gaslessMarketplace = await deployUUPSProxy(
         "GaslessMarketplace",
         "GaslessMarketplace",
-        [accessControl.proxy, carbonCredit.proxy, deployer.address]
+        [accessControl.proxy, carbonCredit.proxy, forwarder.address]
       );
       deployments.contracts.gasless["gaslessMarketplace"] = gaslessMarketplace;
       totalGasUsed += gaslessMarketplace.gasUsed;
@@ -514,6 +539,9 @@ async function main() {
           deployments.contracts.security["circuitBreaker"].proxy!
         );
         await cbContract.registerContract(gaslessMarketplace.proxy!);
+        await (await ethers.getContractAt("GaslessMarketplace", gaslessMarketplace.proxy!)).setCircuitBreaker(
+          deployments.contracts.security["circuitBreaker"].proxy!
+        );
       }
       await sleep(5000);
     }
@@ -528,29 +556,43 @@ async function main() {
       accessControl.proxy!
     );
 
-    const MINTER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("MINTER_ROLE"));
-    const OPERATOR_ROLE = ethers.keccak256(ethers.toUtf8Bytes("OPERATOR_ROLE"));
+    const DEFAULT_ADMIN_ROLE = await acContract.DEFAULT_ADMIN_ROLE();
+    const ADMIN_ROLE = await acContract.ADMIN_ROLE();
+    const UPGRADER_ROLE = await acContract.UPGRADER_ROLE();
     const PAUSER_ROLE = ethers.keccak256(ethers.toUtf8Bytes("PAUSER_ROLE"));
 
-    // Grant roles to deployer (for initial setup)
-    await acContract.grantRole(MINTER_ROLE, deployer.address);
-    await acContract.grantRole(OPERATOR_ROLE, deployer.address);
-    log("  ✅ Initial roles granted to deployer", "success");
+    await acContract.grantRole(DEFAULT_ADMIN_ROLE, governanceMultisig);
+    await acContract.grantRole(ADMIN_ROLE, governanceMultisig);
+    await acContract.grantRole(UPGRADER_ROLE, governanceTimelock);
+    await acContract.grantRole(PAUSER_ROLE, governanceMultisig);
 
-    // Grant PAUSER_ROLE to CircuitBreaker and Multisig
     if (MAINNET_CONFIG.deployCircuitBreaker) {
       await acContract.grantRole(
         PAUSER_ROLE,
         deployments.contracts.security["circuitBreaker"].proxy!
       );
     }
-    if (MAINNET_CONFIG.deployGovernance) {
-      await acContract.grantRole(
-        PAUSER_ROLE,
-        deployments.contracts.governance["multisig"].address!
+
+    log("  ✅ Governance roles granted to Multisig/Timelock", "success");
+
+    // Hand ownership of owner-governed contracts to governance before revoking bootstrap access
+    await veContract.transferOwnership(governanceTimelock);
+    log("  ✅ VerificationEngine ownership transferred to Timelock", "success");
+
+    if (MAINNET_CONFIG.deployCircuitBreaker) {
+      const cbContract = await ethers.getContractAt(
+        "CircuitBreaker",
+        deployments.contracts.security["circuitBreaker"].proxy!
       );
+      await cbContract.transferOwnership(governanceMultisig);
+      log("  ✅ CircuitBreaker ownership transferred to Multisig", "success");
     }
-    log("  ✅ PAUSER_ROLE granted to CircuitBreaker and Multisig", "success");
+
+    await acContract.revokeRole(UPGRADER_ROLE, deployer.address);
+    await acContract.revokeRole(PAUSER_ROLE, deployer.address);
+    await acContract.revokeRole(ADMIN_ROLE, deployer.address);
+    await acContract.revokeRole(DEFAULT_ADMIN_ROLE, deployer.address);
+    log("  ✅ Bootstrap deployer privileges revoked", "success");
 
     // ============================================
     // PHASE 6: FINALIZATION
@@ -616,9 +658,9 @@ async function main() {
     log("\n🎉 MAINNET DEPLOYMENT COMPLETE!", "success");
     log("\nNEXT STEPS:", "info");
     log("1. Run contract verification: npx hardhat run scripts/verify-mainnet.ts --network aethelredMainnet");
-    log("2. Transfer ownership to Multisig/Timelock");
-    log("3. Update frontend contract addresses");
-    log("4. Perform post-deployment testing");
+    log("2. Grant operational MINTER/OPERATOR roles to real production principals via governance");
+    log("3. Update frontend and backend contract addresses");
+    log("4. Perform post-deployment testing and Safe/Timelock ceremony validation");
 
   } catch (error: any) {
     log(`\n❌ DEPLOYMENT FAILED: ${error.message}`, "error");

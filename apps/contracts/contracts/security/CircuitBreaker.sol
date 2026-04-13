@@ -80,6 +80,9 @@ contract CircuitBreaker is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     /// @notice List of monitored contracts
     address[] public monitoredContracts;
 
+    /// @notice Lookup for monitored contract registration
+    mapping(address => bool) public monitoredContractLookup;
+
     /// @notice Cooldown period after unpause (prevents rapid pause/unpause)
     uint256 public constant UNPAUSE_COOLDOWN = 1 hours;
 
@@ -105,6 +108,7 @@ contract CircuitBreaker is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     event PauserAdded(address indexed pauser);
     event PauserRemoved(address indexed pauser);
     event AnomalyDetected(address indexed contractAddr, string anomalyType, bytes data);
+    event ContractRegistered(address indexed contractAddr);
 
     // ============ Errors ============
 
@@ -114,6 +118,7 @@ contract CircuitBreaker is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     error SecurityLevelTooHigh();
     error CooldownActive();
     error ContractNotMonitored();
+    error InvalidContractAddress();
 
     // ============ Modifiers ============
 
@@ -339,8 +344,18 @@ contract CircuitBreaker is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @notice Register a contract for monitoring
      */
     function registerContract(address contractAddr) external onlyOwner {
+        if (contractAddr == address(0)) {
+            revert InvalidContractAddress();
+        }
+        if (monitoredContractLookup[contractAddr]) {
+            return;
+        }
+
+        monitoredContractLookup[contractAddr] = true;
         monitoredContracts.push(contractAddr);
         contractStatus[contractAddr].level = SecurityLevel.NORMAL;
+
+        emit ContractRegistered(contractAddr);
     }
 
     // ============ View Functions ============
@@ -377,6 +392,13 @@ contract CircuitBreaker is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     ) {
         ContractStatus storage status = contractStatus[contractAddr];
         return (status.isPaused, status.level, status.pausedAt, status.pauseReason);
+    }
+
+    /**
+     * @notice Check if a contract has been explicitly registered for monitoring
+     */
+    function isContractRegistered(address contractAddr) external view returns (bool) {
+        return monitoredContractLookup[contractAddr];
     }
 
     // ============ UUPS ============
