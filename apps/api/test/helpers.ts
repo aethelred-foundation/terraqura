@@ -227,6 +227,7 @@ export function makeDacUnit(overrides: Record<string, unknown> = {}) {
     status: "pending",
     capacityTonnesPerYear: 1000,
     technologyType: "DAC",
+    gridIntensityGco2PerKwh: 50,
     createdAt: new Date().toISOString(),
     whitelistedAt: null,
     whitelistTxHash: null,

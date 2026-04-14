@@ -5,6 +5,7 @@ import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "../interfaces/ICircuitBreaker.sol";
 import "../interfaces/IVerificationEngine.sol";
 import "../libraries/EfficiencyCalculator.sol";
 
@@ -119,6 +120,11 @@ contract VerificationEngine is
      */
     uint8 public registeredTechCount;
 
+    /**
+     * @notice Circuit breaker emergency control
+     */
+    ICircuitBreaker public circuitBreaker;
+
     // ============ Events ============
 
     /**
@@ -178,6 +184,8 @@ contract VerificationEngine is
         uint8 indexed newTechType
     );
 
+    event CircuitBreakerUpdated(address indexed previousCircuitBreaker, address indexed newCircuitBreaker);
+
     // ============ Errors ============
 
     error UnauthorizedCaller();
@@ -187,6 +195,10 @@ contract VerificationEngine is
     error InvalidCarbonCreditContract();
     error InvalidTechThresholds();
     error TechTypeNotActive();
+    error InvalidCircuitBreaker();
+    error CircuitBreakerBlocked();
+    error CircuitBreakerRateLimited();
+    error CircuitBreakerVolumeExceeded();
 
     // ============ Modifiers ============
 
@@ -318,6 +330,8 @@ contract VerificationEngine is
             uint256 efficiencyFactor
         )
     {
+        _enforceCircuitBreaker(co2AmountKg);
+
         // Phase 1: Source Check
         sourceVerified = _verifySource(dacUnitId, sourceDataHash);
         if (!sourceVerified) {
@@ -554,10 +568,41 @@ contract VerificationEngine is
     }
 
     /**
+     * @notice Configure the circuit breaker contract used for runtime safety checks
+     */
+    function setCircuitBreaker(address newCircuitBreaker) external onlyOwner {
+        if (newCircuitBreaker == address(0)) {
+            revert InvalidCircuitBreaker();
+        }
+
+        address previousCircuitBreaker = address(circuitBreaker);
+        circuitBreaker = ICircuitBreaker(newCircuitBreaker);
+
+        emit CircuitBreakerUpdated(previousCircuitBreaker, newCircuitBreaker);
+    }
+
+    /**
      * @notice Authorize upgrade (UUPS pattern)
      * @param newImplementation Address of new implementation
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    function _enforceCircuitBreaker(uint256 volume) internal {
+        address breaker = address(circuitBreaker);
+        if (breaker == address(0)) {
+            return;
+        }
+
+        if (!circuitBreaker.isOperationAllowed(address(this))) {
+            revert CircuitBreakerBlocked();
+        }
+        if (!circuitBreaker.checkRateLimit(address(this))) {
+            revert CircuitBreakerRateLimited();
+        }
+        if (volume > 0 && !circuitBreaker.checkVolumeLimit(address(this), volume)) {
+            revert CircuitBreakerVolumeExceeded();
+        }
+    }
 
     // ============ Internal Functions ============
 

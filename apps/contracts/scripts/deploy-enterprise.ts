@@ -53,7 +53,7 @@ async function main() {
   const minDelay = 1 * 60 * 60; // 1 hour for testnet (2 days for mainnet)
   const proposers = [multisigAddress]; // Multisig can propose
   const executors = [ethers.ZeroAddress]; // Anyone can execute after delay
-  const admin = deployer.address; // Admin for initial setup
+  const admin = multisigAddress; // Governance-controlled admin
 
   const TerraQuraTimelock = await ethers.getContractFactory("TerraQuraTimelock");
   const timelock = await TerraQuraTimelock.deploy(
@@ -85,12 +85,19 @@ async function main() {
   console.log("   CircuitBreaker Impl:", circuitBreakerImpl);
 
   // ============================================
-  // 4. Deploy GaslessMarketplace (UUPS Proxy)
+  // 4. Deploy TerraQuraForwarder
   // ============================================
-  console.log("\n4. Deploying GaslessMarketplace (UUPS Proxy)...");
+  console.log("\n4. Deploying TerraQuraForwarder...");
+  const TerraQuraForwarder = await ethers.getContractFactory("TerraQuraForwarder");
+  const forwarder = await TerraQuraForwarder.deploy();
+  await forwarder.waitForDeployment();
+  const trustedForwarder = await forwarder.getAddress();
+  console.log("   TerraQuraForwarder:", trustedForwarder);
 
-  // For testnet, use deployer as trusted forwarder (replace with real forwarder in production)
-  const trustedForwarder = deployer.address;
+  // ============================================
+  // 5. Deploy GaslessMarketplace (UUPS Proxy)
+  // ============================================
+  console.log("\n5. Deploying GaslessMarketplace (UUPS Proxy)...");
 
   const GaslessMarketplace = await ethers.getContractFactory("GaslessMarketplace");
   const gaslessMarketplace = await upgrades.deployProxy(
@@ -105,14 +112,15 @@ async function main() {
   console.log("   GaslessMarketplace Impl:", gaslessMarketplaceImpl);
 
   // ============================================
-  // 5. Configure CircuitBreaker
+  // 6. Configure CircuitBreaker
   // ============================================
-  console.log("\n5. Configuring CircuitBreaker...");
+  console.log("\n6. Configuring CircuitBreaker...");
 
   // Register all contracts with CircuitBreaker
   const contractsToMonitor = [
     EXISTING_CONTRACTS.carbonCredit,
     EXISTING_CONTRACTS.carbonMarketplace,
+    EXISTING_CONTRACTS.verificationEngine,
     gaslessMarketplaceAddress,
   ];
 
@@ -120,6 +128,22 @@ async function main() {
     await circuitBreaker.registerContract(contractAddr);
     console.log("   Registered:", contractAddr);
   }
+
+  const verificationEngine = await ethers.getContractAt("VerificationEngine", EXISTING_CONTRACTS.verificationEngine);
+  const carbonCredit = await ethers.getContractAt("CarbonCredit", EXISTING_CONTRACTS.carbonCredit);
+  const carbonMarketplace = await ethers.getContractAt("CarbonMarketplace", EXISTING_CONTRACTS.carbonMarketplace);
+
+  await verificationEngine.setCircuitBreaker(circuitBreakerAddress);
+  console.log("   Linked VerificationEngine to CircuitBreaker");
+
+  await carbonCredit.setCircuitBreaker(circuitBreakerAddress);
+  console.log("   Linked CarbonCredit to CircuitBreaker");
+
+  await carbonMarketplace.setCircuitBreaker(circuitBreakerAddress);
+  console.log("   Linked CarbonMarketplace to CircuitBreaker");
+
+  await gaslessMarketplace.setCircuitBreaker(circuitBreakerAddress);
+  console.log("   Linked GaslessMarketplace to CircuitBreaker");
 
   // Add multisig as pauser
   await circuitBreaker.addPauser(multisigAddress);
@@ -191,6 +215,7 @@ async function main() {
         proxy: gaslessMarketplaceAddress,
         implementation: gaslessMarketplaceImpl,
         trustedForwarder: trustedForwarder,
+        forwarder: trustedForwarder,
       },
     },
     core: EXISTING_CONTRACTS,

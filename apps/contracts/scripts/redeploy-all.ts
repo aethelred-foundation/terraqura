@@ -65,25 +65,9 @@ async function main() {
   console.log("   CarbonCredit set in VerificationEngine");
 
   // ============================================
-  // 4. Deploy CarbonMarketplace (UUPS)
+  // 4. Deploy TerraQuraMultisig
   // ============================================
-  console.log("\n4. Deploying CarbonMarketplace...");
-  const CarbonMarketplace = await ethers.getContractFactory("CarbonMarketplace");
-  const carbonMarketplace = await upgrades.deployProxy(
-    CarbonMarketplace,
-    [carbonCreditAddr, accessControlAddr, 250, deployer.address],
-    { kind: "uups" }
-  );
-  await carbonMarketplace.waitForDeployment();
-  const carbonMarketplaceAddr = await carbonMarketplace.getAddress();
-  const carbonMarketplaceImpl = await upgrades.erc1967.getImplementationAddress(carbonMarketplaceAddr);
-  console.log("   Proxy:", carbonMarketplaceAddr);
-  console.log("   Impl:", carbonMarketplaceImpl);
-
-  // ============================================
-  // 5. Deploy TerraQuraMultisig
-  // ============================================
-  console.log("\n5. Deploying TerraQuraMultisig (2-of-3)...");
+  console.log("\n4. Deploying TerraQuraMultisig (2-of-3)...");
   const signers = [
     deployer.address,
     "0x1111111111111111111111111111111111111111",
@@ -96,20 +80,36 @@ async function main() {
   console.log("   Address:", multisigAddr);
 
   // ============================================
-  // 6. Deploy TerraQuraTimelock
+  // 5. Deploy TerraQuraTimelock
   // ============================================
-  console.log("\n6. Deploying TerraQuraTimelock...");
+  console.log("\n5. Deploying TerraQuraTimelock...");
   const TerraQuraTimelock = await ethers.getContractFactory("TerraQuraTimelock");
   const timelock = await TerraQuraTimelock.deploy(
     3600, // 1 hour for testnet
     [multisigAddr], // proposers
     [ethers.ZeroAddress], // executors (anyone)
-    deployer.address, // admin
+    multisigAddr, // governance-controlled admin
     false // isProduction
   );
   await timelock.waitForDeployment();
   const timelockAddr = await timelock.getAddress();
   console.log("   Address:", timelockAddr);
+
+  // ============================================
+  // 6. Deploy CarbonMarketplace (UUPS)
+  // ============================================
+  console.log("\n6. Deploying CarbonMarketplace...");
+  const CarbonMarketplace = await ethers.getContractFactory("CarbonMarketplace");
+  const carbonMarketplace = await upgrades.deployProxy(
+    CarbonMarketplace,
+    [carbonCreditAddr, multisigAddr, 250, timelockAddr],
+    { kind: "uups" }
+  );
+  await carbonMarketplace.waitForDeployment();
+  const carbonMarketplaceAddr = await carbonMarketplace.getAddress();
+  const carbonMarketplaceImpl = await upgrades.erc1967.getImplementationAddress(carbonMarketplaceAddr);
+  console.log("   Proxy:", carbonMarketplaceAddr);
+  console.log("   Impl:", carbonMarketplaceImpl);
 
   // ============================================
   // 7. Deploy CircuitBreaker (UUPS)
@@ -124,13 +124,23 @@ async function main() {
   console.log("   Impl:", circuitBreakerImpl);
 
   // ============================================
-  // 8. Deploy GaslessMarketplace (UUPS)
+  // 8. Deploy TerraQuraForwarder
   // ============================================
-  console.log("\n8. Deploying GaslessMarketplace...");
+  console.log("\n8. Deploying TerraQuraForwarder...");
+  const TerraQuraForwarder = await ethers.getContractFactory("TerraQuraForwarder");
+  const forwarder = await TerraQuraForwarder.deploy();
+  await forwarder.waitForDeployment();
+  const forwarderAddr = await forwarder.getAddress();
+  console.log("   Address:", forwarderAddr);
+
+  // ============================================
+  // 9. Deploy GaslessMarketplace (UUPS)
+  // ============================================
+  console.log("\n9. Deploying GaslessMarketplace...");
   const GaslessMarketplace = await ethers.getContractFactory("GaslessMarketplace");
   const gaslessMarketplace = await upgrades.deployProxy(
     GaslessMarketplace,
-    [accessControlAddr, carbonCreditAddr, deployer.address],
+    [accessControlAddr, carbonCreditAddr, forwarderAddr],
     { kind: "uups" }
   );
   await gaslessMarketplace.waitForDeployment();
@@ -140,7 +150,7 @@ async function main() {
   console.log("   Impl:", gaslessMarketplaceImpl);
 
   // ============================================
-  // 9. Configure Roles & Governance
+  // 10. Configure Roles & Governance
   // ============================================
   console.log("\n9. Configuring roles and governance...");
 
@@ -158,7 +168,12 @@ async function main() {
   // Register contracts with CircuitBreaker
   await circuitBreaker.registerContract(carbonCreditAddr);
   await circuitBreaker.registerContract(carbonMarketplaceAddr);
+  await circuitBreaker.registerContract(verificationEngineAddr);
   await circuitBreaker.registerContract(gaslessMarketplaceAddr);
+  await verificationEngine.setCircuitBreaker(circuitBreakerAddr);
+  await carbonCredit.setCircuitBreaker(circuitBreakerAddr);
+  await carbonMarketplace.setCircuitBreaker(circuitBreakerAddr);
+  await gaslessMarketplace.setCircuitBreaker(circuitBreakerAddr);
   await circuitBreaker.addPauser(multisigAddr);
   console.log("   CircuitBreaker configured");
 
@@ -191,6 +206,7 @@ async function main() {
   console.log("  CircuitBreaker Proxy:", circuitBreakerAddr);
   console.log("  CircuitBreaker Impl:", circuitBreakerImpl);
   console.log("\nGASLESS:");
+  console.log("  TerraQuraForwarder:", forwarderAddr);
   console.log("  GaslessMarketplace Proxy:", gaslessMarketplaceAddr);
   console.log("  GaslessMarketplace Impl:", gaslessMarketplaceImpl);
   console.log("\nTEST DAC ID:", testDacId);
@@ -218,7 +234,11 @@ const STANDARD_CONTRACTS = {
   },
   timelock: {
     address: "${timelockAddr}",
-    constructorArgs: [3600, ["${multisigAddr}"], ["0x0000000000000000000000000000000000000000"], "${deployer.address}", false],
+    constructorArgs: [3600, ["${multisigAddr}"], ["0x0000000000000000000000000000000000000000"], "${multisigAddr}", false],
+  },
+  forwarder: {
+    address: "${forwarderAddr}",
+    constructorArgs: [],
   },
 };`);
 }

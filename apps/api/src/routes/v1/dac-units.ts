@@ -1,11 +1,17 @@
-import { randomBytes } from "crypto";
-
 import { DACStatus } from "@terraqura/types";
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
+import {
+  ensureApprovedKyc,
+  getAuthenticatedAddress,
+  isAdmin,
+} from "../../lib/auth-context.js";
 import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
 import { mutateState, readState } from "../../lib/state-store.js";
+import {
+  whitelistDacUnitOnChain,
+} from "../../services/blockchain/contracts.js";
 
 const CreateDACUnitSchema = z.object({
   name: z.string().min(1).max(255),
@@ -15,19 +21,8 @@ const CreateDACUnitSchema = z.object({
   region: z.string().optional(),
   capacityTonnesPerYear: z.number().positive().optional(),
   technologyType: z.string().optional(),
+  gridIntensityGco2PerKwh: z.number().int().nonnegative().optional(),
 });
-
-function getAuthenticatedAddress(
-  request: { user?: unknown }
-): string | null {
-  const user = request.user as { address?: string } | undefined;
-  return typeof user?.address === "string" ? user.address.toLowerCase() : null;
-}
-
-function isAdmin(request: { user?: unknown }): boolean {
-  const user = request.user as { userType?: string } | undefined;
-  return user?.userType === "admin";
-}
 
 interface StoredDacUnit {
   id: string;
@@ -41,6 +36,7 @@ interface StoredDacUnit {
   status: DACStatus;
   capacityTonnesPerYear: number;
   technologyType: string;
+  gridIntensityGco2PerKwh: number | null;
   createdAt: string;
   whitelistedAt: string | null;
   whitelistTxHash: string | null;
@@ -55,8 +51,8 @@ const DEFAULT_DAC_UNITS_STATE: DacUnitsState = {
   units: {},
 };
 
-function generateTxHash(): string {
-  return `0x${randomBytes(32).toString("hex")}`;
+function buildDacLocation(unit: StoredDacUnit): string {
+  return [unit.name, unit.countryCode].filter(Boolean).join(", ");
 }
 
 export async function dacUnitsRoutes(
@@ -228,6 +224,14 @@ export async function dacUnitsRoutes(
         });
       }
 
+      if (
+        !ensureApprovedKyc(request, reply, {
+          message: "Approved KYC is required before registering a DAC unit",
+        })
+      ) {
+        return;
+      }
+
       const dacUnit = await mutateState(
         DAC_UNITS_STORE_KEY,
         DEFAULT_DAC_UNITS_STATE,
@@ -248,6 +252,7 @@ export async function dacUnitsRoutes(
             status: DACStatus.PENDING,
             capacityTonnesPerYear: body.capacityTonnesPerYear || 0,
             technologyType: body.technologyType || "DAC",
+            gridIntensityGco2PerKwh: body.gridIntensityGco2PerKwh ?? null,
             createdAt,
             whitelistedAt: null,
             whitelistTxHash: null,
@@ -302,12 +307,20 @@ export async function dacUnitsRoutes(
                   countryCode: { type: "string" },
                   capacityTonnesPerYear: { type: "number" },
                   technologyType: { type: "string" },
+                  gridIntensityGco2PerKwh: { type: "number", nullable: true },
                   createdAt: { type: "string" },
                 },
               },
             },
           },
           404: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
+          503: {
             type: "object",
             properties: {
               success: { type: "boolean" },
@@ -385,6 +398,13 @@ export async function dacUnitsRoutes(
               error: { type: "string" },
             },
           },
+          503: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
         },
       },
       config: bearerAuthRateLimit,
@@ -399,6 +419,34 @@ export async function dacUnitsRoutes(
       }
 
       const params = request.params as { id: string };
+      const existingState = await readState(DAC_UNITS_STORE_KEY, DEFAULT_DAC_UNITS_STATE);
+      const existingUnit = existingState.units[params.id];
+
+      if (!existingUnit) {
+        return reply.status(404).send({
+          success: false,
+          error: "DAC unit not found",
+        });
+      }
+
+      let whitelistResult: { txHash: string };
+      try {
+        whitelistResult = await whitelistDacUnitOnChain({
+          unitId: existingUnit.unitId,
+          operator: existingUnit.operatorWallet,
+          location: buildDacLocation(existingUnit),
+        });
+      } catch (error) {
+        request.log.error(
+          { err: error, dacUnitId: existingUnit.id },
+          "Failed to whitelist DAC unit on-chain",
+        );
+        return reply.status(503).send({
+          success: false,
+          error: "On-chain DAC whitelisting is unavailable",
+        });
+      }
+
       const whitelistedUnit = await mutateState(
         DAC_UNITS_STORE_KEY,
         DEFAULT_DAC_UNITS_STATE,
@@ -409,12 +457,11 @@ export async function dacUnitsRoutes(
           }
 
           const whitelistedAt = new Date().toISOString();
-          const txHash = generateTxHash();
           const updated: StoredDacUnit = {
             ...existing,
             status: DACStatus.ACTIVE,
             whitelistedAt,
-            whitelistTxHash: txHash,
+            whitelistTxHash: whitelistResult.txHash,
           };
 
           state.units[params.id] = updated;
@@ -425,7 +472,7 @@ export async function dacUnitsRoutes(
       if (!whitelistedUnit) {
         return reply.status(404).send({
           success: false,
-          error: "DAC unit not found",
+          error: "DAC unit could not be persisted after on-chain whitelisting",
         });
       }
 

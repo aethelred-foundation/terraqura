@@ -3,6 +3,10 @@ import rateLimit from "@fastify/rate-limit";
 import Fastify from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const { mockMintVerifiedCreditsOnChain } = vi.hoisted(() => ({
+  mockMintVerifiedCreditsOnChain: vi.fn(),
+}));
+
 // ---------------------------------------------------------------------------
 // Mock state-store with in-memory Maps before any route code is imported
 // ---------------------------------------------------------------------------
@@ -36,6 +40,11 @@ vi.mock("../../lib/runtime-env.js", () => ({
   }),
 }));
 
+vi.mock("../../services/blockchain/contracts.js", () => ({
+  mintVerifiedCreditsOnChain: mockMintVerifiedCreditsOnChain,
+  getExplorerTxLink: (txHash: string) => `https://explorer-testnet.aethelred.network/tx/${txHash}`,
+}));
+
 import { creditsRoutes } from "./credits.js";
 
 // ---------------------------------------------------------------------------
@@ -45,6 +54,7 @@ import { creditsRoutes } from "./credits.js";
 const WALLET_A = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const WALLET_B = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const JWT_SECRET = "a]ks8d7f6g5h4j3k2l1m0n9b8v7c6x5z4";
+const DAC_UNITS_STORE_KEY = "dac-units:v1";
 
 async function buildApp() {
   const app = Fastify({ logger: false });
@@ -61,9 +71,13 @@ async function buildApp() {
 
 function signToken(
   app: ReturnType<typeof Fastify>,
-  payload: { address: string; userType?: string },
+  payload: { address: string; userType?: string; kycStatus?: string },
 ) {
-  return (app as unknown as { jwt: { sign: (p: object) => string } }).jwt.sign(payload);
+  return (app as unknown as { jwt: { sign: (p: object) => string } }).jwt.sign({
+    userType: "operator",
+    kycStatus: "approved",
+    ...payload,
+  });
 }
 
 /** Seed a passed verification into the store */
@@ -87,11 +101,34 @@ function seedVerification(
     creditsToMint: 100,
     totalCo2CapturedKg: 500,
     totalEnergyKwh: 175,
+    avgPurity: 96,
     completedAt: "2026-01-02T01:00:00.000Z",
     ...overrides,
   };
   verState.verifications = verifications;
   store.set("verification:v1", verState);
+}
+
+function seedDacUnit(
+  id: string,
+  overrides: Record<string, unknown> = {},
+) {
+  const dacState = (store.get(DAC_UNITS_STORE_KEY) as Record<string, unknown>) || {
+    units: {},
+  };
+  const units = (dacState.units as Record<string, unknown>) || {};
+  units[id] = {
+    id,
+    unitId: "0x" + "a".repeat(64),
+    operatorWallet: WALLET_A,
+    status: "active",
+    latitude: 24,
+    longitude: 54,
+    gridIntensityGco2PerKwh: 50,
+    ...overrides,
+  };
+  dacState.units = units;
+  store.set(DAC_UNITS_STORE_KEY, dacState);
 }
 
 /** Seed a minted credit directly */
@@ -145,6 +182,11 @@ describe("credits routes", () => {
 
   beforeEach(async () => {
     store.clear();
+    mockMintVerifiedCreditsOnChain.mockReset();
+    mockMintVerifiedCreditsOnChain.mockResolvedValue({
+      txHash: "0x" + "1".repeat(64),
+      tokenId: "0x" + "2".repeat(64),
+    });
     app = await buildApp();
   });
 
@@ -296,6 +338,7 @@ describe("credits routes", () => {
   });
 
   it("returns 400 when verification is not PASSED", async () => {
+    seedDacUnit("dac_001");
     seedVerification("ver_fail", { status: "FAILED" });
     const token = signToken(app, { address: WALLET_A });
     const res = await app.inject({
@@ -313,6 +356,7 @@ describe("credits routes", () => {
   });
 
   it("mints credits successfully from a passed verification", async () => {
+    seedDacUnit("dac_001");
     seedVerification("ver_ok");
     const token = signToken(app, { address: WALLET_A });
     const res = await app.inject({
@@ -333,6 +377,7 @@ describe("credits routes", () => {
   });
 
   it("returns 409 when minting the same verification twice", async () => {
+    seedDacUnit("dac_001");
     seedVerification("ver_dup");
     const token = signToken(app, { address: WALLET_A });
     await app.inject({
@@ -360,6 +405,7 @@ describe("credits routes", () => {
   });
 
   it("returns 403 when non-admin mints to another wallet", async () => {
+    seedDacUnit("dac_001");
     seedVerification("ver_other");
     const token = signToken(app, { address: WALLET_A });
     const res = await app.inject({
@@ -373,6 +419,46 @@ describe("credits routes", () => {
       },
     });
     expect(res.statusCode).toBe(403);
+  });
+
+  it("returns 403 when KYC is not approved", async () => {
+    seedDacUnit("dac_001");
+    seedVerification("ver_kyc");
+    const token = signToken(app, { address: WALLET_A, kycStatus: "pending" });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/credits/mint",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        verificationId: "ver_kyc",
+        recipientWallet: WALLET_A,
+        ipfsMetadataCid: "QmKyc",
+      },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(mockMintVerifiedCreditsOnChain).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 when caller does not operate the DAC unit", async () => {
+    seedDacUnit("dac_001", { operatorWallet: WALLET_B });
+    seedVerification("ver_owner");
+    const token = signToken(app, { address: WALLET_A });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/credits/mint",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        verificationId: "ver_owner",
+        recipientWallet: WALLET_A,
+        ipfsMetadataCid: "QmOwner",
+      },
+    });
+
+    expect(res.statusCode).toBe(403);
+    expect(mockMintVerifiedCreditsOnChain).not.toHaveBeenCalled();
   });
 
   // ---------- POST /:id/retire ----------
@@ -410,7 +496,7 @@ describe("credits routes", () => {
     expect(res.statusCode).toBe(403);
   });
 
-  it("partially retires credits (reduces balance, not fully retired)", async () => {
+  it("returns 503 instead of mutating local state for retirement", async () => {
     seedCredit("cred_partial", { creditsIssued: 100, currentOwnerWallet: WALLET_A });
     const token = signToken(app, { address: WALLET_A });
     const res = await app.inject({
@@ -419,19 +505,17 @@ describe("credits routes", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { amount: 40, reason: "Partial offset" },
     });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().data.amountRetired).toBe(40);
+    expect(res.statusCode).toBe(503);
 
-    // Verify remaining balance
     const detail = await app.inject({
       method: "GET",
       url: "/v1/credits/cred_partial",
     });
-    expect(detail.json().data.creditsIssued).toBe(60);
+    expect(detail.json().data.creditsIssued).toBe(100);
     expect(detail.json().data.isRetired).toBe(false);
   });
 
-  it("fully retires credit when amount equals balance", async () => {
+  it("does not mark a credit retired without an on-chain retirement flow", async () => {
     seedCredit("cred_full", { creditsIssued: 50, currentOwnerWallet: WALLET_A });
     const token = signToken(app, { address: WALLET_A });
     const res = await app.inject({
@@ -440,15 +524,14 @@ describe("credits routes", () => {
       headers: { authorization: `Bearer ${token}` },
       payload: { amount: 50, reason: "Full offset" },
     });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().data.certificateUrl).toContain("cred_full");
+    expect(res.statusCode).toBe(503);
 
     const detail = await app.inject({
       method: "GET",
       url: "/v1/credits/cred_full",
     });
-    expect(detail.json().data.isRetired).toBe(true);
-    expect(detail.json().data.verificationStatus).toBe("retired");
+    expect(detail.json().data.isRetired).toBe(false);
+    expect(detail.json().data.verificationStatus).toBe("minted");
   });
 
   it("returns 400 when retire amount exceeds available balance", async () => {

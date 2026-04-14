@@ -36,7 +36,10 @@ async function main() {
   // Deploy only GaslessMarketplace (needed still)
   console.log("Deploying GaslessMarketplace (UUPS Proxy)...");
 
-  const trustedForwarder = deployer.address; // For testnet
+  const TerraQuraForwarder = await ethers.getContractFactory("TerraQuraForwarder");
+  const forwarder = await TerraQuraForwarder.deploy();
+  await forwarder.waitForDeployment();
+  const trustedForwarder = await forwarder.getAddress();
 
   const GaslessMarketplace = await ethers.getContractFactory("GaslessMarketplace");
   const gaslessMarketplace = await upgrades.deployProxy(
@@ -50,12 +53,15 @@ async function main() {
 
   console.log("   GaslessMarketplace Proxy:", gaslessMarketplaceAddress);
   console.log("   GaslessMarketplace Impl:", gaslessMarketplaceImpl);
+  console.log("   TerraQuraForwarder:", trustedForwarder);
 
   // Configure CircuitBreaker to monitor GaslessMarketplace
   console.log("\nConfiguring CircuitBreaker...");
   const circuitBreaker = await ethers.getContractAt("CircuitBreaker", EXISTING_CONTRACTS.circuitBreaker.proxy);
   await circuitBreaker.registerContract(gaslessMarketplaceAddress);
+  await gaslessMarketplace.setCircuitBreaker(EXISTING_CONTRACTS.circuitBreaker.proxy);
   console.log("   Registered GaslessMarketplace with CircuitBreaker");
+  console.log("   Linked GaslessMarketplace to CircuitBreaker");
 
   console.log("\n========================================");
   console.log("ENTERPRISE DEPLOYMENT COMPLETE");
@@ -76,6 +82,7 @@ async function main() {
   console.log("  CircuitBreaker:", EXISTING_CONTRACTS.circuitBreaker.proxy);
   console.log("----------------------------------------");
   console.log("GASLESS:");
+  console.log("  TerraQuraForwarder:", trustedForwarder);
   console.log("  GaslessMarketplace:", gaslessMarketplaceAddress);
   console.log("========================================");
 

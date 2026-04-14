@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
+import jwt from "@fastify/jwt";
 
 // ---------------------------------------------------------------------------
 // Mock relayer service before importing the route
@@ -36,12 +37,27 @@ import { gaslessRoutes } from "./gasless.js";
 
 const ADDRESS = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const TARGET = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+const JWT_SECRET = "gasless-test-secret-that-is-at-least-32-characters";
 
 async function buildApp() {
   const app = Fastify({ logger: false });
+  await app.register(jwt, { secret: JWT_SECRET });
   await app.register(gaslessRoutes, { prefix: "/v1/gasless" });
   await app.ready();
   return app;
+}
+
+function signToken(
+  app: Awaited<ReturnType<typeof buildApp>>,
+  overrides: { address?: string; userType?: string } = {},
+) {
+  return app.jwt.sign({
+    sub: overrides.address ?? ADDRESS,
+    address: overrides.address ?? ADDRESS,
+    chainId: 78432,
+    userType: overrides.userType ?? "operator",
+    kycStatus: "approved",
+  });
 }
 
 describe("gasless routes", () => {
@@ -69,10 +85,12 @@ describe("gasless routes", () => {
 
   it("returns nonce for a valid address", async () => {
     mockGetNonce.mockResolvedValue(BigInt(42));
+    const token = signToken(app);
 
     const res = await app.inject({
       method: "GET",
       url: `/v1/gasless/nonce/${ADDRESS}`,
+      headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().data.nonce).toBe("42");
@@ -81,10 +99,12 @@ describe("gasless routes", () => {
   it("returns 503 when relayer is not configured (nonce)", async () => {
     mockRelayerInstance = null;
     const disabledApp = await buildApp();
+    const token = signToken(disabledApp);
 
     const res = await disabledApp.inject({
       method: "GET",
       url: `/v1/gasless/nonce/${ADDRESS}`,
+      headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(503);
     expect(res.json().error.code).toBe("GASLESS_NOT_CONFIGURED");
@@ -92,10 +112,12 @@ describe("gasless routes", () => {
 
   it("returns 500 when nonce fetch throws", async () => {
     mockGetNonce.mockRejectedValue(new Error("RPC error"));
+    const token = signToken(app);
 
     const res = await app.inject({
       method: "GET",
       url: `/v1/gasless/nonce/${ADDRESS}`,
+      headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(500);
     expect(res.json().error.code).toBe("NONCE_FETCH_FAILED");
@@ -115,8 +137,8 @@ describe("gasless routes", () => {
         data: "0xabcdef",
       },
       domain: {
-        name: "TerraQuraForwarder",
-        version: "1",
+        name: "MinimalForwarder",
+        version: "0.0.1",
         chainId: 78432,
         verifyingContract: TARGET,
       },
@@ -127,10 +149,12 @@ describe("gasless routes", () => {
         { name: "to", type: "address" },
       ],
     });
+    const token = signToken(app);
 
     const res = await app.inject({
       method: "POST",
       url: "/v1/gasless/build-request",
+      headers: { authorization: `Bearer ${token}` },
       payload: {
         from: ADDRESS,
         to: TARGET,
@@ -160,10 +184,12 @@ describe("gasless routes", () => {
       domain: {},
     });
     mockGetSigningTypes.mockReturnValue({});
+    const token = signToken(app);
 
     await app.inject({
       method: "POST",
       url: "/v1/gasless/build-request",
+      headers: { authorization: `Bearer ${token}` },
       payload: {
         from: ADDRESS,
         to: TARGET,
@@ -183,10 +209,12 @@ describe("gasless routes", () => {
   it("returns 503 when relayer is not configured (build-request)", async () => {
     mockRelayerInstance = null;
     const disabledApp = await buildApp();
+    const token = signToken(disabledApp);
 
     const res = await disabledApp.inject({
       method: "POST",
       url: "/v1/gasless/build-request",
+      headers: { authorization: `Bearer ${token}` },
       payload: { from: ADDRESS, to: TARGET, data: "0x" },
     });
     expect(res.statusCode).toBe(503);
@@ -194,10 +222,12 @@ describe("gasless routes", () => {
 
   it("returns 500 when build-request throws", async () => {
     mockBuildForwardRequest.mockRejectedValue(new Error("Contract call failed"));
+    const token = signToken(app);
 
     const res = await app.inject({
       method: "POST",
       url: "/v1/gasless/build-request",
+      headers: { authorization: `Bearer ${token}` },
       payload: { from: ADDRESS, to: TARGET, data: "0x" },
     });
     expect(res.statusCode).toBe(500);
@@ -211,10 +241,12 @@ describe("gasless routes", () => {
       success: true,
       txHash: "0x" + "a".repeat(64),
     });
+    const token = signToken(app);
 
     const res = await app.inject({
       method: "POST",
       url: "/v1/gasless/relay",
+      headers: { authorization: `Bearer ${token}` },
       payload: {
         request: {
           from: ADDRESS,
@@ -237,10 +269,12 @@ describe("gasless routes", () => {
       success: false,
       error: "Invalid signature or request",
     });
+    const token = signToken(app);
 
     const res = await app.inject({
       method: "POST",
       url: "/v1/gasless/relay",
+      headers: { authorization: `Bearer ${token}` },
       payload: {
         request: {
           from: ADDRESS,
@@ -261,10 +295,12 @@ describe("gasless routes", () => {
   it("returns 503 when relayer is not configured (relay)", async () => {
     mockRelayerInstance = null;
     const disabledApp = await buildApp();
+    const token = signToken(disabledApp);
 
     const res = await disabledApp.inject({
       method: "POST",
       url: "/v1/gasless/relay",
+      headers: { authorization: `Bearer ${token}` },
       payload: {
         request: {
           from: ADDRESS,
@@ -290,10 +326,12 @@ describe("gasless routes", () => {
 
     // Rebuild app so env is picked up at route registration time
     const defenderApp = await buildApp();
+    const token = signToken(defenderApp);
 
     const res = await defenderApp.inject({
       method: "POST",
       url: "/v1/gasless/relay",
+      headers: { authorization: `Bearer ${token}` },
       payload: {
         request: {
           from: ADDRESS,
@@ -316,10 +354,12 @@ describe("gasless routes", () => {
 
   it("returns 500 when relay throws an unexpected error", async () => {
     mockRelay.mockRejectedValue(new Error("Unexpected RPC failure"));
+    const token = signToken(app);
 
     const res = await app.inject({
       method: "POST",
       url: "/v1/gasless/relay",
+      headers: { authorization: `Bearer ${token}` },
       payload: {
         request: {
           from: ADDRESS,
@@ -342,10 +382,12 @@ describe("gasless routes", () => {
   it("returns relayer status when enabled", async () => {
     process.env.FORWARDER_CONTRACT = "0x1234567890abcdef1234567890abcdef12345678";
     process.env.CHAIN_ID = "78432";
+    const token = signToken(app);
 
     const res = await app.inject({
       method: "GET",
       url: "/v1/gasless/status",
+      headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(200);
     const data = res.json().data;
@@ -356,12 +398,43 @@ describe("gasless routes", () => {
   it("returns enabled=false when relayer is null", async () => {
     mockRelayerInstance = null;
     const disabledApp = await buildApp();
+    const token = signToken(disabledApp);
 
     const res = await disabledApp.inject({
       method: "GET",
       url: "/v1/gasless/status",
+      headers: { authorization: `Bearer ${token}` },
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().data.enabled).toBe(false);
+  });
+
+  it("returns 403 when the requested nonce belongs to another wallet", async () => {
+    const token = signToken(app, { address: TARGET });
+
+    const res = await app.inject({
+      method: "GET",
+      url: `/v1/gasless/nonce/${ADDRESS}`,
+      headers: { authorization: `Bearer ${token}` },
+    });
+
+    expect(res.statusCode).toBe(403);
+  });
+
+  it("returns 403 when build-request.from does not match the authenticated wallet", async () => {
+    const token = signToken(app, { address: TARGET });
+
+    const res = await app.inject({
+      method: "POST",
+      url: "/v1/gasless/build-request",
+      headers: { authorization: `Bearer ${token}` },
+      payload: {
+        from: ADDRESS,
+        to: TARGET,
+        data: "0x",
+      },
+    });
+
+    expect(res.statusCode).toBe(403);
   });
 });

@@ -1,8 +1,10 @@
 // TerraQura Gasless Transaction Routes
 // API endpoints for meta-transaction relay
 
-import { FastifyInstance } from "fastify";
+import { FastifyInstance, FastifyReply } from "fastify";
 
+import { getAuthenticatedAddress, isAdmin } from "../../lib/auth-context.js";
+import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
 import { getGaslessRelayer } from "../../services/gasless/relayer.service.js";
 
 interface BuildRequestBody {
@@ -23,6 +25,38 @@ interface RelayBody {
     data: string;
   };
   signature: string;
+}
+
+function ensureAuthorizedAddress(
+  request: { user?: unknown },
+  reply: FastifyReply,
+  targetAddress: string,
+): string | null {
+  const callerAddress = getAuthenticatedAddress(request);
+  if (!callerAddress) {
+    reply.status(401).send({
+      success: false,
+      error: {
+        code: "UNAUTHORIZED",
+        message: "Missing authenticated wallet",
+      },
+    });
+    return null;
+  }
+
+  const normalizedTarget = targetAddress.toLowerCase();
+  if (!isAdmin(request) && normalizedTarget !== callerAddress) {
+    reply.status(403).send({
+      success: false,
+      error: {
+        code: "FORBIDDEN",
+        message: "Gasless actions are limited to the authenticated wallet",
+      },
+    });
+    return null;
+  }
+
+  return normalizedTarget;
 }
 
 export async function gaslessRoutes(fastify: FastifyInstance) {
@@ -58,10 +92,68 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
               },
             },
           },
+          401: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
+          403: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
+          500: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
+          503: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
+      if (!ensureAuthorizedAddress(request, reply, request.params.address)) {
+        return;
+      }
+
       if (!relayer) {
         return reply.status(503).send({
           success: false,
@@ -140,10 +232,68 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
               },
             },
           },
+          401: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
+          403: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
+          500: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
+          503: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
+      if (!ensureAuthorizedAddress(request, reply, request.body.from)) {
+        return;
+      }
+
       if (!relayer) {
         return reply.status(503).send({
           success: false,
@@ -236,10 +386,81 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
               },
             },
           },
+          400: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
+          401: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
+          403: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
+          500: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
+          503: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
+      if (!ensureAuthorizedAddress(request, reply, request.body.request.from)) {
+        return;
+      }
+
       if (!relayer) {
         return reply.status(503).send({
           success: false,
@@ -323,8 +544,23 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
               },
             },
           },
+          401: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
         },
       },
+      config: bearerAuthRateLimit,
+      preHandler: verifyBearerAuth,
     },
     async (_request, _reply) => {
       return {

@@ -32,6 +32,9 @@ async function main() {
   // Get contract instances
   const accessControl = await ethers.getContractAt("TerraQuraAccessControl", CONTRACTS.accessControl);
   const circuitBreaker = await ethers.getContractAt("CircuitBreaker", CONTRACTS.circuitBreaker);
+  const verificationEngine = await ethers.getContractAt("VerificationEngine", CONTRACTS.verificationEngine);
+  const carbonCredit = await ethers.getContractAt("CarbonCredit", CONTRACTS.carbonCredit);
+  const carbonMarketplace = await ethers.getContractAt("CarbonMarketplace", CONTRACTS.carbonMarketplace);
 
   // ============================================
   // 1. Configure CircuitBreaker
@@ -51,9 +54,8 @@ async function main() {
 
   for (const contract of contractsToMonitor) {
     try {
-      const contractStatus = await circuitBreaker.getContractStatus(contract.address);
-      if (contractStatus.level === 0n) {
-        // Not registered yet
+      const alreadyRegistered = await circuitBreaker.isContractRegistered(contract.address);
+      if (!alreadyRegistered) {
         const tx = await circuitBreaker.registerContract(contract.address);
         await tx.wait();
         console.log(`   ✅ Registered ${contract.name}`);
@@ -62,6 +64,23 @@ async function main() {
       }
     } catch (error: any) {
       console.log(`   ⚠️  ${contract.name}: ${error.message}`);
+    }
+  }
+
+  const breakerBindings = [
+    { name: "VerificationEngine", contract: verificationEngine },
+    { name: "CarbonCredit", contract: carbonCredit },
+    { name: "CarbonMarketplace", contract: carbonMarketplace },
+  ];
+
+  for (const binding of breakerBindings) {
+    const currentBreaker = await binding.contract.circuitBreaker();
+    if (currentBreaker.toLowerCase() !== CONTRACTS.circuitBreaker.toLowerCase()) {
+      const tx = await binding.contract.setCircuitBreaker(CONTRACTS.circuitBreaker);
+      await tx.wait();
+      console.log(`   ✅ Linked ${binding.name} to CircuitBreaker`);
+    } else {
+      console.log(`   ℹ️  ${binding.name} already linked to CircuitBreaker`);
     }
   }
 
