@@ -57,5 +57,6 @@ bin/
 .DS_Store
 Thumbs.db
 
-# Claude
-.claude/
+# Local hidden workspaces
+[.]*/
+*.tsbuildinfo

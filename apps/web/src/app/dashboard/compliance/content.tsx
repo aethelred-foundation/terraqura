@@ -191,10 +191,10 @@ interface AuditEntry {
 const AUDIT_ENTRIES: AuditEntry[] = [
   { contract: "CarbonCredit (ERC-1155)", auditor: "Halborn Security", auditDate: "2025-11-15", findings: { critical: 0, high: 0, medium: 1, low: 3 }, status: "Passed" },
   { contract: "CarbonMarketplace", auditor: "OpenZeppelin", auditDate: "2025-12-02", findings: { critical: 0, high: 0, medium: 0, low: 2 }, status: "Passed" },
-  { contract: "VerificationEngine", auditor: "Trail of Bits", auditDate: "2025-10-28", findings: { critical: 0, high: 1, medium: 2, low: 1 }, status: "Passed" },
+  { contract: "VerificationEngine", auditor: "Independent Security Review", auditDate: "2025-10-28", findings: { critical: 0, high: 1, medium: 2, low: 1 }, status: "Passed" },
   { contract: "AccessControl", auditor: "Halborn Security", auditDate: "2025-11-20", findings: { critical: 0, high: 0, medium: 0, low: 1 }, status: "Passed" },
   { contract: "CircuitBreaker", auditor: "OpenZeppelin", auditDate: "2025-12-10", findings: { critical: 0, high: 0, medium: 1, low: 0 }, status: "Passed" },
-  { contract: "MultisigWallet", auditor: "Trail of Bits", auditDate: "2025-11-05", findings: { critical: 0, high: 0, medium: 0, low: 2 }, status: "Passed" },
+  { contract: "MultisigWallet", auditor: "Independent Security Review", auditDate: "2025-11-05", findings: { critical: 0, high: 0, medium: 0, low: 2 }, status: "Passed" },
   { contract: "TimelockController", auditor: "Halborn Security", auditDate: "2025-12-15", findings: { critical: 0, high: 0, medium: 0, low: 0 }, status: "Passed" },
   { contract: "GaslessMarketplace", auditor: "OpenZeppelin", auditDate: "2026-01-08", findings: { critical: 0, high: 0, medium: 2, low: 3 }, status: "Remediation" },
 ];
