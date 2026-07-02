@@ -66,9 +66,12 @@ export interface ContractAddresses {
   readonly timelock: string;
   readonly circuitBreaker: string;
   readonly riskOracle: string;
+  readonly sealProofOfPhysics: string;
 }
 
-function toSdkContractAddresses(addresses: ManifestContractAddresses): ContractAddresses {
+function toSdkContractAddresses(
+  addresses: ManifestContractAddresses,
+): ContractAddresses {
   return {
     accessControl: addresses.accessControl,
     verificationEngine: addresses.verificationEngine,
@@ -79,12 +82,17 @@ function toSdkContractAddresses(addresses: ManifestContractAddresses): ContractA
     timelock: addresses.timelock,
     circuitBreaker: addresses.circuitBreaker,
     riskOracle: addresses.riskOracle,
+    sealProofOfPhysics: addresses.sealProofOfPhysics,
   };
 }
 
 export const CONTRACT_ADDRESSES: Record<NetworkName, ContractAddresses> = {
-  "aethelred-testnet": toSdkContractAddresses(DEPLOYMENTS.aethelredTestnetPending.contracts),
-  aethelred: toSdkContractAddresses(DEPLOYMENTS.aethelredMainnetPending.contracts),
+  "aethelred-testnet": toSdkContractAddresses(
+    DEPLOYMENTS.aethelredTestnetPending.contracts,
+  ),
+  aethelred: toSdkContractAddresses(
+    DEPLOYMENTS.aethelredMainnetPending.contracts,
+  ),
 } as const;
 
 // ============================================
@@ -128,8 +136,10 @@ export const VERIFICATION_THRESHOLDS = {
 // ============================================
 
 export const SUBGRAPH_URLS: Record<NetworkName, string> = {
-  "aethelred-testnet": "https://api.studio.thegraph.com/query/terraqura/carbon-credits-testnet/version/latest",
-  aethelred: "https://api.studio.thegraph.com/query/terraqura/carbon-credits/version/latest",
+  "aethelred-testnet":
+    "https://api.studio.thegraph.com/query/terraqura/carbon-credits-testnet/version/latest",
+  aethelred:
+    "https://api.studio.thegraph.com/query/terraqura/carbon-credits/version/latest",
 } as const;
 
 // ============================================
@@ -137,15 +147,22 @@ export const SUBGRAPH_URLS: Record<NetworkName, string> = {
 // ============================================
 
 export const ROLES = {
-  DEFAULT_ADMIN: "0x0000000000000000000000000000000000000000000000000000000000000000",
+  DEFAULT_ADMIN:
+    "0x0000000000000000000000000000000000000000000000000000000000000000",
   ADMIN: "0xa49807205ce4d355092ef5a8a18f56e8913cf4a201fbe287825b095693c21775",
-  OPERATOR: "0x97667070c54ef182b0f5858b034beac1b6f3089aa2d3188bb1e8929f4fa9b929",
-  VERIFIER: "0x0ce23c3e399818cfee81a7ab0880f714e53d7672b08df0fa62f2a3b3c24ea89a",
+  OPERATOR:
+    "0x97667070c54ef182b0f5858b034beac1b6f3089aa2d3188bb1e8929f4fa9b929",
+  VERIFIER:
+    "0x0ce23c3e399818cfee81a7ab0880f714e53d7672b08df0fa62f2a3b3c24ea89a",
   MINTER: "0x9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a6",
-  COMPLIANCE: "0x9f95a5498d7e03a7c2c9e8a1ee9fdf21e54a6e31c0a2d1c0b8e9c0d9f8a7b6c5",
-  AUDITOR: "0x8e8c9a8d7b6a5c4f3e2d1c0b9a8f7e6d5c4b3a2918f7e6d5c4b3a2918f7e6d5c4",
-  TREASURY: "0x3496e2e73c4d42b75d702e60d9e48102720b8691234415f8349e50e3e419d9d5",
-  UPGRADER: "0x189ab7a9244df0848122154315af71fe140f3db0fe014031783b0946b8c9d2e3",
+  COMPLIANCE:
+    "0x9f95a5498d7e03a7c2c9e8a1ee9fdf21e54a6e31c0a2d1c0b8e9c0d9f8a7b6c5",
+  AUDITOR:
+    "0x8e8c9a8d7b6a5c4f3e2d1c0b9a8f7e6d5c4b3a2918f7e6d5c4b3a2918f7e6d5c4",
+  TREASURY:
+    "0x3496e2e73c4d42b75d702e60d9e48102720b8691234415f8349e50e3e419d9d5",
+  UPGRADER:
+    "0x189ab7a9244df0848122154315af71fe140f3db0fe014031783b0946b8c9d2e3",
   PAUSER: "0x65d7a28e3265b37a6474929f336521b332c1681b933f6cb9f3376673440d862a",
 } as const;
 
@@ -842,6 +859,103 @@ export const VerificationEngineABI = [
       { name: "phase", type: "string", indexed: false },
       { name: "passed", type: "bool", indexed: false },
       { name: "reason", type: "string", indexed: false },
+    ],
+  },
+] as const;
+
+/**
+ * SealProofOfPhysics — consensus-anchored MRV registry (top assurance tier).
+ * Claims anchored to Aethelred Digital Seals via the ISeal precompile.
+ */
+export const SealProofOfPhysicsABI = [
+  // ---- View Functions ----
+  {
+    name: "isAnchored",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "dacUnitId", type: "bytes32" },
+      { name: "sourceDataHash", type: "bytes32" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
+  {
+    name: "requireAnchored",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "dacUnitId", type: "bytes32" },
+      { name: "sourceDataHash", type: "bytes32" },
+    ],
+    outputs: [],
+  },
+  {
+    name: "getAnchor",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "dacUnitId", type: "bytes32" },
+      { name: "sourceDataHash", type: "bytes32" },
+    ],
+    outputs: [
+      {
+        type: "tuple",
+        components: [
+          { name: "sealId", type: "string" },
+          { name: "anchoredAt", type: "uint64" },
+          { name: "exists", type: "bool" },
+          { name: "revoked", type: "bool" },
+        ],
+      },
+    ],
+  },
+  {
+    name: "expectedPurpose",
+    type: "function",
+    stateMutability: "pure",
+    inputs: [
+      { name: "dacUnitId", type: "bytes32" },
+      { name: "sourceDataHash", type: "bytes32" },
+    ],
+    outputs: [{ type: "string" }],
+  },
+  {
+    name: "sealUsed",
+    type: "function",
+    stateMutability: "view",
+    inputs: [{ name: "sealId", type: "string" }],
+    outputs: [{ type: "bool" }],
+  },
+  // ---- Write Functions ----
+  {
+    name: "anchor",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "dacUnitId", type: "bytes32" },
+      { name: "sourceDataHash", type: "bytes32" },
+      { name: "jobId", type: "string" },
+    ],
+    outputs: [],
+  },
+  // ---- Events ----
+  {
+    name: "ClaimAnchored",
+    type: "event",
+    inputs: [
+      { name: "dacUnitId", type: "bytes32", indexed: true },
+      { name: "sourceDataHash", type: "bytes32", indexed: true },
+      { name: "sealId", type: "string", indexed: false },
+      { name: "jobId", type: "string", indexed: false },
+    ],
+  },
+  {
+    name: "AnchorRevoked",
+    type: "event",
+    inputs: [
+      { name: "dacUnitId", type: "bytes32", indexed: true },
+      { name: "sourceDataHash", type: "bytes32", indexed: true },
+      { name: "by", type: "address", indexed: true },
     ],
   },
 ] as const;

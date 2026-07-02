@@ -20,6 +20,9 @@ const (
 	SigOracleDataSubmitted   = "OracleDataSubmitted(bytes32,uint256,uint256)"
 	SigProposalCreated       = "ProposalCreated(uint256,address)"
 	SigProposalExecuted      = "ProposalExecuted(uint256)"
+	// Consensus-anchored MRV (SealProofOfPhysics).
+	SigClaimAnchored = "ClaimAnchored(bytes32,bytes32,string,string)"
+	SigAnchorRevoked = "AnchorRevoked(bytes32,bytes32,address)"
 )
 
 // Pre-computed keccak256 topic hashes.
@@ -33,6 +36,8 @@ var (
 	TopicOracleDataSubmitted   = EventSignatureHash(SigOracleDataSubmitted)
 	TopicProposalCreated       = EventSignatureHash(SigProposalCreated)
 	TopicProposalExecuted      = EventSignatureHash(SigProposalExecuted)
+	TopicClaimAnchored         = EventSignatureHash(SigClaimAnchored)
+	TopicAnchorRevoked         = EventSignatureHash(SigAnchorRevoked)
 )
 
 // topicToType maps topic0 hashes to their EventType.
@@ -46,6 +51,8 @@ var topicToType = map[common.Hash]store.EventType{
 	TopicOracleDataSubmitted:   store.EventOracleDataSubmitted,
 	TopicProposalCreated:       store.EventProposalCreated,
 	TopicProposalExecuted:      store.EventProposalExecuted,
+	TopicClaimAnchored:         store.EventClaimAnchored,
+	TopicAnchorRevoked:         store.EventAnchorRevoked,
 }
 
 // EventTypeFromTopic returns the EventType for a given topic0 hash.
@@ -112,6 +119,14 @@ func DecodeEvent(log types.Log) (store.Event, error) {
 	case store.EventProposalExecuted:
 		if err := decodeProposalExecuted(log, &ev); err != nil {
 			return ev, fmt.Errorf("decoding ProposalExecuted: %w", err)
+		}
+	case store.EventClaimAnchored:
+		if err := decodeClaimAnchored(log, &ev); err != nil {
+			return ev, fmt.Errorf("decoding ClaimAnchored: %w", err)
+		}
+	case store.EventAnchorRevoked:
+		if err := decodeAnchorRevoked(log, &ev); err != nil {
+			return ev, fmt.Errorf("decoding AnchorRevoked: %w", err)
 		}
 	case store.EventUnknown:
 		ev.Data["raw_topics"] = fmt.Sprintf("%v", log.Topics)
@@ -316,6 +331,48 @@ func decodeProposalExecuted(log types.Log, ev *store.Event) error {
 
 	proposalID := log.Topics[1].Big()
 	ev.Data["proposal_id"] = Uint256ToString(proposalID)
+
+	return nil
+}
+
+// ClaimAnchored(bytes32 indexed dacUnitId, bytes32 indexed sourceDataHash, string sealId, string jobId)
+//
+// The consensus-anchored MRV event: emitted when a carbon claim is bound to a
+// Digital Seal via SealProofOfPhysics. Both dynamic strings live in the data
+// section (two head words of offsets, then the two payloads).
+func decodeClaimAnchored(log types.Log, ev *store.Event) error {
+	if len(log.Topics) < 3 {
+		return fmt.Errorf("expected 3 topics, got %d", len(log.Topics))
+	}
+
+	ev.Data["dac_unit_id"] = DecodeBytes32(log.Topics[1])
+	ev.Data["source_data_hash"] = DecodeBytes32(log.Topics[2])
+
+	sealID, err := DecodeDynamicString(log.Data, 0)
+	if err != nil {
+		return fmt.Errorf("decoding seal_id: %w", err)
+	}
+	jobID, err := DecodeDynamicString(log.Data, 1)
+	if err != nil {
+		return fmt.Errorf("decoding job_id: %w", err)
+	}
+	ev.Data["seal_id"] = sealID
+	ev.Data["job_id"] = jobID
+
+	return nil
+}
+
+// AnchorRevoked(bytes32 indexed dacUnitId, bytes32 indexed sourceDataHash, address indexed by)
+func decodeAnchorRevoked(log types.Log, ev *store.Event) error {
+	if len(log.Topics) < 4 {
+		return fmt.Errorf("expected 4 topics, got %d", len(log.Topics))
+	}
+
+	by := DecodeAddress(log.Topics[3])
+	ev.Data["dac_unit_id"] = DecodeBytes32(log.Topics[1])
+	ev.Data["source_data_hash"] = DecodeBytes32(log.Topics[2])
+	ev.Data["by"] = by.Hex()
+	ev.Addresses = append(ev.Addresses, by.Hex())
 
 	return nil
 }

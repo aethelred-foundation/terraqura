@@ -46,6 +46,7 @@ import { InsuranceModule } from "./modules/insurance.js";
 import { MarketModule } from "./modules/market.js";
 import { MRVModule } from "./modules/mrv.js";
 import { OffsetModule } from "./modules/offset.js";
+import { ProofOfPhysicsModule } from "./modules/proof-of-physics.js";
 import { RiskModule } from "./modules/risk.js";
 import { SovereignModule } from "./modules/sovereign.js";
 import { createTelemetry, type ITelemetry } from "./telemetry.js";
@@ -90,6 +91,7 @@ export class TerraQuraClient {
   private _badge: BadgeModule | null = null;
   private _compliance: ComplianceModule | null = null;
   private _risk: RiskModule | null = null;
+  private _proofOfPhysics: ProofOfPhysicsModule | null = null;
   private _insurance: InsuranceModule | null = null;
   private _claims: ClaimsModule | null = null;
   private _sovereign: SovereignModule | null = null;
@@ -143,7 +145,10 @@ export class TerraQuraClient {
     const gasConfig: Required<GasConfig> = {
       ...DEFAULT_GAS_CONFIG,
       ...(config.gas || {}),
-      gasLimits: { ...DEFAULT_GAS_CONFIG.gasLimits, ...(config.gas?.gasLimits || {}) },
+      gasLimits: {
+        ...DEFAULT_GAS_CONFIG.gasLimits,
+        ...(config.gas?.gasLimits || {}),
+      },
     };
     this._gasManager = new GasManager(this._provider, gasConfig);
 
@@ -175,6 +180,7 @@ export class TerraQuraClient {
         gaslessMarketplace: addresses.gaslessMarketplace,
         circuitBreaker: addresses.circuitBreaker,
         riskOracle: config.riskOracleAddress || addresses.riskOracle,
+        sealProofOfPhysics: addresses.sealProofOfPhysics,
       },
       subgraphUrl: config.subgraphUrl || SUBGRAPH_URLS[config.network] || "",
       gas: gasConfig,
@@ -387,12 +393,27 @@ export class TerraQuraClient {
    */
   get risk(): RiskModule {
     if (!this._risk) {
-      this._risk = new RiskModule(
-        this._config,
-        this._telemetry,
-      );
+      this._risk = new RiskModule(this._config, this._telemetry);
     }
     return this._risk;
+  }
+
+  /**
+   * Proof-of-Physics — consensus-anchored MRV (top assurance tier).
+   *
+   * Read and write SealProofOfPhysics: check whether a claim carries a live
+   * Digital-Seal anchor, resolve the required PoUW purpose, and anchor a claim
+   * once the validator quorum has minted its seal.
+   */
+  get proofOfPhysics(): ProofOfPhysicsModule {
+    if (!this._proofOfPhysics) {
+      this._proofOfPhysics = new ProofOfPhysicsModule(
+        this._config,
+        this._telemetry,
+        this._gasManager,
+      );
+    }
+    return this._proofOfPhysics;
   }
 
   /**
@@ -414,10 +435,7 @@ export class TerraQuraClient {
    */
   get insurance(): InsuranceModule {
     if (!this._insurance) {
-      this._insurance = new InsuranceModule(
-        this._telemetry,
-        this.risk,
-      );
+      this._insurance = new InsuranceModule(this._telemetry, this.risk);
     }
     return this._insurance;
   }
@@ -548,10 +566,7 @@ export class TerraQuraClient {
         );
 
         const getStatusFn = cb.getFunction("getStatus");
-        const result = await withRetry(
-          () => getStatusFn(),
-          this._config.retry,
-        );
+        const result = await withRetry(() => getStatusFn(), this._config.retry);
 
         return {
           isPaused: Boolean(result[0]),
@@ -568,27 +583,25 @@ export class TerraQuraClient {
    * @param contractName - Contract name key (e.g., "carbonCredit", "carbonMarketplace")
    * @returns Whether operations are currently allowed
    */
-  async isOperationAllowed(contractName: keyof typeof CONTRACT_ADDRESSES["aethelred-testnet"]): Promise<boolean> {
-    return this._telemetry.wrapAsync(
-      "client.isOperationAllowed",
-      async () => {
-        const address =
-          this._config.addresses[contractName as keyof InternalConfig["addresses"]];
-        if (!address) return false;
+  async isOperationAllowed(
+    contractName: keyof (typeof CONTRACT_ADDRESSES)["aethelred-testnet"],
+  ): Promise<boolean> {
+    return this._telemetry.wrapAsync("client.isOperationAllowed", async () => {
+      const address =
+        this._config.addresses[
+          contractName as keyof InternalConfig["addresses"]
+        ];
+      if (!address) return false;
 
-        const cb = new ethers.Contract(
-          this._config.addresses.circuitBreaker,
-          CircuitBreakerABI,
-          this._provider,
-        );
+      const cb = new ethers.Contract(
+        this._config.addresses.circuitBreaker,
+        CircuitBreakerABI,
+        this._provider,
+      );
 
-        const isAllowedFn = cb.getFunction("isOperationAllowed");
-        return withRetry(
-          () => isAllowedFn(address),
-          this._config.retry,
-        );
-      },
-    );
+      const isAllowedFn = cb.getFunction("isOperationAllowed");
+      return withRetry(() => isAllowedFn(address), this._config.retry);
+    });
   }
 
   // ============================================

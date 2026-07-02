@@ -198,3 +198,97 @@ func TestDecodeEvent_EventIDFormat(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, txHash.Hex()+"-5", ev.ID)
 }
+
+func TestDecodeEvent_ClaimAnchored(t *testing.T) {
+	dacUnit := common.HexToHash("0x1111111111111111111111111111111111111111111111111111111111111111")
+	sourceHash := common.HexToHash("0x2222222222222222222222222222222222222222222222222222222222222222")
+
+	// data = head(offset sealId, offset jobId) + sealId(len,payload) + jobId(len,payload)
+	offSeal := common.LeftPadBytes(big.NewInt(64).Bytes(), 32)     // 2 head words → 64
+	sealID := "abc123"
+	jobID := "job-mrv-001"
+	sealLen := common.LeftPadBytes(big.NewInt(int64(len(sealID))).Bytes(), 32)
+	sealData := common.RightPadBytes([]byte(sealID), 32)
+	// jobId offset = 64 (head) + 32 (sealLen) + 32 (sealData word) = 128
+	offJob := common.LeftPadBytes(big.NewInt(128).Bytes(), 32)
+	jobLen := common.LeftPadBytes(big.NewInt(int64(len(jobID))).Bytes(), 32)
+	jobData := common.RightPadBytes([]byte(jobID), 32)
+
+	data := append([]byte{}, offSeal...)
+	data = append(data, offJob...)
+	data = append(data, sealLen...)
+	data = append(data, sealData...)
+	data = append(data, jobLen...)
+	data = append(data, jobData...)
+
+	log := types.Log{
+		BlockNumber: 30,
+		TxHash:      common.HexToHash("0xccc"),
+		Index:       2,
+		Topics:      []common.Hash{TopicClaimAnchored, dacUnit, sourceHash},
+		Data:        data,
+	}
+
+	ev, err := DecodeEvent(log)
+	require.NoError(t, err)
+	assert.Equal(t, store.EventClaimAnchored, ev.Type)
+	assert.Equal(t, dacUnit.Hex(), ev.Data["dac_unit_id"])
+	assert.Equal(t, sourceHash.Hex(), ev.Data["source_data_hash"])
+	assert.Equal(t, sealID, ev.Data["seal_id"])
+	assert.Equal(t, jobID, ev.Data["job_id"])
+}
+
+func TestDecodeEvent_ClaimAnchored_TooFewTopics(t *testing.T) {
+	log := types.Log{
+		BlockNumber: 30,
+		TxHash:      common.HexToHash("0xccd"),
+		Index:       0,
+		Topics:      []common.Hash{TopicClaimAnchored, common.BigToHash(big.NewInt(1))},
+	}
+	_, err := DecodeEvent(log)
+	assert.Error(t, err)
+}
+
+func TestDecodeEvent_AnchorRevoked(t *testing.T) {
+	dacUnit := common.HexToHash("0x1111111111111111111111111111111111111111111111111111111111111111")
+	sourceHash := common.HexToHash("0x2222222222222222222222222222222222222222222222222222222222222222")
+	by := common.HexToAddress("0x3333333333333333333333333333333333333333")
+
+	log := types.Log{
+		BlockNumber: 31,
+		TxHash:      common.HexToHash("0xcce"),
+		Index:       0,
+		Topics: []common.Hash{
+			TopicAnchorRevoked,
+			dacUnit,
+			sourceHash,
+			common.BytesToHash(common.LeftPadBytes(by.Bytes(), 32)),
+		},
+	}
+
+	ev, err := DecodeEvent(log)
+	require.NoError(t, err)
+	assert.Equal(t, store.EventAnchorRevoked, ev.Type)
+	assert.Equal(t, dacUnit.Hex(), ev.Data["dac_unit_id"])
+	assert.Equal(t, sourceHash.Hex(), ev.Data["source_data_hash"])
+	assert.Equal(t, by.Hex(), ev.Data["by"])
+	assert.Contains(t, ev.Addresses, by.Hex())
+}
+
+func TestDecodeEvent_AnchorRevoked_TooFewTopics(t *testing.T) {
+	log := types.Log{
+		BlockNumber: 31,
+		TxHash:      common.HexToHash("0xccf"),
+		Index:       0,
+		Topics:      []common.Hash{TopicAnchorRevoked, common.BigToHash(big.NewInt(1))},
+	}
+	_, err := DecodeEvent(log)
+	assert.Error(t, err)
+}
+
+func TestEventSignatureConstants_SealTier(t *testing.T) {
+	assert.Equal(t, crypto.Keccak256Hash([]byte(SigClaimAnchored)), TopicClaimAnchored)
+	assert.Equal(t, crypto.Keccak256Hash([]byte(SigAnchorRevoked)), TopicAnchorRevoked)
+	assert.Equal(t, store.EventClaimAnchored, EventTypeFromTopic(TopicClaimAnchored))
+	assert.Equal(t, store.EventAnchorRevoked, EventTypeFromTopic(TopicAnchorRevoked))
+}

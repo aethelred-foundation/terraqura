@@ -29,6 +29,7 @@ export const TEST_ADDRESSES = {
   accessControl: VALIDATION_CONTRACTS.accessControl,
   circuitBreaker: VALIDATION_CONTRACTS.circuitBreaker,
   riskOracle: "0x7777777777777777777777777777777777777777",
+  sealProofOfPhysics: "0x8888888888888888888888888888888888888888",
   user: "0x1234567890abcdef1234567890abcdef12345678",
   operator: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 } as const;
@@ -241,6 +242,7 @@ export function buildTestConfig(overrides: Partial<InternalConfig> = {}): Intern
       gaslessMarketplace: TEST_ADDRESSES.gaslessMarketplace,
       circuitBreaker: TEST_ADDRESSES.circuitBreaker,
       riskOracle: TEST_ADDRESSES.riskOracle,
+      sealProofOfPhysics: TEST_ADDRESSES.sealProofOfPhysics,
     },
     subgraphUrl: "https://api.studio.thegraph.com/query/terraqura/carbon-credits-testnet/version/latest",
     gas: {

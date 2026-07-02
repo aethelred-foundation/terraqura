@@ -15,7 +15,10 @@ const (
 	EventOracleDataSubmitted   EventType = "OracleDataSubmitted"
 	EventProposalCreated       EventType = "ProposalCreated"
 	EventProposalExecuted      EventType = "ProposalExecuted"
-	EventUnknown               EventType = "Unknown"
+	// Consensus-anchored MRV (SealProofOfPhysics, top assurance tier).
+	EventClaimAnchored EventType = "ClaimAnchored"
+	EventAnchorRevoked EventType = "AnchorRevoked"
+	EventUnknown       EventType = "Unknown"
 )
 
 // Event is the canonical representation of a decoded blockchain event.

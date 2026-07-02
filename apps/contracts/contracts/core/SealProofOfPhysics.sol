@@ -99,6 +99,7 @@ contract SealProofOfPhysics is Ownable2Step, Pausable, ReentrancyGuard {
     // ============================================
 
     error ZeroClaim();
+    error AlreadyAnchored(bytes32 dacUnitId, bytes32 sourceDataHash);
     error SealAlreadyUsed(string sealId);
     error SealNotActive(string sealId);
     error SealNotBoundToClaim(string expectedPurpose);
@@ -125,6 +126,15 @@ contract SealProofOfPhysics is Ownable2Step, Pausable, ReentrancyGuard {
         nonReentrant
     {
         if (dacUnitId == bytes32(0) || sourceDataHash == bytes32(0)) revert ZeroClaim();
+
+        // One claim, one anchor, forever. Without this guard a second
+        // claim-bound seal could overwrite the record — including rewriting
+        // `revoked` back to false, silently undoing a governance revocation
+        // through a permissionless call. A re-verified data window is a new
+        // sourceDataHash, i.e. a new claim.
+        if (_anchors[dacUnitId][sourceDataHash].exists) {
+            revert AlreadyAnchored(dacUnitId, sourceDataHash);
+        }
 
         // Resolve the seal for the PoUW job (reverts if the job is unsealed).
         string memory sealId = SEAL.getSealIdByJob(jobId);

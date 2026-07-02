@@ -562,6 +562,7 @@ export interface InternalConfig {
     gaslessMarketplace: string;
     circuitBreaker: string;
     riskOracle: string;
+    sealProofOfPhysics: string;
   };
   subgraphUrl: string;
   gas: Required<GasConfig>;

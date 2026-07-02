@@ -4,13 +4,21 @@ async function main() {
   const [deployer] = await ethers.getSigners();
 
   console.log("Deploying TerraQura contracts with account:", deployer.address);
-  console.log("Account balance:", ethers.formatEther(await ethers.provider.getBalance(deployer.address)), "POL");
+  console.log(
+    "Account balance:",
+    ethers.formatEther(await ethers.provider.getBalance(deployer.address)),
+    "POL",
+  );
 
   // Get the contract factories
-  const TerraQuraAccessControl = await ethers.getContractFactory("TerraQuraAccessControl");
-  const VerificationEngine = await ethers.getContractFactory("VerificationEngine");
+  const TerraQuraAccessControl = await ethers.getContractFactory(
+    "TerraQuraAccessControl",
+  );
+  const VerificationEngine =
+    await ethers.getContractFactory("VerificationEngine");
   const CarbonCredit = await ethers.getContractFactory("CarbonCredit");
-  const CarbonMarketplace = await ethers.getContractFactory("CarbonMarketplace");
+  const CarbonMarketplace =
+    await ethers.getContractFactory("CarbonMarketplace");
 
   // 1. Deploy TerraQuraAccessControl (UUPS upgradeable)
   console.log("\n1. Deploying TerraQuraAccessControl (UUPS Proxy)...");
@@ -20,7 +28,7 @@ async function main() {
     {
       initializer: "initialize",
       kind: "uups",
-    }
+    },
   );
   await accessControl.waitForDeployment();
   const accessControlAddress = await accessControl.getAddress();
@@ -34,7 +42,7 @@ async function main() {
     {
       initializer: "initialize",
       kind: "uups",
-    }
+    },
   );
   await verificationEngine.waitForDeployment();
   const verificationEngineAddress = await verificationEngine.getAddress();
@@ -44,11 +52,15 @@ async function main() {
   console.log("\n3. Deploying CarbonCredit (UUPS Proxy)...");
   const carbonCredit = await upgrades.deployProxy(
     CarbonCredit,
-    [verificationEngineAddress, "https://api.terraqura.aethelred.network/metadata/", deployer.address],
+    [
+      verificationEngineAddress,
+      "https://api.terraqura.aethelred.network/metadata/",
+      deployer.address,
+    ],
     {
       initializer: "initialize",
       kind: "uups",
-    }
+    },
   );
   await carbonCredit.waitForDeployment();
   const carbonCreditAddress = await carbonCredit.getAddress();
@@ -63,7 +75,7 @@ async function main() {
     {
       initializer: "initialize",
       kind: "uups",
-    }
+    },
   );
   await carbonMarketplace.waitForDeployment();
   const carbonMarketplaceAddress = await carbonMarketplace.getAddress();
@@ -71,9 +83,25 @@ async function main() {
 
   // 5. Configure VerificationEngine with CarbonCredit address
   console.log("\n5. Configuring VerificationEngine...");
-  const setTx = await verificationEngine.setCarbonCreditContract(carbonCreditAddress);
+  const setTx =
+    await verificationEngine.setCarbonCreditContract(carbonCreditAddress);
   await setTx.wait();
   console.log("   CarbonCredit contract set in VerificationEngine");
+
+  // 5b. Deploy SealProofOfPhysics (consensus-anchored MRV; NOT upgradeable) and
+  //     wire it into CarbonCredit as the top assurance tier. Enforcement stays
+  //     OFF here — governance turns it on once the seal pipeline is live.
+  console.log("\n5b. Deploying SealProofOfPhysics (consensus-anchored MRV)...");
+  const SealProofOfPhysics =
+    await ethers.getContractFactory("SealProofOfPhysics");
+  const sealRegistry = await SealProofOfPhysics.deploy(deployer.address);
+  await sealRegistry.waitForDeployment();
+  const sealRegistryAddress = await sealRegistry.getAddress();
+  console.log("   SealProofOfPhysics:", sealRegistryAddress);
+
+  const wireTx = await carbonCredit.setSealRegistry(sealRegistryAddress);
+  await wireTx.wait();
+  console.log("   Seal registry wired into CarbonCredit (enforcement: OFF)");
 
   // 6. Grant roles via AccessControl
   console.log("\n6. Setting up roles...");
@@ -91,14 +119,21 @@ async function main() {
   // 7. Whitelist a test DAC unit
   console.log("\n7. Whitelisting test DAC unit...");
   const testDacId = ethers.keccak256(ethers.toUtf8Bytes("test-dac-unit-001"));
-  await (await verificationEngine.whitelistDacUnit(testDacId, deployer.address)).wait();
+  await (
+    await verificationEngine.whitelistDacUnit(testDacId, deployer.address)
+  ).wait();
   console.log("   Test DAC unit whitelisted:", testDacId);
 
   // Get implementation addresses
-  const accessControlImpl = await upgrades.erc1967.getImplementationAddress(accessControlAddress);
-  const verificationEngineImpl = await upgrades.erc1967.getImplementationAddress(verificationEngineAddress);
-  const carbonCreditImpl = await upgrades.erc1967.getImplementationAddress(carbonCreditAddress);
-  const carbonMarketplaceImpl = await upgrades.erc1967.getImplementationAddress(carbonMarketplaceAddress);
+  const accessControlImpl =
+    await upgrades.erc1967.getImplementationAddress(accessControlAddress);
+  const verificationEngineImpl =
+    await upgrades.erc1967.getImplementationAddress(verificationEngineAddress);
+  const carbonCreditImpl =
+    await upgrades.erc1967.getImplementationAddress(carbonCreditAddress);
+  const carbonMarketplaceImpl = await upgrades.erc1967.getImplementationAddress(
+    carbonMarketplaceAddress,
+  );
 
   // Deployment summary
   console.log("\n========================================");
@@ -119,6 +154,8 @@ async function main() {
   console.log("----------------------------------------");
   console.log("CarbonMarketplace Proxy:", carbonMarketplaceAddress);
   console.log("CarbonMarketplace Impl:", carbonMarketplaceImpl);
+  console.log("----------------------------------------");
+  console.log("SealProofOfPhysics:", sealRegistryAddress);
   console.log("----------------------------------------");
   console.log("Platform Fee:", platformFeeBps / 100, "%");
   console.log("Fee Recipient:", deployer.address);
@@ -147,6 +184,9 @@ async function main() {
       proxy: carbonMarketplaceAddress,
       implementation: carbonMarketplaceImpl,
     },
+    sealProofOfPhysics: {
+      address: sealRegistryAddress,
+    },
     testDacId,
     owner: deployer.address,
   };
@@ -154,7 +194,10 @@ async function main() {
 
 main()
   .then((addresses) => {
-    console.log("\nContract addresses for verification:", JSON.stringify(addresses, null, 2));
+    console.log(
+      "\nContract addresses for verification:",
+      JSON.stringify(addresses, null, 2),
+    );
     process.exit(0);
   })
   .catch((error) => {

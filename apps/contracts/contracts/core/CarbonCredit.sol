@@ -9,6 +9,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "../interfaces/ICarbonCredit.sol";
 import "../interfaces/IVerificationEngine.sol";
+import "../interfaces/ISealProofOfPhysics.sol";
 
 /**
  * @title CarbonCredit
@@ -115,6 +116,22 @@ contract CarbonCredit is
      */
     mapping(uint256 => uint256) private _tokenTotalSupply;
 
+    // ============ Seal-Anchored MRV State (v3.1.0) ============
+    // Appended AFTER all pre-existing state for UUPS storage-layout safety.
+
+    /**
+     * @notice The consensus-anchored Proof-of-Physics registry (top assurance
+     *         tier; anchors claims to Aethelred Digital Seals via ISeal).
+     */
+    ISealProofOfPhysics public sealRegistry;
+
+    /**
+     * @notice When true, minting additionally requires a LIVE consensus anchor
+     *         for (dacUnitId, sourceDataHash) in {sealRegistry} — the top
+     *         assurance tier becomes enforced rather than opt-in.
+     */
+    bool public sealAnchorRequired;
+
     // ============ Events ============
 
     /**
@@ -126,6 +143,16 @@ contract CarbonCredit is
      * @notice Emitted when verification engine is updated
      */
     event VerificationEngineUpdated(address indexed oldEngine, address indexed newEngine);
+
+    /**
+     * @notice Emitted when the seal-anchored MRV registry is updated
+     */
+    event SealRegistryUpdated(address indexed oldRegistry, address indexed newRegistry);
+
+    /**
+     * @notice Emitted when the seal-anchor mint requirement is toggled
+     */
+    event SealAnchorRequirementUpdated(bool required);
 
     /**
      * @notice Emitted when buffer pool configuration is updated
@@ -177,6 +204,17 @@ contract CarbonCredit is
     error InsufficientBalance();
     error CreditAlreadyRetired();
     error InvalidVerificationEngine();
+
+    /**
+     * @notice Thrown when seal-anchor enforcement is on and the claim lacks a
+     *         live consensus anchor in the seal registry
+     */
+    error SealAnchorMissing(bytes32 dacUnitId, bytes32 sourceDataHash);
+
+    /**
+     * @notice Thrown when enabling seal-anchor enforcement without a registry
+     */
+    error SealRegistryNotSet();
     error EmptyMetadataUri();
     error InvalidBufferPercentage();
     error InvalidBufferPoolAddress();
@@ -269,6 +307,17 @@ if (_owner != msg.sender) {
         // Check for duplicate data hash
         if (usedDataHashes[sourceDataHash]) {
             revert DataHashAlreadyUsed();
+        }
+
+        // Top assurance tier (when enforced): the claim must carry a LIVE
+        // consensus anchor — a Digital Seal minted by the Aethelred validator
+        // quorum for exactly this (dacUnitId, sourceDataHash), still ACTIVE,
+        // checked through the ISeal precompile. A revoked seal blocks minting
+        // instantly, with no oracle or admin in the trust path.
+        if (sealAnchorRequired) {
+            if (!sealRegistry.isAnchored(dacUnitId, sourceDataHash)) {
+                revert SealAnchorMissing(dacUnitId, sourceDataHash);
+            }
         }
 
         // Generate unique token ID
@@ -486,6 +535,37 @@ if (_owner != msg.sender) {
         verificationEngine = IVerificationEngine(_verificationEngine);
 
         emit VerificationEngineUpdated(oldEngine, _verificationEngine);
+    }
+
+    /**
+     * @notice Set the seal-anchored MRV registry (top assurance tier).
+     * @dev address(0) clears the registry, which also forces enforcement off —
+     *      the contract must never be in the (required, no registry) state.
+     * @param _sealRegistry New registry address, or address(0) to clear
+     */
+    function setSealRegistry(address _sealRegistry) external onlyOwner {
+        address oldRegistry = address(sealRegistry);
+        sealRegistry = ISealProofOfPhysics(_sealRegistry);
+
+        if (_sealRegistry == address(0) && sealAnchorRequired) {
+            sealAnchorRequired = false;
+            emit SealAnchorRequirementUpdated(false);
+        }
+
+        emit SealRegistryUpdated(oldRegistry, _sealRegistry);
+    }
+
+    /**
+     * @notice Toggle whether minting requires a live consensus anchor.
+     * @dev Enabling requires a registry to be set (fail-closed wiring).
+     * @param required Whether the seal anchor is required to mint
+     */
+    function setSealAnchorRequired(bool required) external onlyOwner {
+        if (required && address(sealRegistry) == address(0)) {
+            revert SealRegistryNotSet();
+        }
+        sealAnchorRequired = required;
+        emit SealAnchorRequirementUpdated(required);
     }
 
     /**

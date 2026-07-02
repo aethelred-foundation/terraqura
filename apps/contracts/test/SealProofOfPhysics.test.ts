@@ -132,6 +132,43 @@ describe("SealProofOfPhysics", function () {
                 registry.anchor(dacUnitId, ethers.ZeroHash, JOB),
             ).to.be.revertedWithCustomError(registry, "ZeroClaim");
         });
+
+        it("one claim, one anchor: a live anchor cannot be overwritten by a second bound seal", async function () {
+            await mintSeal();
+            await registry.anchor(dacUnitId, sourceDataHash, JOB);
+            const before = await registry.getAnchor(dacUnitId, sourceDataHash);
+
+            // A second quorum seal bound to the SAME claim must not rewrite the
+            // record (sealId/anchoredAt refresh would corrupt the audit trail).
+            await seal.setSeal("job-mrv-dup", "c".repeat(64), purposeFor(dacUnitId, sourceDataHash), true);
+            await expect(registry.anchor(dacUnitId, sourceDataHash, "job-mrv-dup"))
+                .to.be.revertedWithCustomError(registry, "AlreadyAnchored")
+                .withArgs(dacUnitId, sourceDataHash);
+
+            const after = await registry.getAnchor(dacUnitId, sourceDataHash);
+            expect(after.sealId).to.equal(before.sealId);
+            expect(after.anchoredAt).to.equal(before.anchoredAt);
+        });
+
+        it("SECURITY: a governance revocation cannot be undone by re-anchoring with a fresh seal", async function () {
+            await mintSeal();
+            await registry.anchor(dacUnitId, sourceDataHash, JOB);
+            await registry.connect(governance).revoke(dacUnitId, sourceDataHash);
+            expect(await registry.isAnchored(dacUnitId, sourceDataHash)).to.equal(false);
+
+            // Attacker holds a second, legitimately claim-bound ACTIVE seal.
+            // Without the AlreadyAnchored guard this call would rewrite the
+            // record with revoked=false, silently undoing governance's
+            // withdrawal of trust through a permissionless call.
+            await seal.setSeal("job-mrv-fresh", "d".repeat(64), purposeFor(dacUnitId, sourceDataHash), true);
+            await expect(
+                registry.connect(stranger).anchor(dacUnitId, sourceDataHash, "job-mrv-fresh"),
+            ).to.be.revertedWithCustomError(registry, "AlreadyAnchored");
+
+            expect(await registry.isAnchored(dacUnitId, sourceDataHash)).to.equal(false);
+            const record = await registry.getAnchor(dacUnitId, sourceDataHash);
+            expect(record.revoked).to.equal(true);
+        });
     });
 
     describe("live consensus revocation", function () {
@@ -220,6 +257,48 @@ describe("SealProofOfPhysics", function () {
             expect(await registry.expectedPurpose(dacUnitId, sourceDataHash)).to.equal(
                 purposeFor(dacUnitId, sourceDataHash),
             );
+        });
+
+        it("requireAnchored passes silently for a live anchor (hard-gate success path)", async function () {
+            await mintSeal();
+            await registry.anchor(dacUnitId, sourceDataHash, JOB);
+            await expect(registry.requireAnchored(dacUnitId, sourceDataHash)).to.not.be
+                .reverted;
+        });
+
+        it("getAnchor on an unknown claim returns an empty record", async function () {
+            const record = await registry.getAnchor(otherUnit, otherBatch);
+            expect(record.exists).to.equal(false);
+            expect(record.revoked).to.equal(false);
+            expect(record.sealId).to.equal("");
+            expect(record.anchoredAt).to.equal(0);
+        });
+
+        it("compliancePolicy starts empty (any backend/jurisdiction) until governance sets it", async function () {
+            const policy = await registry.compliancePolicy();
+            expect(policy[0]).to.deep.equal([]);
+            expect(policy[1]).to.equal("");
+            expect(policy[2]).to.deep.equal([]);
+            expect(policy[3]).to.equal(false);
+            expect(policy[4]).to.deep.equal([]);
+        });
+
+        it("acceptOwnership by a non-pending account reverts", async function () {
+            await registry.connect(governance).transferOwnership(operator.address);
+            await expect(registry.connect(stranger).acceptOwnership()).to.be.revertedWith(
+                "Ownable2Step: caller is not the new owner",
+            );
+        });
+
+        it("only owner can pause and unpause", async function () {
+            await expect(registry.connect(stranger).pause()).to.be.revertedWith(
+                "Ownable: caller is not the owner",
+            );
+            await registry.connect(governance).pause();
+            await expect(registry.connect(stranger).unpause()).to.be.revertedWith(
+                "Ownable: caller is not the owner",
+            );
+            await registry.connect(governance).unpause();
         });
     });
 });

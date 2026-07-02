@@ -19,7 +19,8 @@ export type ContractAddressKey =
   | "timelock"
   | "circuitBreaker"
   | "riskOracle"
-  | "nativeIoTOracle";
+  | "nativeIoTOracle"
+  | "sealProofOfPhysics";
 
 export type ContractAddresses = Record<ContractAddressKey, EvmAddress>;
 
@@ -138,6 +139,7 @@ const EMPTY_CONTRACTS = {
   circuitBreaker: ZERO_ADDRESS,
   riskOracle: ZERO_ADDRESS,
   nativeIoTOracle: ZERO_ADDRESS,
+  sealProofOfPhysics: ZERO_ADDRESS,
 } as const satisfies ContractAddresses;
 
 export const CONTRACT_ADDRESS_ENV_KEYS = {
@@ -151,6 +153,7 @@ export const CONTRACT_ADDRESS_ENV_KEYS = {
   circuitBreaker: "CIRCUIT_BREAKER",
   riskOracle: "RISK_ORACLE",
   nativeIoTOracle: "NATIVE_IOT_ORACLE",
+  sealProofOfPhysics: "SEAL_PROOF_OF_PHYSICS",
 } as const satisfies Record<ContractAddressKey, string>;
 
 export const DEPLOYMENTS = {
@@ -202,6 +205,9 @@ export const DEPLOYMENTS = {
       circuitBreaker: "0x24192ecf06aA782F1dF69878413D217d9319e257",
       riskOracle: ZERO_ADDRESS,
       nativeIoTOracle: ZERO_ADDRESS,
+      // Aethelred-only: anchors claims via the ISeal precompile (0x0900);
+      // structurally absent on the Polygon legacy-validation deployment.
+      sealProofOfPhysics: ZERO_ADDRESS,
     },
     implementations: {
       accessControl: "0x7e3bf0EBAF28bcC9A7d96a54Ad6FFEfA0b4Ebc17",
@@ -466,6 +472,8 @@ export function validateDeploymentManifest(): string[] {
         deployment.status === "validated-testnet" &&
         contractKey !== "nativeIoTOracle" &&
         contractKey !== "riskOracle" &&
+        contractKey !== "sealProofOfPhysics" && // Aethelred-only, absent on legacy Polygon
+
         isZeroAddress(address)
       ) {
         errors.push(`Validated deployment "${key}" has zero address for "${contractKey}".`);

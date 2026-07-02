@@ -62,6 +62,10 @@ export { AssetsModule } from "./modules/assets.js";
 export { MarketModule } from "./modules/market.js";
 export { OffsetModule } from "./modules/offset.js";
 export { MRVModule } from "./modules/mrv.js";
+export {
+  ProofOfPhysicsModule,
+  type AnchorRecord,
+} from "./modules/proof-of-physics.js";
 
 // ============================================
 // Enterprise Modules (Connect / Checkout / Badge / Compliance)
