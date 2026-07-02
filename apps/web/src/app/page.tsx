@@ -1,31 +1,25 @@
-import { Navbar } from "@/components/layout/Navbar";
-import { Footer } from "@/components/layout/Footer";
-import { Hero } from "@/components/home/Hero";
-import { LiveTicker } from "@/components/home/LiveTicker";
-import { ProblemSolution } from "@/components/home/ProblemSolution";
-import { ProofEngine } from "@/components/home/ProofEngine";
-import { Features } from "@/components/home/Features";
-import { Solutions } from "@/components/home/Solutions";
-import { Ecosystem } from "@/components/home/Ecosystem";
-import { EnterpriseMarquee } from "@/components/home/EnterpriseMarquee";
-import { FAQ } from "@/components/home/FAQ";
+import type { Metadata } from "next";
+import { homeFaqs } from "@/components/home/faqs";
+import { HomeReferencePage } from "@/components/marketing/HomeReferencePage";
+import { JsonLd } from "@/components/shared/JsonLd";
+import { websiteSchema, productSchema, faqPageSchema } from "@/lib/jsonld";
+
+export const metadata: Metadata = {
+  alternates: { canonical: "/" },
+};
 
 export default function Home() {
   return (
     <>
-      <Navbar />
-      <main id="main-content" className="min-h-screen bg-midnight-950">
-        <Hero />
-        <LiveTicker />
-        <ProblemSolution />
-        <ProofEngine />
-        <Features />
-        <Solutions />
-        <Ecosystem />
-        <EnterpriseMarquee />
-        <FAQ />
-      </main>
-      <Footer />
+      <JsonLd id="ld-website" data={websiteSchema()} />
+      <JsonLd id="ld-product" data={productSchema()} />
+      <JsonLd
+        id="ld-faq"
+        data={faqPageSchema(
+          homeFaqs.map((f) => ({ question: f.q, answer: f.a })),
+        )}
+      />
+      <HomeReferencePage />
     </>
   );
 }

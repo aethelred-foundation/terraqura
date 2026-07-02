@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Mock state-store with in-memory Maps before any route code is imported
 // ---------------------------------------------------------------------------
 const store = new Map<string, unknown>();
+const domainEvents: unknown[] = [];
 
 vi.mock("../../lib/state-store.js", () => ({
   readState: vi.fn(async <T>(key: string, defaultState: T): Promise<T> => {
@@ -13,15 +14,23 @@ vi.mock("../../lib/state-store.js", () => ({
     async <T, R>(
       key: string,
       defaultState: T,
-      mutator: (state: T) => Promise<R> | R,
+      mutator: (
+        state: T,
+        context: { recordDomainEvent(input: unknown): void },
+      ) => Promise<R> | R,
     ): Promise<R> => {
       const current = (store.get(key) as T) ?? structuredClone(defaultState);
       const mutableState = structuredClone(current);
-      const result = await mutator(mutableState);
+      const result = await mutator(mutableState, {
+        recordDomainEvent: (input: unknown) => {
+          domainEvents.push(input);
+        },
+      });
       store.set(key, mutableState);
       return result;
     },
   ),
+  closeStateStore: vi.fn(async () => undefined),
 }));
 
 vi.mock("../../lib/runtime-env.js", () => ({
@@ -64,7 +73,10 @@ async function buildApp() {
     } catch {
       return reply.status(401).send({
         success: false,
-        error: { code: "UNAUTHORIZED", message: "Missing or invalid bearer token" },
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Missing or invalid bearer token",
+        },
       });
     }
   });
@@ -78,15 +90,17 @@ function signToken(
   app: ReturnType<typeof Fastify>,
   payload: { address: string; userType?: string },
 ) {
-  return (app as unknown as { jwt: { sign: (p: object) => string } }).jwt.sign(payload);
+  return (app as unknown as { jwt: { sign: (p: object) => string } }).jwt.sign(
+    payload,
+  );
 }
 
 /** Seed a passed verification into the store */
-function seedVerification(
-  id: string,
-  overrides: Record<string, unknown> = {},
-) {
-  const verState = (store.get("verification:v1") as Record<string, unknown>) || {
+function seedVerification(id: string, overrides: Record<string, unknown> = {}) {
+  const verState = (store.get("verification:v1") as Record<
+    string,
+    unknown
+  >) || {
     verifications: {},
   };
   const verifications =
@@ -110,10 +124,7 @@ function seedVerification(
 }
 
 /** Seed a minted credit directly */
-function seedCredit(
-  id: string,
-  overrides: Record<string, unknown> = {},
-) {
+function seedCredit(id: string, overrides: Record<string, unknown> = {}) {
   const credState = (store.get("credits:v1") as Record<string, unknown>) || {
     credits: {},
     verificationToCredit: {},
@@ -122,7 +133,8 @@ function seedCredit(
   const credits = (credState.credits as Record<string, unknown>) || {};
   credits[id] = {
     id,
-    tokenId: "0x0000000000000000000000000000000000000000000000000000000000000001",
+    tokenId:
+      "0x0000000000000000000000000000000000000000000000000000000000000001",
     verificationId: "ver_seed",
     dacUnitId: "dac_001",
     captureStartTime: "2026-01-01T00:00:00.000Z",
@@ -160,6 +172,7 @@ describe("credits routes", () => {
 
   beforeEach(async () => {
     store.clear();
+    domainEvents.length = 0;
     app = await buildApp();
   });
 
@@ -345,6 +358,15 @@ describe("credits routes", () => {
     expect(data.creditsIssued).toBe(100);
     expect(data.txHash).toMatch(/^0x[a-f0-9]{64}$/);
     expect(data.explorerUrl).toContain(data.txHash);
+    expect(domainEvents.at(-1)).toMatchObject({
+      eventType: "carbon_credit.minted",
+      aggregateType: "carbon_credit",
+      payload: {
+        verificationId: "ver_ok",
+        creditsIssued: 100,
+        ownerWallet: WALLET_A,
+      },
+    });
   });
 
   it("returns 409 when minting the same verification twice", async () => {
@@ -426,7 +448,10 @@ describe("credits routes", () => {
   });
 
   it("partially retires credits (reduces balance, not fully retired)", async () => {
-    seedCredit("cred_partial", { creditsIssued: 100, currentOwnerWallet: WALLET_A });
+    seedCredit("cred_partial", {
+      creditsIssued: 100,
+      currentOwnerWallet: WALLET_A,
+    });
     const token = signToken(app, { address: WALLET_A });
     const res = await app.inject({
       method: "POST",
@@ -444,10 +469,23 @@ describe("credits routes", () => {
     });
     expect(detail.json().data.creditsIssued).toBe(60);
     expect(detail.json().data.isRetired).toBe(false);
+    expect(domainEvents.at(-1)).toMatchObject({
+      eventType: "carbon_credit.partially_retired",
+      aggregateType: "carbon_credit",
+      aggregateId: "cred_partial",
+      payload: {
+        amountRetired: 40,
+        remainingCredits: 60,
+        fullyRetired: false,
+      },
+    });
   });
 
   it("fully retires credit when amount equals balance", async () => {
-    seedCredit("cred_full", { creditsIssued: 50, currentOwnerWallet: WALLET_A });
+    seedCredit("cred_full", {
+      creditsIssued: 50,
+      currentOwnerWallet: WALLET_A,
+    });
     const token = signToken(app, { address: WALLET_A });
     const res = await app.inject({
       method: "POST",
@@ -464,10 +502,23 @@ describe("credits routes", () => {
     });
     expect(detail.json().data.isRetired).toBe(true);
     expect(detail.json().data.verificationStatus).toBe("retired");
+    expect(domainEvents.at(-1)).toMatchObject({
+      eventType: "carbon_credit.retired",
+      aggregateType: "carbon_credit",
+      aggregateId: "cred_full",
+      payload: {
+        amountRetired: 50,
+        remainingCredits: 0,
+        fullyRetired: true,
+      },
+    });
   });
 
   it("returns 400 when retire amount exceeds available balance", async () => {
-    seedCredit("cred_over", { creditsIssued: 10, currentOwnerWallet: WALLET_A });
+    seedCredit("cred_over", {
+      creditsIssued: 10,
+      currentOwnerWallet: WALLET_A,
+    });
     const token = signToken(app, { address: WALLET_A });
     const res = await app.inject({
       method: "POST",

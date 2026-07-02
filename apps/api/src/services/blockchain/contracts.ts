@@ -1,36 +1,58 @@
 /**
  * TerraQura Blockchain Service
  *
- * Provides ethers.js integration with deployed contracts on Aethelred Testnet
+ * Provides ethers.js integration with the active TerraQura deployment.
  */
 
+import {
+  getActiveDeployment,
+  getActiveDeploymentKey,
+  getDeploymentContractAddresses,
+  getNetwork,
+  requireContractAddress,
+  withContractAddressOverrides,
+  type ContractAddressKey,
+} from "@terraqura/network-manifest";
 import { ethers } from "ethers";
 
-// Contract addresses on Aethelred Testnet (Chain ID: 78432) - Solidity 0.8.32 (Bug-free)
-export const CONTRACTS = {
-  // Core Contracts (UUPS Proxies)
-  accessControl: "0x55695aAAEC30AB495074c57e85Ae2E1A4866B83b",
-  verificationEngine: "0x8dad7E87646e9607Fae225e3A7EAD17ce179dEA8",
-  carbonCredit: "0x29B58064fD95b175e5824767d3B18bACFafaF959",
-  carbonMarketplace: "0x5a4cb32709AB829E2918F0a914FBa1e0Dab2Fdec",
+import { createScopedLogger, serializeError } from "../../lib/logger.js";
 
-  // Governance Contracts
-  multisig: "0x0805E6ffDE71fd798F3Fe787D1dC907aABA65bAD",
-  timelock: "0xb8b01581d61Bf2D58B8B8626Ebb7Ab959ccF6354",
+const activeDeploymentKey = getActiveDeploymentKey(process.env);
+const activeDeployment = getActiveDeployment(process.env);
+const activeNetwork = getNetwork(activeDeployment.network);
+const deploymentAddresses = getDeploymentContractAddresses(activeDeploymentKey);
+const resolvedAddresses = withContractAddressOverrides(deploymentAddresses, process.env);
+const blockchainLogger = createScopedLogger("blockchain.contracts", {
+  deploymentKey: activeDeploymentKey,
+  networkKey: activeNetwork.key,
+});
 
-  // Security Contracts
-  circuitBreaker: "0x24192ecf06aA782F1dF69878413D217d9319e257",
+function resolveRpcUrl(): string {
+  const scopedRpcUrl =
+    activeNetwork.key === "polygonAmoy"
+      ? process.env.POLYGON_AMOY_RPC_URL ?? process.env.POLYGON_RPC_URL
+      : activeNetwork.key === "aethelredTestnet"
+        ? process.env.AETHELRED_TESTNET_RPC_URL ?? process.env.AETHELRED_RPC_URL
+        : process.env.AETHELRED_RPC_URL;
 
-  // Gasless Marketplace
-  gaslessMarketplace: "0x45a65e46e8C1D588702cB659b7d3786476Be0A80",
-} as const;
+  return process.env.TERRAQURA_RPC_URL ?? scopedRpcUrl ?? activeNetwork.rpcUrls[0];
+}
+
+function requireAddress(key: ContractAddressKey): `0x${string}` {
+  return requireContractAddress(resolvedAddresses, key, activeDeploymentKey);
+}
+
+export const CONTRACTS = resolvedAddresses;
 
 // Network configuration
 export const NETWORK = {
-  chainId: 78432,
-  name: "Aethelred Testnet",
-  rpcUrl: process.env.AETHELRED_RPC_URL || "https://rpc-testnet.aethelred.network",
-  explorerUrl: "https://explorer-testnet.aethelred.network",
+  chainId: activeNetwork.chainId,
+  name: activeNetwork.displayName,
+  key: activeNetwork.key,
+  deploymentKey: activeDeploymentKey,
+  deploymentStatus: activeDeployment.status,
+  rpcUrl: resolveRpcUrl(),
+  explorerUrl: activeNetwork.explorerUrl,
 };
 
 // Minimal ABIs for contract interaction
@@ -80,7 +102,7 @@ export function getProvider(): ethers.JsonRpcProvider {
 // Contract getters
 export function getCarbonCreditContract(signerOrProvider?: ethers.Signer | ethers.Provider) {
   return new ethers.Contract(
-    CONTRACTS.carbonCredit,
+    requireAddress("carbonCredit"),
     ABIS.carbonCredit,
     signerOrProvider || getProvider()
   );
@@ -88,7 +110,7 @@ export function getCarbonCreditContract(signerOrProvider?: ethers.Signer | ether
 
 export function getMarketplaceContract(signerOrProvider?: ethers.Signer | ethers.Provider) {
   return new ethers.Contract(
-    CONTRACTS.carbonMarketplace,
+    requireAddress("carbonMarketplace"),
     ABIS.carbonMarketplace,
     signerOrProvider || getProvider()
   );
@@ -96,7 +118,7 @@ export function getMarketplaceContract(signerOrProvider?: ethers.Signer | ethers
 
 export function getVerificationEngineContract(signerOrProvider?: ethers.Signer | ethers.Provider) {
   return new ethers.Contract(
-    CONTRACTS.verificationEngine,
+    requireAddress("verificationEngine"),
     ABIS.verificationEngine,
     signerOrProvider || getProvider()
   );
@@ -104,7 +126,7 @@ export function getVerificationEngineContract(signerOrProvider?: ethers.Signer |
 
 export function getCircuitBreakerContract(signerOrProvider?: ethers.Signer | ethers.Provider) {
   return new ethers.Contract(
-    CONTRACTS.circuitBreaker,
+    requireAddress("circuitBreaker"),
     ABIS.circuitBreaker,
     signerOrProvider || getProvider()
   );
@@ -131,7 +153,10 @@ export async function isSystemOperational(): Promise<boolean> {
     const isGloballyPaused = Array.isArray(status) ? status[0] : status.isGloballyPaused;
     return !isGloballyPaused;
   } catch (error) {
-    console.error("Error checking system status:", error);
+    blockchainLogger.warn(
+      { err: serializeError(error) },
+      "Unable to check circuit breaker status; defaulting to operational"
+    );
     return true; // Default to operational if check fails
   }
 }

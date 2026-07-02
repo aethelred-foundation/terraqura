@@ -9,17 +9,18 @@
  * - Comprehensive logging
  *
  * Prerequisites:
- * 1. Ensure PRIVATE_KEY is set in .env.local (deployer wallet with AETH)
+ * 1. Ensure PRIVATE_KEY is set in .env.local (deployer wallet with AETHEL)
  * 2. Ensure AETHELRED_MAINNET_RPC_URL is set in .env.local
  * 3. Ensure AETHELRED_EXPLORER_API_KEY is set for verification
  * 4. Review and update MAINNET_CONFIG before deployment
  *
- * Run: npx hardhat run scripts/deploy-mainnet.ts --network aethelredMainnet
+ * Run: npx hardhat run scripts/deploy-mainnet.ts --network aethelred
  */
 
 import { ethers, upgrades, network } from "hardhat";
 import * as fs from "fs";
 import * as path from "path";
+import { NETWORKS } from "@terraqura/network-manifest";
 
 // ============================================
 // MAINNET CONFIGURATION
@@ -75,8 +76,8 @@ const MAINNET_CONFIG = {
   // Metadata base URI (update before mainnet)
   metadataBaseUri: "https://api.terraqura.io/metadata/",
 
-  // Minimum balance requirements (in AETH)
-  minDeployerBalance: "5", // 5 AETH minimum
+  // Minimum balance requirements (in AETHEL)
+  minDeployerBalance: "5", // 5 AETHEL minimum
 
   // Gas price limits (in gwei)
   maxGasPrice: 500, // Won't deploy if gas > 500 gwei
@@ -187,11 +188,11 @@ async function runPreflightChecks(): Promise<boolean> {
   const balance = await ethers.provider.getBalance(deployer.address);
   const balanceEther = ethers.formatEther(balance);
   log(`Deployer: ${deployer.address}`);
-  log(`Balance: ${balanceEther} AETH`);
+  log(`Balance: ${balanceEther} AETHEL`);
 
   const minBalance = ethers.parseEther(MAINNET_CONFIG.minDeployerBalance);
   if (balance < minBalance) {
-    log(`❌ Insufficient balance. Need at least ${MAINNET_CONFIG.minDeployerBalance} AETH`, "error");
+    log(`❌ Insufficient balance. Need at least ${MAINNET_CONFIG.minDeployerBalance} AETHEL`, "error");
     checksPass = false;
   } else {
     log("✅ Sufficient balance", "success");
@@ -338,8 +339,8 @@ async function main() {
   const [deployer] = await ethers.getSigners();
   const startBalance = await ethers.provider.getBalance(deployer.address);
   const deployments: DeploymentManifest = {
-    network: "aethelredMainnet",
-    chainId: 78431,
+    network: NETWORKS.aethelred.name,
+    chainId: NETWORKS.aethelred.chainId,
     deployedAt: new Date().toISOString(),
     deployedBy: deployer.address,
     version: "1.0.0",
@@ -561,7 +562,7 @@ async function main() {
     const totalCost = startBalance - endBalance;
 
     deployments.totalGasUsed = totalGasUsed.toString();
-    deployments.totalCost = ethers.formatEther(totalCost) + " AETH";
+    deployments.totalCost = ethers.formatEther(totalCost) + " AETHEL";
 
     // Save deployment manifest
     const manifestPath = path.join(
@@ -609,8 +610,8 @@ async function main() {
 
     console.log("\n" + "─".repeat(60));
     console.log(`Total Gas Used: ${totalGasUsed.toString()}`);
-    console.log(`Total Cost: ${ethers.formatEther(totalCost)} AETH`);
-    console.log(`Remaining Balance: ${ethers.formatEther(endBalance)} AETH`);
+    console.log(`Total Cost: ${ethers.formatEther(totalCost)} AETHEL`);
+    console.log(`Remaining Balance: ${ethers.formatEther(endBalance)} AETHEL`);
     console.log("─".repeat(60));
 
     log("\n🎉 MAINNET DEPLOYMENT COMPLETE!", "success");

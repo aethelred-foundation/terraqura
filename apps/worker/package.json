@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@terraqura/database": "workspace:*",
+    "@terraqura/network-manifest": "workspace:*",
     "@terraqura/queue": "workspace:*",
     "@terraqura/types": "workspace:*",
     "bullmq": "^5.1.0",

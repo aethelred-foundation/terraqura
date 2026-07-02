@@ -165,8 +165,7 @@ mod tests {
 
     #[test]
     fn deterministic_json_hash_nested() {
-        let json: Value =
-            serde_json::from_str(r#"{"z":{"b":2,"a":1},"y":[3,2,1]}"#).unwrap();
+        let json: Value = serde_json::from_str(r#"{"z":{"b":2,"a":1},"y":[3,2,1]}"#).unwrap();
         let hash = compute_data_hash(&json);
         assert_eq!(hash, compute_data_hash(&json));
     }

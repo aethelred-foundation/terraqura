@@ -3,6 +3,12 @@
 
 import { Pool } from "pg";
 
+import {
+  getDatabaseLogger,
+  serializeDatabaseError,
+  type DatabaseLogger,
+} from "../logger.js";
+
 export interface SensorReading {
   time: Date;
   sensorId: string;
@@ -68,21 +74,40 @@ export interface EfficiencyMetric {
   alertType?: string;
 }
 
+export interface TimescaleClientOptions {
+  connectionString?: string;
+  logger?: DatabaseLogger;
+}
+
 export class TimescaleClient {
   private pool: Pool;
+  private logger: DatabaseLogger;
 
-  constructor(connectionString?: string) {
+  constructor(config?: string | TimescaleClientOptions) {
+    const connectionString =
+      typeof config === "string" ? config : config?.connectionString;
+    this.logger =
+      typeof config === "string"
+        ? getDatabaseLogger()
+        : (config?.logger ?? getDatabaseLogger());
     this.pool = new Pool({
       connectionString:
-        connectionString || process.env.TIMESCALE_URL || process.env.DATABASE_URL,
+        connectionString ||
+        process.env.TIMESCALE_URL ||
+        process.env.DATABASE_URL,
       max: 20,
       idleTimeoutMillis: 30000,
       connectionTimeoutMillis: 10000,
     });
 
-    // Handle pool errors
     this.pool.on("error", (err) => {
-      console.error("Unexpected TimescaleDB pool error:", err);
+      this.logger.error(
+        {
+          component: "timescale-pool",
+          error: serializeDatabaseError(err),
+        },
+        "Unexpected TimescaleDB pool error",
+      );
     });
   }
 
@@ -140,7 +165,7 @@ export class TimescaleClient {
             reading.anomalyType ?? null,
             reading.rawDataHash ?? null,
             reading.firmwareVersion ?? null,
-            reading.signalStrength ?? null
+            reading.signalStrength ?? null,
           );
 
           return `($${start + 1}, $${start + 2}, $${start + 3}, $${start + 4}, $${start + 5}, $${start + 6}, $${start + 7}, $${start + 8}, $${start + 9}, $${start + 10}, $${start + 11}, $${start + 12})`;
@@ -155,7 +180,7 @@ export class TimescaleClient {
           firmware_version, signal_strength
         ) VALUES ${placeholders}
       `,
-        queryValues
+        queryValues,
       );
 
       await client.query("COMMIT");
@@ -174,7 +199,7 @@ export class TimescaleClient {
     sensorId: string,
     startTime: Date,
     endTime: Date,
-    limit = 1000
+    limit = 1000,
   ): Promise<SensorReading[]> {
     const query = `
       SELECT
@@ -188,7 +213,12 @@ export class TimescaleClient {
       LIMIT $4
     `;
 
-    const result = await this.pool.query(query, [sensorId, startTime, endTime, limit]);
+    const result = await this.pool.query(query, [
+      sensorId,
+      startTime,
+      endTime,
+      limit,
+    ]);
 
     return result.rows.map((row) => ({
       time: row.time,
@@ -210,7 +240,7 @@ export class TimescaleClient {
   async getHourlyAggregates(
     dacUnitId: string,
     startTime: Date,
-    endTime: Date
+    endTime: Date,
   ): Promise<HourlyAggregate[]> {
     const query = `
       SELECT
@@ -224,7 +254,11 @@ export class TimescaleClient {
       ORDER BY bucket DESC
     `;
 
-    const result = await this.pool.query(query, [dacUnitId, startTime, endTime]);
+    const result = await this.pool.query(query, [
+      dacUnitId,
+      startTime,
+      endTime,
+    ]);
 
     return result.rows.map((row) => ({
       bucket: row.bucket,
@@ -247,7 +281,7 @@ export class TimescaleClient {
   async getDailyAggregates(
     dacUnitId: string,
     startTime: Date,
-    endTime: Date
+    endTime: Date,
   ): Promise<DailyAggregate[]> {
     const query = `
       SELECT
@@ -261,7 +295,11 @@ export class TimescaleClient {
       ORDER BY bucket DESC, sensor_type
     `;
 
-    const result = await this.pool.query(query, [dacUnitId, startTime, endTime]);
+    const result = await this.pool.query(query, [
+      dacUnitId,
+      startTime,
+      endTime,
+    ]);
 
     return result.rows.map((row) => ({
       bucket: row.bucket,
@@ -284,13 +322,17 @@ export class TimescaleClient {
   async calculateVerificationSnapshot(
     dacUnitId: string,
     startTime: Date,
-    endTime: Date
+    endTime: Date,
   ): Promise<VerificationSnapshot> {
     const query = `
       SELECT * FROM calculate_verification_snapshot($1, $2, $3)
     `;
 
-    const result = await this.pool.query(query, [dacUnitId, startTime, endTime]);
+    const result = await this.pool.query(query, [
+      dacUnitId,
+      startTime,
+      endTime,
+    ]);
 
     if (result.rows.length === 0) {
       throw new Error("No data found for verification period");
@@ -313,7 +355,7 @@ export class TimescaleClient {
    */
   async getEfficiencyMetrics(
     dacUnitId: string,
-    hours = 24
+    hours = 24,
   ): Promise<EfficiencyMetric[]> {
     const query = `
       SELECT
@@ -347,7 +389,7 @@ export class TimescaleClient {
   async getAnomalies(
     dacUnitId: string,
     startTime: Date,
-    endTime: Date
+    endTime: Date,
   ): Promise<SensorReading[]> {
     const query = `
       SELECT
@@ -361,7 +403,11 @@ export class TimescaleClient {
       ORDER BY time DESC
     `;
 
-    const result = await this.pool.query(query, [dacUnitId, startTime, endTime]);
+    const result = await this.pool.query(query, [
+      dacUnitId,
+      startTime,
+      endTime,
+    ]);
 
     return result.rows.map((row) => ({
       time: row.time,

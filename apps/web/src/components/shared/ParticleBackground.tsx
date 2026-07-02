@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef } from "react";
+import { cryptoRandomFloat } from "@/lib/random";
 
 interface Particle {
   x: number;
@@ -37,12 +38,12 @@ export function ParticleBackground() {
     // Initialize particles
     const count = Math.min(60, Math.floor(window.innerWidth / 25));
     particlesRef.current = Array.from({ length: count }, () => ({
-      x: Math.random() * canvas.width,
-      y: Math.random() * canvas.height,
-      vx: (Math.random() - 0.5) * 0.3,
-      vy: (Math.random() - 0.5) * 0.3,
-      size: Math.random() * 2 + 0.5,
-      opacity: Math.random() * 0.5 + 0.1,
+      x: cryptoRandomFloat() * canvas.width,
+      y: cryptoRandomFloat() * canvas.height,
+      vx: (cryptoRandomFloat() - 0.5) * 0.3,
+      vy: (cryptoRandomFloat() - 0.5) * 0.3,
+      size: cryptoRandomFloat() * 2 + 0.5,
+      opacity: cryptoRandomFloat() * 0.5 + 0.1,
     }));
 
     const animate = () => {

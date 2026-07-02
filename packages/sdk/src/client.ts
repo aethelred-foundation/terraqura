@@ -174,11 +174,13 @@ export class TerraQuraClient {
         carbonMarketplace: addresses.carbonMarketplace,
         gaslessMarketplace: addresses.gaslessMarketplace,
         circuitBreaker: addresses.circuitBreaker,
+        riskOracle: config.riskOracleAddress || addresses.riskOracle,
       },
       subgraphUrl: config.subgraphUrl || SUBGRAPH_URLS[config.network] || "",
       gas: gasConfig,
       retry: retryConfig,
       telemetryEnabled: config.telemetry?.enabled !== false,
+      checkoutSessionBackend: config.checkoutSessionBackend,
     };
   }
 

@@ -26,6 +26,8 @@ const DEFAULT_LONGITUDE = 54.377344;
 const MIN_KWH_PER_TONNE = 200;
 const MAX_KWH_PER_TONNE = 600;
 const OPTIMAL_KWH_PER_TONNE = 350;
+const RANDOM_FLOAT_BYTES = 6;
+const RANDOM_FLOAT_MAX_EXCLUSIVE = 0x1_0000_0000_0000;
 
 export interface SimulatorOutput {
   reading: SensorReadingInput;
@@ -35,11 +37,20 @@ export interface SimulatorOutput {
 }
 
 /**
- * Generate a random number within a range with Gaussian distribution
+ * Generate a crypto-backed random float in the open interval (0, 1).
+ * Box-Muller cannot accept 0, so shift by one before scaling.
+ */
+function randomFloat(): number {
+  const sample = randomBytes(RANDOM_FLOAT_BYTES).readUIntBE(0, RANDOM_FLOAT_BYTES);
+  return (sample + 1) / (RANDOM_FLOAT_MAX_EXCLUSIVE + 1);
+}
+
+/**
+ * Generate a random number within a range with Gaussian distribution.
  */
 function gaussianRandom(mean: number, stdDev: number): number {
-  const u1 = Math.random();
-  const u2 = Math.random();
+  const u1 = randomFloat();
+  const u2 = randomFloat();
   const z = Math.sqrt(-2 * Math.log(u1)) * Math.cos(2 * Math.PI * u2);
   return mean + z * stdDev;
 }
@@ -139,7 +150,7 @@ export function generateReading(
   let isAnomaly = false;
   let anomalyType: AnomalyReason | null = null;
 
-  if (config.injectAnomalies && Math.random() < config.anomalyProbability) {
+  if (config.injectAnomalies && randomFloat() < config.anomalyProbability) {
     const anomalyTypes = [
       AnomalyReason.SUSPICIOUS_EFFICIENCY,
       AnomalyReason.EXCESSIVE_ENERGY,
@@ -148,7 +159,7 @@ export function generateReading(
       AnomalyReason.FLATLINE,
     ];
 
-    anomalyType = anomalyTypes[Math.floor(Math.random() * anomalyTypes.length)] ?? AnomalyReason.SUSPICIOUS_EFFICIENCY;
+    anomalyType = anomalyTypes[Math.floor(randomFloat() * anomalyTypes.length)] ?? AnomalyReason.SUSPICIOUS_EFFICIENCY;
     isAnomaly = true;
 
     switch (anomalyType) {

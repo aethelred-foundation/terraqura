@@ -109,7 +109,7 @@ export function MetricCard({ label, value, unit, icon: Icon, trend, className = 
           <span className={`text-xs font-medium ${trend.value >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
             {trend.value >= 0 ? '+' : ''}{trend.value}%
           </span>
-          <span className="text-xs text-white/30">{trend.label}</span>
+          <span className="text-xs text-white/60">{trend.label}</span>
         </div>
       )}
     </GlassCard>
@@ -206,7 +206,7 @@ export function WalletButton() {
       >
         <div className="w-2 h-2 rounded-full bg-emerald-400" />
         <span className="text-white/80 font-mono text-xs">{truncateAddress(wallet.address)}</span>
-        <span className="text-white/40 text-xs">{wallet.balance.toFixed(4)} AETH</span>
+        <span className="text-white/40 text-xs">{wallet.balance.toFixed(4)} AETHEL</span>
         <ChevronDown className="w-3 h-3 text-white/40" />
       </button>
 
@@ -215,15 +215,15 @@ export function WalletButton() {
           <div className="fixed inset-0 z-40" onClick={() => setDropdownOpen(false)} />
           <div className="absolute right-0 top-full mt-2 w-64 bg-midnight-900 border border-white/[0.08] rounded-xl shadow-2xl z-50 p-3 space-y-2">
             <div className="px-2 py-1">
-              <p className="text-[10px] text-white/30 uppercase tracking-wider">Connected</p>
+              <p className="text-[10px] text-white/60 uppercase tracking-wider">Connected</p>
               <div className="flex items-center gap-2 mt-1">
                 <p className="text-xs text-white/70 font-mono">{truncateAddress(wallet.address)}</p>
                 <CopyButton text={wallet.address} />
               </div>
             </div>
             <div className="px-2 py-1">
-              <p className="text-[10px] text-white/30 uppercase tracking-wider">Balance</p>
-              <p className="text-sm text-white font-medium mt-0.5">{wallet.balance.toFixed(6)} AETH</p>
+              <p className="text-[10px] text-white/60 uppercase tracking-wider">Balance</p>
+              <p className="text-sm text-white font-medium mt-0.5">{wallet.balance.toFixed(6)} AETHEL</p>
             </div>
             <hr className="border-white/[0.06]" />
             <button
@@ -338,10 +338,10 @@ export function DAppFooter() {
   return (
     <footer className="border-t border-white/[0.06] py-6 mt-auto">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 flex flex-col sm:flex-row items-center justify-between gap-3">
-        <p className="text-xs text-white/30">
+        <p className="text-xs text-white/60">
           TerraQura &middot; Powered by Aethelred Protocol &middot; Apache 2.0
         </p>
-        <div className="flex items-center gap-4 text-xs text-white/30">
+        <div className="flex items-center gap-4 text-xs text-white/60">
           <Link href="/terms" className="hover:text-white/50 transition">Terms</Link>
           <Link href="/privacy" className="hover:text-white/50 transition">Privacy</Link>
           <Link href="/developers" className="hover:text-white/50 transition">Developers</Link>
@@ -395,7 +395,7 @@ export function ToastContainer() {
               <p className="text-sm font-medium text-white">{n.title}</p>
               {n.message && <p className="text-xs text-white/50 mt-0.5">{n.message}</p>}
             </div>
-            <button onClick={() => removeNotification(n.id)} className="text-white/30 hover:text-white/60">
+            <button onClick={() => removeNotification(n.id)} className="text-white/60 hover:text-white/60">
               <X className="w-4 h-4" />
             </button>
           </div>
@@ -415,10 +415,10 @@ export function EmptyState({ icon: Icon, title, description, action }: {
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <div className="p-4 bg-white/[0.03] rounded-2xl mb-4">
-        <Icon className="w-8 h-8 text-white/20" />
+        <Icon className="w-8 h-8 text-white/55" />
       </div>
       <h3 className="text-lg font-semibold text-white/60 mb-1">{title}</h3>
-      <p className="text-sm text-white/30 max-w-md">{description}</p>
+      <p className="text-sm text-white/60 max-w-md">{description}</p>
       {action && <div className="mt-4">{action}</div>}
     </div>
   );
@@ -436,7 +436,7 @@ export function ConnectWalletPrompt({ message = 'Connect your wallet to access t
   return (
     <div className="flex flex-col items-center justify-center py-16 text-center">
       <div className="p-4 bg-white/[0.03] rounded-2xl mb-4">
-        <svg className="w-8 h-8 text-white/20" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <svg className="w-8 h-8 text-white/55" fill="none" viewBox="0 0 24 24" stroke="currentColor">
           <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M21 12a2.25 2.25 0 00-2.25-2.25H15a3 3 0 11-6 0H5.25A2.25 2.25 0 003 12m18 0v6a2.25 2.25 0 01-2.25 2.25H5.25A2.25 2.25 0 013 18v-6m18 0V9M3 12V9m18 0a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 9m18 0V6a2.25 2.25 0 00-2.25-2.25H5.25A2.25 2.25 0 003 6v3" />
         </svg>
       </div>
@@ -545,7 +545,7 @@ export function DataTable({ columns, data, onRowClick, className = '' }: {
                       isMonoValue(val) ? 'font-mono' : ''
                     }`}
                   >
-                    {val === null || val === undefined ? '—' : String(val)}
+                    {val === null || val === undefined ? '-' : String(val)}
                   </td>
                 );
               })}
@@ -604,13 +604,13 @@ export function StepWizard({ steps, currentStep, className = '' }: {
                     ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400'
                     : isActive
                     ? 'bg-emerald-500/10 border-emerald-400 text-emerald-400'
-                    : 'bg-white/[0.05] border-white/[0.1] text-white/30'
+                    : 'bg-white/[0.05] border-white/[0.1] text-white/60'
                 }`}
               >
                 {isCompleted ? <Check className="w-4 h-4" /> : idx + 1}
               </div>
               <span className={`text-[10px] mt-1.5 whitespace-nowrap ${
-                isActive ? 'text-emerald-400 font-medium' : isFuture ? 'text-white/30' : 'text-white/50'
+                isActive ? 'text-emerald-400 font-medium' : isFuture ? 'text-white/60' : 'text-white/50'
               }`}>
                 {label}
               </span>
@@ -658,7 +658,7 @@ export function RangeFilter({ label, min, max, value, onChange }: {
         onChange={(e) => onChange([Number(e.target.value), value[1]])}
         className="w-20 px-2 py-1.5 bg-white/[0.05] border border-white/[0.08] rounded-lg text-xs text-white/70 font-mono focus:outline-none focus:border-emerald-500/30"
       />
-      <span className="text-xs text-white/30">to</span>
+      <span className="text-xs text-white/60">to</span>
       <input
         type="number"
         min={min}
@@ -705,7 +705,7 @@ export function SearchInput({ placeholder, value, onChange, className = '' }: {
 }) {
   return (
     <div className={`relative ${className}`}>
-      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+      <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/60" />
       <input
         type="text"
         placeholder={placeholder}
@@ -742,7 +742,7 @@ export function CertificateCard({ tokenId, co2Amount, retiredAt, beneficiary, re
         </div>
         <div>
           <h3 className="text-sm font-bold text-white">Carbon Retirement Certificate</h3>
-          <p className="text-[10px] text-white/30 uppercase tracking-wider">TerraQura Verified</p>
+          <p className="text-[10px] text-white/60 uppercase tracking-wider">TerraQura Verified</p>
         </div>
       </div>
 
@@ -779,7 +779,7 @@ export function CertificateCard({ tokenId, co2Amount, retiredAt, beneficiary, re
         <hr className="border-white/[0.06]" />
 
         <div className="flex items-center justify-between">
-          <span className="text-[10px] text-white/30 font-mono">{truncateAddress(txHash)}</span>
+          <span className="text-[10px] text-white/60 font-mono">{truncateAddress(txHash)}</span>
           <CopyButton text={txHash} />
         </div>
       </div>
@@ -792,7 +792,7 @@ export function Countdown({ targetTimestamp, className = '' }: {
   targetTimestamp: number;
   className?: string;
 }) {
-  // Fixed "now" to avoid hydration mismatch — never uses live time
+  // Fixed "now" to avoid hydration mismatch - never uses live time
   const FIXED_NOW = 1710700000000;
   const diff = Math.max(0, targetTimestamp - FIXED_NOW);
   const totalMinutes = Math.floor(diff / 60000);

@@ -2,10 +2,21 @@
 
 This package uses hardened wrappers for Graph build/test so local and CI runs are deterministic and permission-safe.
 
+## Deployment Source Of Truth
+
+The canonical TerraQura network and contract source of truth lives in `@terraqura/network-manifest`
+(`packages/network-manifest`). The checked-in `subgraph.yaml` currently represents the legacy Polygon Amoy
+validation deployment used as audit evidence, not the active Aethelred deployment target.
+
+Before deploying a production or testnet subgraph, generate or review the subgraph manifest against
+`DEPLOYMENTS.<target>.contracts` and the matching `NETWORKS.<target>` entry. This keeps Graph indexing aligned
+with the same deployment manifest used by the API, web app, workers, monitoring, and SDK.
+
 ## Commands
 
 - `pnpm --filter @terraqura/subgraph codegen`
 - `pnpm --filter @terraqura/subgraph build`
+- `pnpm --filter @terraqura/subgraph validate:manifest`
 - `pnpm --filter @terraqura/subgraph test`
 - `pnpm --filter @terraqura/subgraph test:coverage`
 - `pnpm --filter @terraqura/subgraph tools:prefetch` (download Matchstick binary only)

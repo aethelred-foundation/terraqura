@@ -1,0 +1,35 @@
+{
+  "name": "@terraqura/network-manifest",
+  "version": "1.0.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "main": "./dist/index.js",
+  "module": "./dist/index.mjs",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.mjs"
+      },
+      "require": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "default": "./dist/index.js"
+    }
+  },
+  "scripts": {
+    "build": "tsup",
+    "manifest:json": "tsup && node dist/write-json.js",
+    "test": "tsup && node scripts/runtime-guards.test.mjs",
+    "typecheck": "tsc --noEmit",
+    "validate": "tsup && node dist/validate.js"
+  },
+  "devDependencies": {
+    "@terraqura/typescript-config": "workspace:*",
+    "@types/node": "^20.11.5",
+    "tsup": "^8.0.2",
+    "typescript": "^5.3.3"
+  }
+}

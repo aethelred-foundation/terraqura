@@ -5,6 +5,7 @@ import { ethers } from "hardhat";
 import SafeApiKit from "@safe-global/api-kit";
 import Safe, { SafeFactory, SafeAccountConfig } from "@safe-global/protocol-kit";
 import { MetaTransactionData, OperationType } from "@safe-global/safe-core-sdk-types";
+import { NETWORKS } from "@terraqura/network-manifest";
 
 // Configuration
 const SAFE_CONFIG = {
@@ -21,7 +22,7 @@ const SAFE_CONFIG = {
   ],
 
   // Network configuration
-  chainId: 78431, // Aethelred mainnet
+  chainId: NETWORKS.aethelred.chainId, // Aethelred mainnet
 
   // Safe transaction service URL
   txServiceUrl: "https://safe-transaction.aethelred.network",

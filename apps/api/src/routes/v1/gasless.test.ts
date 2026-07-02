@@ -9,6 +9,9 @@ const mockBuildForwardRequest = vi.fn();
 const mockRelay = vi.fn();
 const mockRelayViaDefender = vi.fn();
 const mockGetSigningTypes = vi.fn();
+const mockGetRelayMode = vi.fn();
+const mockHasSigningCapability = vi.fn();
+const mockHasDefenderCredentials = vi.fn();
 
 let mockRelayerInstance: object | null = {
   getNonce: mockGetNonce,
@@ -16,6 +19,9 @@ let mockRelayerInstance: object | null = {
   relay: mockRelay,
   relayViaDefender: mockRelayViaDefender,
   getSigningTypes: mockGetSigningTypes,
+  getRelayMode: mockGetRelayMode,
+  hasSigningCapability: mockHasSigningCapability,
+  hasDefenderCredentials: mockHasDefenderCredentials,
 };
 
 vi.mock("../../services/gasless/relayer.service.js", () => ({
@@ -57,9 +63,16 @@ describe("gasless routes", () => {
       relay: mockRelay,
       relayViaDefender: mockRelayViaDefender,
       getSigningTypes: mockGetSigningTypes,
+      getRelayMode: mockGetRelayMode,
+      hasSigningCapability: mockHasSigningCapability,
+      hasDefenderCredentials: mockHasDefenderCredentials,
     };
 
-    // Clear env vars that affect relay path
+    mockGetRelayMode.mockReturnValue("direct");
+    mockHasSigningCapability.mockReturnValue(true);
+    mockHasDefenderCredentials.mockReturnValue(false);
+
+    // Clear legacy env vars to ensure relay path comes from relayer mode.
     delete process.env.DEFENDER_RELAYER_API_KEY;
 
     app = await buildApp();
@@ -117,7 +130,7 @@ describe("gasless routes", () => {
       domain: {
         name: "TerraQuraForwarder",
         version: "1",
-        chainId: 78432,
+        chainId: 7332,
         verifyingContract: TARGET,
       },
     });
@@ -281,14 +294,15 @@ describe("gasless routes", () => {
     expect(res.statusCode).toBe(503);
   });
 
-  it("uses Defender relay when DEFENDER_RELAYER_API_KEY is set", async () => {
-    process.env.DEFENDER_RELAYER_API_KEY = "defender_key";
+  it("uses Defender relay when relayer mode is defender", async () => {
+    mockGetRelayMode.mockReturnValue("defender");
+    mockHasDefenderCredentials.mockReturnValue(true);
     mockRelayViaDefender.mockResolvedValue({
       success: true,
       txHash: "0x" + "d".repeat(64),
     });
 
-    // Rebuild app so env is picked up at route registration time
+    // Rebuild app so the route captures the current mock relayer state.
     const defenderApp = await buildApp();
 
     const res = await defenderApp.inject({
@@ -310,8 +324,6 @@ describe("gasless routes", () => {
     expect(res.statusCode).toBe(200);
     expect(mockRelayViaDefender).toHaveBeenCalled();
     expect(mockRelay).not.toHaveBeenCalled();
-
-    delete process.env.DEFENDER_RELAYER_API_KEY;
   });
 
   it("returns 500 when relay throws an unexpected error", async () => {
@@ -341,7 +353,7 @@ describe("gasless routes", () => {
 
   it("returns relayer status when enabled", async () => {
     process.env.FORWARDER_CONTRACT = "0x1234567890abcdef1234567890abcdef12345678";
-    process.env.CHAIN_ID = "78432";
+    process.env.CHAIN_ID = "7332";
 
     const res = await app.inject({
       method: "GET",
@@ -350,7 +362,10 @@ describe("gasless routes", () => {
     expect(res.statusCode).toBe(200);
     const data = res.json().data;
     expect(data.enabled).toBe(true);
-    expect(data.chainId).toBe(78432);
+    expect(data.chainId).toBe(7332);
+    expect(data.mode).toBe("direct");
+    expect(data.signingConfigured).toBe(true);
+    expect(data.defenderConfigured).toBe(false);
   });
 
   it("returns enabled=false when relayer is null", async () => {

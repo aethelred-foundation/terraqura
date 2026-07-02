@@ -1,12 +1,18 @@
 import { describe, expect, it, vi, beforeEach, afterEach } from "vitest";
 
 import { ValidationError, AuthenticationError } from "../errors.js";
-import { CheckoutModule } from "./checkout.js";
+import {
+  CheckoutModule,
+  InMemoryCheckoutSessionBackend,
+} from "./checkout.js";
 
 import type { InternalConfig, PriceBreakdown, OffsetEstimate, ListingSummary } from "../types.js";
 import type { ITelemetry } from "../telemetry.js";
 import type { OffsetModule } from "./offset.js";
-import type { CreateCheckoutSessionInput } from "./checkout.js";
+import type {
+  CheckoutSessionBackend,
+  CreateCheckoutSessionInput,
+} from "./checkout.js";
 
 // ============================================
 // Helpers
@@ -31,6 +37,7 @@ function makeConfig(hasSigner = false): InternalConfig {
       carbonMarketplace: "0x0000000000000000000000000000000000000004",
       gaslessMarketplace: "0x0000000000000000000000000000000000000005",
       circuitBreaker: "0x0000000000000000000000000000000000000006",
+      riskOracle: "0x0000000000000000000000000000000000000007",
     },
     subgraphUrl: "",
     gas: { multiplier: 1.2, maxGasPrice: 100n, maxPriorityFee: 30n, cacheTtlMs: 15000, gasLimits: {} },
@@ -90,6 +97,18 @@ function validSessionInput(
   };
 }
 
+async function expireSession(
+  backend: CheckoutSessionBackend,
+  sessionId: string,
+): Promise<void> {
+  const record = await backend.get(sessionId);
+  if (!record) {
+    throw new Error(`Missing test session ${sessionId}`);
+  }
+  record.expiresAt = Date.now() - 1000;
+  await backend.put(sessionId, record);
+}
+
 // ============================================
 // Tests
 // ============================================
@@ -97,18 +116,22 @@ function validSessionInput(
 describe("CheckoutModule", () => {
   let checkout: CheckoutModule;
   let offsetModule: OffsetModule;
+  let sessionBackend: InMemoryCheckoutSessionBackend;
 
   beforeEach(() => {
     offsetModule = makeOffsetModule();
+    sessionBackend = new InMemoryCheckoutSessionBackend();
     checkout = new CheckoutModule(
       makeConfig(),
       makeTelemetry(),
       offsetModule,
+      sessionBackend,
     );
   });
 
   afterEach(() => {
     checkout.destroy();
+    sessionBackend.destroy();
   });
 
   // -----------------------------------------------
@@ -294,6 +317,31 @@ describe("CheckoutModule", () => {
       expect(fetched.status).toBe("pending");
     });
 
+    it("persists sessions across module instances that share a backend", async () => {
+      const sharedBackend = new InMemoryCheckoutSessionBackend();
+      const first = new CheckoutModule(
+        makeConfig(),
+        makeTelemetry(),
+        offsetModule,
+        sharedBackend,
+      );
+      const second = new CheckoutModule(
+        makeConfig(),
+        makeTelemetry(),
+        offsetModule,
+        sharedBackend,
+      );
+
+      const created = await first.createSession(validSessionInput());
+      const fetched = await second.getSession(created.id);
+
+      expect(fetched.id).toBe(created.id);
+      expect(fetched.status).toBe("pending");
+      first.destroy();
+      second.destroy();
+      sharedBackend.destroy();
+    });
+
     it("throws for non-existent session", async () => {
       await expect(checkout.getSession("tqcs_nonexistent")).rejects.toThrow(
         ValidationError,
@@ -302,10 +350,7 @@ describe("CheckoutModule", () => {
 
     it("auto-expires sessions past TTL", async () => {
       const session = await checkout.createSession(validSessionInput());
-      // Force expiry
-      const internalSessions = (checkout as unknown as { sessions: Map<string, { expiresAt: number }> }).sessions;
-      const record = internalSessions.get(session.id)!;
-      record.expiresAt = Date.now() - 1000;
+      await expireSession(sessionBackend, session.id);
 
       const fetched = await checkout.getSession(session.id);
       expect(fetched.status).toBe("expired");
@@ -400,22 +445,21 @@ describe("CheckoutModule", () => {
     });
 
     it("throws for expired session", async () => {
-      const co = new CheckoutModule(
+      const coBackend = new InMemoryCheckoutSessionBackend();
+      const coWithBackend = new CheckoutModule(
         makeConfig(true),
         makeTelemetry(),
         offsetModule,
+        coBackend,
       );
+      const backendSession = await coWithBackend.createSession(validSessionInput());
+      await expireSession(coBackend, backendSession.id);
 
-      const session = await co.createSession(validSessionInput());
-      // Force expiry
-      const internalSessions = (co as unknown as { sessions: Map<string, { expiresAt: number }> }).sessions;
-      const record = internalSessions.get(session.id)!;
-      record.expiresAt = Date.now() - 1000;
-
-      await expect(co.confirmSession(session.id)).rejects.toThrow(
+      await expect(coWithBackend.confirmSession(backendSession.id)).rejects.toThrow(
         ValidationError,
       );
-      co.destroy();
+      coWithBackend.destroy();
+      coBackend.destroy();
     });
 
     it("throws for non-existent session", async () => {
@@ -491,8 +535,7 @@ describe("CheckoutModule", () => {
 
     it("pending -> expired via TTL", async () => {
       const session = await checkout.createSession(validSessionInput());
-      const internalSessions = (checkout as unknown as { sessions: Map<string, { expiresAt: number }> }).sessions;
-      internalSessions.get(session.id)!.expiresAt = Date.now() - 1;
+      await expireSession(sessionBackend, session.id);
 
       const fetched = await checkout.getSession(session.id);
       expect(fetched.status).toBe("expired");
@@ -567,16 +610,57 @@ describe("CheckoutModule", () => {
       fetchSpy.mockRestore();
       co.destroy();
     });
+
+    it("keeps checkout completion non-fatal when webhook delivery rejects", async () => {
+      const fetchSpy = vi
+        .spyOn(globalThis, "fetch")
+        .mockRejectedValue(new Error("network down"));
+
+      const co = new CheckoutModule(
+        makeConfig(true),
+        makeTelemetry(),
+        offsetModule,
+      );
+
+      const session = await co.createSession(
+        validSessionInput({ webhookUrl: "https://hooks.example.com/cb" }),
+      );
+      const completed = await co.confirmSession(session.id);
+      await new Promise((resolve) => setTimeout(resolve, 50));
+
+      expect(completed.status).toBe("completed");
+      expect(fetchSpy).toHaveBeenCalledTimes(1);
+
+      fetchSpy.mockRestore();
+      co.destroy();
+    });
   });
 
   // -----------------------------------------------
   // destroy
   // -----------------------------------------------
   describe("destroy", () => {
-    it("clears sessions on destroy", () => {
+    it("does not clear an externally supplied session backend", async () => {
+      await checkout.createSession(validSessionInput());
+
       checkout.destroy();
-      const internalSessions = (checkout as unknown as { sessions: Map<string, unknown> }).sessions;
-      expect(internalSessions.size).toBe(0);
+      expect(await sessionBackend.list()).toHaveLength(1);
+    });
+
+    it("clears the in-memory backend when it owns the backend", async () => {
+      const owned = new InMemoryCheckoutSessionBackend();
+      const co = new CheckoutModule(
+        makeConfig(),
+        makeTelemetry(),
+        offsetModule,
+        owned,
+      );
+      await co.createSession(validSessionInput());
+
+      expect(await owned.list()).toHaveLength(1);
+      owned.destroy();
+      expect(await owned.list()).toHaveLength(0);
+      co.destroy();
     });
   });
 

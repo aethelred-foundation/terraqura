@@ -3,6 +3,7 @@ import { createHmac, randomBytes } from "crypto";
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
+import { generateId } from "../../lib/ids.js";
 import { mutateState, readState } from "../../lib/state-store.js";
 
 const WebhookEventType = z.enum([
@@ -53,7 +54,7 @@ interface StoredWebhook {
 interface WebhookDelivery {
   id: string;
   webhookId: string;
-  event: WebhookEventTypeValue;
+  event: WebhookEventTypeValue | "test.ping";
   payload: Record<string, unknown>;
   statusCode: number | null;
   success: boolean;
@@ -68,6 +69,7 @@ interface WebhooksState {
 }
 
 const WEBHOOKS_STORE_KEY = "webhooks:v1";
+const DEFAULT_WEBHOOK_DELIVERY_TIMEOUT_MS = 5000;
 const DEFAULT_WEBHOOKS_STATE: WebhooksState = {
   webhooks: {},
   deliveries: [],
@@ -92,6 +94,143 @@ function hashSecret(secret: string): string {
 
 function signPayload(payload: string, signingKey: string): string {
   return createHmac("sha256", signingKey).update(payload).digest("hex");
+}
+
+function resolveWebhookDeliveryTimeoutMs(): number {
+  const configured = Number.parseInt(
+    process.env.WEBHOOK_DELIVERY_TIMEOUT_MS || "",
+    10
+  );
+  return Number.isSafeInteger(configured) && configured > 0
+    ? configured
+    : DEFAULT_WEBHOOK_DELIVERY_TIMEOUT_MS;
+}
+
+function validateWebhookUrl(url: string): string | null {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    return "Webhook URL must be a valid URL";
+  }
+
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    return "Webhook URL must use http or https";
+  }
+
+  if (process.env.NODE_ENV === "production" && parsed.protocol !== "https:") {
+    return "Webhook URL must use https in production";
+  }
+
+  if (
+    process.env.WEBHOOK_ALLOW_LOCAL_DELIVERY !== "true" &&
+    isBlockedWebhookHostname(parsed.hostname)
+  ) {
+    return "Webhook URL must not target localhost or private network hosts";
+  }
+
+  return null;
+}
+
+function isBlockedWebhookHostname(hostname: string): boolean {
+  const normalized = hostname.toLowerCase().replace(/^\[/, "").replace(/\]$/, "");
+
+  if (
+    normalized === "localhost" ||
+    normalized.endsWith(".localhost") ||
+    normalized === "::1" ||
+    normalized === "0:0:0:0:0:0:0:1"
+  ) {
+    return true;
+  }
+
+  const parts = normalized.split(".").map((part) => Number.parseInt(part, 10));
+  if (
+    parts.length !== 4 ||
+    parts.some((part) => !Number.isSafeInteger(part) || part < 0 || part > 255)
+  ) {
+    return false;
+  }
+
+  const [a, b] = parts as [number, number, number, number];
+  return (
+    a === 10 ||
+    a === 127 ||
+    (a === 169 && b === 254) ||
+    (a === 172 && b >= 16 && b <= 31) ||
+    (a === 192 && b === 168) ||
+    a === 0
+  );
+}
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function deliverWebhook(params: {
+  webhook: StoredWebhook;
+  payloadJson: string;
+  signature: string;
+  deliveryId: string;
+  eventType: string;
+}): Promise<{
+  success: boolean;
+  statusCode: number | null;
+  attempts: number;
+  error?: string;
+}> {
+  const attempts = Math.max(1, params.webhook.retryConfig.maxRetries + 1);
+  let lastStatusCode: number | null = null;
+  let lastError: string | undefined;
+
+  for (let attempt = 1; attempt <= attempts; attempt++) {
+    const controller = new AbortController();
+    const timeout = setTimeout(
+      () => controller.abort(),
+      resolveWebhookDeliveryTimeoutMs()
+    );
+
+    try {
+      const response = await fetch(params.webhook.url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "User-Agent": "TerraQura-Webhooks/1.0",
+          "X-TerraQura-Delivery": params.deliveryId,
+          "X-TerraQura-Event": params.eventType,
+          "X-TerraQura-Signature": `sha256=${params.signature}`,
+        },
+        body: params.payloadJson,
+        signal: controller.signal,
+      });
+
+      lastStatusCode = response.status;
+      if (response.ok) {
+        return {
+          success: true,
+          statusCode: response.status,
+          attempts: attempt,
+        };
+      }
+
+      lastError = `HTTP ${response.status}`;
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : "Webhook delivery failed";
+    } finally {
+      clearTimeout(timeout);
+    }
+
+    if (attempt < attempts) {
+      await sleep(params.webhook.retryConfig.backoffMultiplierMs * attempt);
+    }
+  }
+
+  return {
+    success: false,
+    statusCode: lastStatusCode,
+    attempts,
+    error: lastError,
+  };
 }
 
 export async function webhooksRoutes(
@@ -164,6 +303,13 @@ export async function webhooksRoutes(
               error: { type: "string" },
             },
           },
+          400: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
         },
       },
     },
@@ -177,6 +323,14 @@ export async function webhooksRoutes(
       }
 
       const body = RegisterWebhookSchema.parse(request.body);
+      const urlError = validateWebhookUrl(body.url);
+      if (urlError) {
+        return reply.status(400).send({
+          success: false,
+          error: urlError,
+        });
+      }
+
       const signingKey = generateSigningKey();
       const secretHash = body.secret ? hashSecret(body.secret) : "";
 
@@ -184,7 +338,7 @@ export async function webhooksRoutes(
         WEBHOOKS_STORE_KEY,
         DEFAULT_WEBHOOKS_STATE,
         async (state) => {
-          const id = `wh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          const id = generateId("wh");
           const nowIso = new Date().toISOString();
 
           const created: StoredWebhook = {
@@ -472,9 +626,24 @@ export async function webhooksRoutes(
                   payload: { type: "object" },
                   signature: { type: "string" },
                   deliveryId: { type: "string" },
-                  note: { type: "string" },
+                  delivery: {
+                    type: "object",
+                    properties: {
+                      success: { type: "boolean" },
+                      statusCode: { type: "integer", nullable: true },
+                      attempts: { type: "integer" },
+                      error: { type: "string" },
+                    },
+                  },
                 },
               },
+            },
+          },
+          400: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
             },
           },
           401: {
@@ -529,7 +698,7 @@ export async function webhooksRoutes(
       }
 
       const testPayload = {
-        id: `evt_test_${Date.now()}`,
+        id: generateId("evt_test"),
         type: "test.ping" as const,
         timestamp: new Date().toISOString(),
         data: {
@@ -540,7 +709,14 @@ export async function webhooksRoutes(
 
       const payloadJson = JSON.stringify(testPayload);
       const signature = signPayload(payloadJson, webhook.signingKey);
-      const deliveryId = `del_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const deliveryId = generateId("del");
+      const deliveryResult = await deliverWebhook({
+        webhook,
+        payloadJson,
+        signature,
+        deliveryId,
+        eventType: testPayload.type,
+      });
 
       await mutateState(
         WEBHOOKS_STORE_KEY,
@@ -550,6 +726,9 @@ export async function webhooksRoutes(
           if (wh) {
             wh.lastTriggeredAt = new Date().toISOString();
             wh.totalDeliveries += 1;
+            if (!deliveryResult.success) {
+              wh.totalFailures += 1;
+            }
             wh.updatedAt = new Date().toISOString();
             state.webhooks[params.id] = wh;
           }
@@ -557,11 +736,11 @@ export async function webhooksRoutes(
           state.deliveries.push({
             id: deliveryId,
             webhookId: params.id,
-            event: "credit.minted",
+            event: "test.ping",
             payload: testPayload,
-            statusCode: 200,
-            success: true,
-            attempts: 1,
+            statusCode: deliveryResult.statusCode,
+            success: deliveryResult.success,
+            attempts: deliveryResult.attempts,
             lastAttemptAt: new Date().toISOString(),
             createdAt: new Date().toISOString(),
           });
@@ -576,7 +755,7 @@ export async function webhooksRoutes(
           payload: testPayload,
           signature: `sha256=${signature}`,
           deliveryId,
-          note: "Test event generated. In production, this payload would be POSTed to your webhook URL with the X-TerraQura-Signature header.",
+          delivery: deliveryResult,
         },
       };
     }

@@ -10,13 +10,15 @@
     "create-local": "graph create --node http://localhost:8020/ terraqura/carbon-credits",
     "remove-local": "graph remove --node http://localhost:8020/ terraqura/carbon-credits",
     "deploy-local": "graph deploy --node http://localhost:8020/ --ipfs http://localhost:5001 terraqura/carbon-credits",
+    "validate:manifest": "cd ../network-manifest && ./node_modules/.bin/tsup && cd ../subgraph && node ./scripts/validate-manifest.cjs",
     "test": "node ./scripts/run-tests.cjs",
     "test:coverage": "node ./scripts/run-tests.cjs --coverage",
     "tools:prefetch": "node ./scripts/run-tests.cjs --download-only"
   },
   "dependencies": {
     "@graphprotocol/graph-cli": "^0.67.1",
-    "@graphprotocol/graph-ts": "^0.32.0"
+    "@graphprotocol/graph-ts": "^0.32.0",
+    "@terraqura/network-manifest": "workspace:*"
   },
   "devDependencies": {
     "matchstick-as": "^0.6.0"

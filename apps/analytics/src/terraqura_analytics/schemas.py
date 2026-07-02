@@ -54,8 +54,8 @@ class Methodology(str, Enum):
 class PriceDataPoint(BaseModel):
     """A single historical price observation."""
     timestamp: datetime
-    price: float = Field(ge=0, description="Price in AETH")
-    volume: float = Field(ge=0, description="Trading volume in AETH")
+    price: float = Field(ge=0, description="Price in AETHEL")
+    volume: float = Field(ge=0, description="Trading volume in AETHEL")
     retirement_rate: float = Field(ge=0, le=1, description="Fraction of supply retired in period")
     total_supply: float = Field(ge=0, description="Total outstanding supply of credits")
 
@@ -144,8 +144,8 @@ class CreditHolding(BaseModel):
     vintage_year: int = Field(ge=2000, le=2100)
     methodology: Methodology
     verification_status: VerificationStatus
-    purchase_price: float = Field(ge=0, description="Purchase price in AETH per tonne")
-    current_price: float = Field(ge=0, description="Current market price in AETH per tonne")
+    purchase_price: float = Field(ge=0, description="Purchase price in AETHEL per tonne")
+    current_price: float = Field(ge=0, description="Current market price in AETHEL per tonne")
 
 
 class PortfolioScore(BaseModel):
@@ -217,7 +217,7 @@ class RiskAssessRequest(BaseModel):
 
 class ValueAtRisk(BaseModel):
     """Value at Risk result."""
-    var_amount: float = Field(description="VaR in AETH")
+    var_amount: float = Field(description="VaR in AETHEL")
     confidence: float
     holding_period_days: int
     portfolio_value: float
@@ -238,6 +238,9 @@ class HealthResponse(BaseModel):
     status: str = "ok"
     version: str
     timestamp: datetime
+    network_key: str
+    deployment_key: str
+    chain_id: int
 
 
 class ErrorResponse(BaseModel):

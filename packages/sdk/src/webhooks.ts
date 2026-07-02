@@ -326,9 +326,10 @@ export class WebhookManager {
 
     // Retry with exponential backoff
     for (let attempt = 0; attempt <= endpoint.options.retries; attempt++) {
+      let timeout: ReturnType<typeof setTimeout> | undefined;
       try {
         const controller = new AbortController();
-        const timeout = setTimeout(
+        timeout = setTimeout(
           () => controller.abort(),
           endpoint.options.timeoutMs,
         );
@@ -340,14 +341,16 @@ export class WebhookManager {
           signal: controller.signal,
         });
 
-        clearTimeout(timeout);
-
         if (response.ok) return;
 
         // Non-retryable status codes
         if (response.status >= 400 && response.status < 500) return;
       } catch {
         // Network error — will retry
+      } finally {
+        if (timeout) {
+          clearTimeout(timeout);
+        }
       }
 
       if (attempt < endpoint.options.retries) {

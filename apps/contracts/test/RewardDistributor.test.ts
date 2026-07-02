@@ -211,7 +211,7 @@ describe("RewardDistributor", function () {
             expect(claimable).to.equal(ethers.parseEther("5")); // 100/200 * 10 ETH
         });
 
-        it("should claim and transfer AETH", async function () {
+        it("should claim and transfer AETHEL", async function () {
             const { distributor, recipient1, end } = await loadFixture(claimableFixture);
             await time.increaseTo(end + 1);
 

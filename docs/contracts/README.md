@@ -123,7 +123,7 @@ Role assignments are managed through `TerraQuraAccessControl`. The `DEFAULT_ADMI
 
 ## Deployment Addresses
 
-### Aethelred Testnet (Chain ID: 78432)
+### Aethelred Testnet (Chain ID: 7332)
 
 | Contract | Proxy Address | Implementation |
 |----------|---------------|----------------|

@@ -3,6 +3,7 @@
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 
+import { logReference } from "../../lib/logger.js";
 import { getApiRuntimeEnv } from "../../lib/runtime-env.js";
 import { createSumsubService } from "../../services/kyc/sumsub.service.js";
 
@@ -86,7 +87,16 @@ export async function kycRoutes(fastify: FastifyInstance) {
     checkType: "initial" | "refresh";
   }) => {
     // API writes an audit trail even when dedicated queue workers are unavailable.
-    fastify.log.info({ payload }, "KYC check request recorded");
+    fastify.log.info(
+      {
+        provider: payload.provider,
+        checkType: payload.checkType,
+        userRef: logReference(payload.userId, "user"),
+        walletRef: logReference(payload.walletAddress, "wallet"),
+        applicantRef: logReference(payload.applicantId, "applicant"),
+      },
+      "KYC check request recorded"
+    );
   };
 
   // ============================================
@@ -418,7 +428,17 @@ export async function kycRoutes(fastify: FastifyInstance) {
 
       try {
         const event = request.body;
-        fastify.log.info({ event }, "Received Sumsub webhook");
+        fastify.log.info(
+          {
+            eventType: event.type,
+            reviewStatus: event.reviewStatus,
+            reviewAnswer: event.reviewResult?.reviewAnswer,
+            rejectLabelCount: event.reviewResult?.rejectLabels?.length ?? 0,
+            applicantRef: logReference(event.applicantId, "applicant"),
+            externalUserRef: logReference(event.externalUserId, "external-user"),
+          },
+          "Received Sumsub webhook"
+        );
 
         // Handle the webhook event
         const result = await sumsubService.handleWebhook({

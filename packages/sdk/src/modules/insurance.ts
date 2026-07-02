@@ -28,7 +28,7 @@
  * console.log(pool.coverageRatio);    // 1.25x (125% coverage)
  *
  * // Create an insurance policy for a purchase
- * const policy = client.insurance.createPolicy({
+ * const policy = await client.insurance.createPolicy({
  *   tokenId: "42",
  *   amountKg: 1000,
  *   purchasePriceWei: ethers.parseEther("10"),
@@ -87,6 +87,13 @@ export interface CreatePolicyInput {
   durationDays?: number;
   /** Override premium (for partner-negotiated rates) */
   premiumOverrideBps?: number;
+  /**
+   * Explicit local health score for offline/synchronous policy creation.
+   *
+   * Production async policy creation uses the on-chain RiskOracle through
+   * `RiskModule.calculateInsurancePremium()` when no override is supplied.
+   */
+  localHealthScore?: HealthScoreResult;
   /** Additional metadata */
   metadata?: Record<string, string | number | boolean>;
 }
@@ -289,7 +296,7 @@ export class InsuranceModule {
    *
    * @example
    * ```ts
-   * const policy = client.insurance.createPolicy({
+   * const policy = await client.insurance.createPolicy({
    *   tokenId: "42",
    *   amountKg: 1000,
    *   purchasePriceWei: ethers.parseEther("10"),
@@ -298,11 +305,21 @@ export class InsuranceModule {
    * });
    * ```
    */
-  createPolicy(input: CreatePolicyInput): InsurancePolicy {
+  createPolicy(input: CreatePolicyInput): Promise<InsurancePolicy> {
     return this.telemetry.wrapAsync(
       "insurance.createPolicy",
-      async () => this.createPolicySync(input),
-    ) as unknown as InsurancePolicy;
+      async () => {
+        const context = this.validatePolicyInput(input);
+        const premiumBreakdown = input.premiumOverrideBps !== undefined || input.localHealthScore
+          ? this.resolveLocalPremium(input)
+          : await this.riskModule.calculateInsurancePremium(
+              input.dacUnitId,
+              input.purchasePriceWei,
+            );
+
+        return this.createPolicyFromPremium(input, context, premiumBreakdown);
+      },
+    );
   }
 
   /**
@@ -310,6 +327,15 @@ export class InsuranceModule {
    * Premium is calculated using the local RiskModule scoring engine.
    */
   createPolicySync(input: CreatePolicyInput): InsurancePolicy {
+    const context = this.validatePolicyInput(input);
+    const premiumBreakdown = this.resolveLocalPremium(input);
+    return this.createPolicyFromPremium(input, context, premiumBreakdown);
+  }
+
+  private validatePolicyInput(input: CreatePolicyInput): {
+    durationDays: number;
+    addressKey: string;
+  } {
     // ---- Validate Inputs ----
     if (!input.tokenId || input.tokenId.trim().length === 0) {
       throw new ValidationError("tokenId is required", {});
@@ -348,9 +374,10 @@ export class InsuranceModule {
       );
     }
 
-    // ---- Calculate Premium ----
-    let premiumBreakdown: InsurancePremium;
+    return { durationDays, addressKey };
+  }
 
+  private resolveLocalPremium(input: CreatePolicyInput): InsurancePremium {
     if (input.premiumOverrideBps !== undefined) {
       // Partner-negotiated rate override
       if (input.premiumOverrideBps < 0 || input.premiumOverrideBps > 5000) {
@@ -360,7 +387,7 @@ export class InsuranceModule {
         );
       }
       const premiumWei = (input.purchasePriceWei * BigInt(input.premiumOverrideBps)) / 10_000n;
-      premiumBreakdown = {
+      return {
         dacUnitId: input.dacUnitId,
         premiumBps: input.premiumOverrideBps,
         premiumWei,
@@ -372,31 +399,26 @@ export class InsuranceModule {
           catastropheReserve: 0,
         },
       };
-    } else {
-      // Use a default healthy score for local calculation
-      // In production, this would query the on-chain oracle
-      const defaultScore: HealthScoreResult = {
-        healthScore: 85,
-        failureProbabilityBps: 100,
-        riskTier: "low",
-        isInsurable: true,
-        factors: {
-          uptimeScore: 98,
-          stabilityScore: 90,
-          integrityScore: 85,
-          maintenanceAgePenalty: 0,
-          hardwareGenerationBonus: 2,
-          seasonalDriftPenalty: 0,
-        },
-        confidence: 0.9,
-      };
+    }
 
-      premiumBreakdown = this.riskModule.calculatePremiumFromScore(
-        defaultScore,
-        input.purchasePriceWei,
+    if (!input.localHealthScore) {
+      throw new ValidationError(
+        "createPolicySync requires premiumOverrideBps or localHealthScore; use async createPolicy for RiskOracle-backed premiums",
+        { dacUnitId: input.dacUnitId },
       );
     }
 
+    return this.riskModule.calculatePremiumFromScore(
+      input.localHealthScore,
+      input.purchasePriceWei,
+    );
+  }
+
+  private createPolicyFromPremium(
+    input: CreatePolicyInput,
+    context: { durationDays: number; addressKey: string },
+    premiumBreakdown: InsurancePremium,
+  ): InsurancePolicy {
     if (!premiumBreakdown.isInsurable) {
       throw new ValidationError(
         "DAC unit does not qualify for insurance coverage",
@@ -430,7 +452,7 @@ export class InsuranceModule {
       premiumBps: premiumBreakdown.premiumBps,
       premiumBreakdown,
       createdAt: now,
-      expiresAt: now + (durationDays * MS_PER_DAY),
+      expiresAt: now + (context.durationDays * MS_PER_DAY),
       claimedAt: null,
       resolvedAt: null,
       replacementTokenId: null,
@@ -443,10 +465,10 @@ export class InsuranceModule {
     this.totalPremiumsCollected += premiumBreakdown.premiumWei;
 
     // Address index
-    let addressPolicies = this.addressPolicyIndex.get(addressKey);
+    let addressPolicies = this.addressPolicyIndex.get(context.addressKey);
     if (!addressPolicies) {
       addressPolicies = new Set();
-      this.addressPolicyIndex.set(addressKey, addressPolicies);
+      this.addressPolicyIndex.set(context.addressKey, addressPolicies);
     }
     addressPolicies.add(policyId);
 

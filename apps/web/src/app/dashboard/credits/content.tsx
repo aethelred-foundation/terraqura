@@ -320,12 +320,12 @@ function VerifyCheck({ passed, label }: { passed: boolean; label: string }) {
         </div>
       ) : (
         <div className="h-5 w-5 rounded-full bg-white/[0.06] flex items-center justify-center">
-          <svg className="h-3 w-3 text-white/30" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="h-3 w-3 text-white/60" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M6 18L18 6M6 6l12 12" />
           </svg>
         </div>
       )}
-      <span className={`text-sm ${passed ? 'text-white/70' : 'text-white/30'}`}>{label}</span>
+      <span className={`text-sm ${passed ? 'text-white/70' : 'text-white/60'}`}>{label}</span>
     </div>
   );
 }
@@ -358,7 +358,7 @@ function CreditLookup() {
             onChange={(e) => setInput(e.target.value)}
             className="w-full px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white placeholder-white/30 text-sm font-mono focus:outline-none focus:border-emerald-500/40 focus:bg-white/[0.06] transition-all"
           />
-          <svg className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/20" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <svg className="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-white/55" fill="none" stroke="currentColor" viewBox="0 0 24 24">
             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
           </svg>
         </div>
@@ -435,7 +435,7 @@ function CreditLookup() {
                     <VerifyCheck passed={verification.mintVerified} label="Mint Check" />
                   </div>
                   {verification.efficiencyFactor !== undefined && (
-                    <p className="text-white/30 text-xs font-mono mt-3">
+                    <p className="text-white/60 text-xs font-mono mt-3">
                       Efficiency Factor: {(Number(verification.efficiencyFactor) / 100).toFixed(2)}%
                     </p>
                   )}
@@ -448,7 +448,7 @@ function CreditLookup() {
 
       {!hasSearched && (
         <GlassCard className="p-8 text-center">
-          <p className="text-white/30 text-sm">Enter a Token ID above to look up credit metadata and verification status.</p>
+          <p className="text-white/60 text-sm">Enter a Token ID above to look up credit metadata and verification status.</p>
         </GlassCard>
       )}
     </div>
@@ -507,7 +507,7 @@ function OverviewTab({ totalMinted, totalRetired, netActive }: {
                 >
                   <div className="absolute inset-0 bg-gradient-to-t from-emerald-600/40 to-emerald-400/20 rounded-t" />
                 </div>
-                <span className="text-[10px] text-white/30 font-mono">{w.week}</span>
+                <span className="text-[10px] text-white/60 font-mono">{w.week}</span>
               </div>
             );
           })}
@@ -545,11 +545,11 @@ function OverviewTab({ totalMinted, totalRetired, netActive }: {
           <table className="w-full">
             <thead>
               <tr className="border-b border-white/[0.06]">
-                <th className="text-left text-[10px] text-white/30 font-mono uppercase tracking-widest pb-3 pr-4">Rank</th>
-                <th className="text-left text-[10px] text-white/30 font-mono uppercase tracking-widest pb-3 pr-4">Unit ID</th>
-                <th className="text-right text-[10px] text-white/30 font-mono uppercase tracking-widest pb-3 pr-4">Total CO2 (kg)</th>
-                <th className="text-right text-[10px] text-white/30 font-mono uppercase tracking-widest pb-3 pr-4">Credits</th>
-                <th className="text-right text-[10px] text-white/30 font-mono uppercase tracking-widest pb-3">Efficiency (kWh/t)</th>
+                <th className="text-left text-[10px] text-white/60 font-mono uppercase tracking-widest pb-3 pr-4">Rank</th>
+                <th className="text-left text-[10px] text-white/60 font-mono uppercase tracking-widest pb-3 pr-4">Unit ID</th>
+                <th className="text-right text-[10px] text-white/60 font-mono uppercase tracking-widest pb-3 pr-4">Total CO2 (kg)</th>
+                <th className="text-right text-[10px] text-white/60 font-mono uppercase tracking-widest pb-3 pr-4">Credits</th>
+                <th className="text-right text-[10px] text-white/60 font-mono uppercase tracking-widest pb-3">Efficiency (kWh/t)</th>
               </tr>
             </thead>
             <tbody>
@@ -560,7 +560,7 @@ function OverviewTab({ totalMinted, totalRetired, netActive }: {
                       idx === 0 ? 'bg-amber-500/20 text-amber-400' :
                       idx === 1 ? 'bg-slate-400/20 text-slate-300' :
                       idx === 2 ? 'bg-orange-600/20 text-orange-400' :
-                      'bg-white/[0.04] text-white/30'
+                      'bg-white/[0.04] text-white/60'
                     }`}>
                       {idx + 1}
                     </span>
@@ -802,9 +802,9 @@ function PortfolioTab() {
 
             {/* Mini verification badges */}
             <div className="flex gap-1.5 pt-2 border-t border-white/[0.06] mb-3">
-              <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${credit.sourceVerified ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-white/30'}`}>SRC</span>
-              <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${credit.logicVerified ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-white/30'}`}>LOG</span>
-              <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${credit.mintVerified ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-white/30'}`}>MNT</span>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${credit.sourceVerified ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-white/60'}`}>SRC</span>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${credit.logicVerified ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-white/60'}`}>LOG</span>
+              <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${credit.mintVerified ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-white/60'}`}>MNT</span>
             </div>
 
             {/* Action buttons */}
@@ -932,8 +932,9 @@ function VerificationTab() {
     },
   ];
 
+  const defaultPhaseColors = { bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', text: 'text-emerald-400', line: 'bg-emerald-500/30' };
   const phaseColors: Record<string, { bg: string; border: string; text: string; line: string }> = {
-    emerald: { bg: 'bg-emerald-500/10', border: 'border-emerald-500/20', text: 'text-emerald-400', line: 'bg-emerald-500/30' },
+    emerald: defaultPhaseColors,
     cyan: { bg: 'bg-cyan-500/10', border: 'border-cyan-500/20', text: 'text-cyan-400', line: 'bg-cyan-500/30' },
     purple: { bg: 'bg-purple-500/10', border: 'border-purple-500/20', text: 'text-purple-400', line: 'bg-purple-500/30' },
   };
@@ -976,14 +977,14 @@ function VerificationTab() {
             </div>
           </div>
         ) : (
-          <p className="text-white/30 text-sm">Threshold data not yet available from the verification engine.</p>
+          <p className="text-white/60 text-sm">Threshold data not yet available from the verification engine.</p>
         )}
       </GlassCard>
 
       {/* Verification Simulator */}
       <GlassCard className="p-6 mb-8">
         <p className="text-white/50 text-xs font-mono uppercase tracking-widest mb-4">Verification Simulator</p>
-        <p className="text-white/30 text-sm mb-4">Test how the Proof-of-Physics logic check evaluates a capture claim. Enter CO2 captured and energy consumed to see if it passes.</p>
+        <p className="text-white/60 text-sm mb-4">Test how the Proof-of-Physics logic check evaluates a capture claim. Enter CO2 captured and energy consumed to see if it passes.</p>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6">
           <div>
             <label className="text-[10px] text-white/40 font-mono uppercase tracking-widest">CO2 Captured (kg)</label>
@@ -1066,8 +1067,8 @@ function VerificationTab() {
                   </div>
                 </div>
                 {/* Labels */}
-                <div className="absolute bottom-0.5 left-1 text-[9px] text-white/20 font-mono">100</div>
-                <div className="absolute bottom-0.5 right-1 text-[9px] text-white/20 font-mono">700</div>
+                <div className="absolute bottom-0.5 left-1 text-[9px] text-white/55 font-mono">100</div>
+                <div className="absolute bottom-0.5 right-1 text-[9px] text-white/55 font-mono">700</div>
                 <div className="absolute bottom-0.5 text-[9px] text-emerald-400/40 font-mono" style={{ left: `${simResult.validStart}%`, transform: 'translateX(-50%)' }}>200</div>
                 <div className="absolute bottom-0.5 text-[9px] text-emerald-400/40 font-mono" style={{ left: `${simResult.validEnd}%`, transform: 'translateX(-50%)' }}>600</div>
               </div>
@@ -1086,7 +1087,7 @@ function VerificationTab() {
         )}
 
         {!simResult && simCo2 === '' && simEnergy === '' && (
-          <div className="text-center py-6 text-white/20 text-sm">
+          <div className="text-center py-6 text-white/55 text-sm">
             Enter values above to simulate a verification check.
           </div>
         )}
@@ -1112,7 +1113,7 @@ function VerificationTab() {
                 <span className="text-xs text-white/40 font-mono">Energy: {scenario.energy} kWh</span>
                 <span className={`text-xs font-mono font-bold ${passed ? 'text-emerald-400' : 'text-red-400'}`}>{ratio.toFixed(0)} kWh/t</span>
               </div>
-              <p className="text-white/30 text-xs leading-relaxed">{scenario.description}</p>
+              <p className="text-white/60 text-xs leading-relaxed">{scenario.description}</p>
               <button
                 onClick={() => { setSimCo2(String(scenario.co2)); setSimEnergy(String(scenario.energy)); }}
                 className="mt-2 text-[10px] text-emerald-400/60 hover:text-emerald-400 transition font-mono"
@@ -1128,7 +1129,7 @@ function VerificationTab() {
       <p className="text-white/50 text-xs font-mono uppercase tracking-widest mb-4">Proof-of-Physics Pipeline</p>
       <div className="space-y-4">
         {phases.map((phase, idx) => {
-          const c = phaseColors[phase.color]!;
+          const c = phaseColors[phase.color] ?? defaultPhaseColors;
           return (
             <div key={phase.step} className="relative">
               {idx < phases.length - 1 && (
@@ -1200,7 +1201,7 @@ function ProvenanceTab() {
         <div className="flex flex-col sm:flex-row sm:items-end gap-4">
           <div className="flex-1">
             <p className="text-white/50 text-xs font-mono uppercase tracking-widest mb-2">Token Provenance Tracker</p>
-            <p className="text-white/30 text-sm mb-3">
+            <p className="text-white/60 text-sm mb-3">
               Trace the complete lifecycle of any carbon credit from DAC capture to on-chain minting and beyond. This is TerraQura&apos;s core transparency layer.
             </p>
             <div className="relative max-w-xs">
@@ -1267,7 +1268,7 @@ function ProvenanceTab() {
                         <span className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold ${colors.bg} ${colors.text}`}>
                           {PROVENANCE_EVENT_LABELS[evt.event]}
                         </span>
-                        <span className="text-white/30 text-xs font-mono">
+                        <span className="text-white/60 text-xs font-mono">
                           {new Date(evt.timestamp * 1000).toLocaleString()}
                         </span>
                       </div>
@@ -1277,12 +1278,12 @@ function ProvenanceTab() {
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                       <div className="flex items-center gap-2">
-                        <span className="text-white/30 text-[10px] font-mono uppercase shrink-0">TX</span>
+                        <span className="text-white/60 text-[10px] font-mono uppercase shrink-0">TX</span>
                         <span className="text-white/50 text-xs font-mono truncate">{evt.txHash.slice(0, 18)}...{evt.txHash.slice(-8)}</span>
                         <CopyButton text={evt.txHash} />
                       </div>
                       <div className="flex items-center gap-2">
-                        <span className="text-white/30 text-[10px] font-mono uppercase shrink-0">Actor</span>
+                        <span className="text-white/60 text-[10px] font-mono uppercase shrink-0">Actor</span>
                         <span className="text-white/50 text-xs font-mono truncate">{evt.actor.slice(0, 10)}...{evt.actor.slice(-6)}</span>
                         <CopyButton text={evt.actor} />
                       </div>
@@ -1298,12 +1299,12 @@ function ProvenanceTab() {
             <div className="absolute left-4 top-0 w-5 h-5 rounded-full bg-white/10 flex items-center justify-center">
               <div className="w-2 h-2 rounded-full bg-white/20" />
             </div>
-            <p className="text-white/20 text-xs font-mono pt-1">End of provenance chain</p>
+            <p className="text-white/55 text-xs font-mono pt-1">End of provenance chain</p>
           </div>
         </div>
       ) : tokenInput !== '' ? (
         <GlassCard className="p-8 text-center">
-          <p className="text-white/30 text-sm">No provenance data found for Token ID {tokenInput}. Try a value between 1 and 13.</p>
+          <p className="text-white/60 text-sm">No provenance data found for Token ID {tokenInput}. Try a value between 1 and 13.</p>
         </GlassCard>
       ) : (
         <GlassCard className="p-12 text-center">
@@ -1313,7 +1314,7 @@ function ProvenanceTab() {
             </svg>
           </div>
           <p className="text-white/40 text-sm mb-1">Enter a Token ID to view its full provenance chain</p>
-          <p className="text-white/20 text-xs">Every carbon credit on TerraQura has a complete, immutable lifecycle record on-chain.</p>
+          <p className="text-white/55 text-xs">Every carbon credit on TerraQura has a complete, immutable lifecycle record on-chain.</p>
         </GlassCard>
       )}
     </div>
@@ -1325,7 +1326,7 @@ function ProvenanceTab() {
 // ============================================
 
 function AnalyticsTab() {
-  const totalMintedNum = SUPPLY_OVER_TIME[SUPPLY_OVER_TIME.length - 1]!.supply;
+  const totalMintedNum = SUPPLY_OVER_TIME[SUPPLY_OVER_TIME.length - 1]?.supply ?? 0;
   const totalRetiredNum = seededInt(400, 45, 85);
   const retirementRate = ((totalRetiredNum / totalMintedNum) * 100).toFixed(1);
   const avgTransfersPerCredit = (seededInt(401, 12, 28) / 10).toFixed(1);
@@ -1362,8 +1363,8 @@ function AnalyticsTab() {
           })}
         </div>
         <div className="flex justify-between mt-2">
-          <span className="text-[10px] text-white/20 font-mono">Day 1</span>
-          <span className="text-[10px] text-white/20 font-mono">Day 90</span>
+          <span className="text-[10px] text-white/55 font-mono">Day 1</span>
+          <span className="text-[10px] text-white/55 font-mono">Day 90</span>
         </div>
       </GlassCard>
 
@@ -1374,10 +1375,10 @@ function AnalyticsTab() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-white/[0.06]">
-                <th className="text-left text-[10px] text-white/30 font-mono uppercase tracking-widest pb-3 pr-4">Rank</th>
-                <th className="text-left text-[10px] text-white/30 font-mono uppercase tracking-widest pb-3 pr-4">Address</th>
-                <th className="text-right text-[10px] text-white/30 font-mono uppercase tracking-widest pb-3 pr-4">Balance</th>
-                <th className="text-right text-[10px] text-white/30 font-mono uppercase tracking-widest pb-3">Share</th>
+                <th className="text-left text-[10px] text-white/60 font-mono uppercase tracking-widest pb-3 pr-4">Rank</th>
+                <th className="text-left text-[10px] text-white/60 font-mono uppercase tracking-widest pb-3 pr-4">Address</th>
+                <th className="text-right text-[10px] text-white/60 font-mono uppercase tracking-widest pb-3 pr-4">Balance</th>
+                <th className="text-right text-[10px] text-white/60 font-mono uppercase tracking-widest pb-3">Share</th>
               </tr>
             </thead>
             <tbody>
@@ -1385,7 +1386,7 @@ function AnalyticsTab() {
                 <tr key={idx} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
                   <td className="py-3 pr-4">
                     <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
-                      idx === 0 ? 'bg-amber-500/20 text-amber-400' : 'bg-white/[0.04] text-white/30'
+                      idx === 0 ? 'bg-amber-500/20 text-amber-400' : 'bg-white/[0.04] text-white/60'
                     }`}>{idx + 1}</span>
                   </td>
                   <td className="py-3 pr-4">
@@ -1443,7 +1444,8 @@ function AnalyticsTab() {
             { label: 'Listed on Marketplace', count: seededInt(404, 60, 130), color: 'bg-purple-500', percentage: 0 },
             { label: 'Retired', count: totalRetiredNum, color: 'bg-slate-500', percentage: 0 },
           ].map((step, idx, arr) => {
-            const pct = idx === 0 ? 100 : Math.round((step.count / arr[0]!.count) * 100);
+            const baseCount = arr[0]?.count ?? 1;
+            const pct = idx === 0 ? 100 : Math.round((step.count / baseCount) * 100);
             return (
               <div key={step.label} className="flex items-center gap-4">
                 <span className="text-xs text-white/50 w-44 shrink-0">{step.label}</span>
@@ -1474,7 +1476,7 @@ function CertificatesTab() {
   return (
     <div>
       <p className="text-white/50 text-xs font-mono uppercase tracking-widest mb-2">Retirement Certificates</p>
-      <p className="text-white/30 text-sm mb-6">
+      <p className="text-white/60 text-sm mb-6">
         Each retired carbon credit generates a permanent, verifiable certificate. These certificates are proof that carbon has been permanently removed from the atmosphere and the corresponding credits can never be re-used.
       </p>
 
@@ -1515,19 +1517,19 @@ function CertificatesTab() {
               {/* Certificate details grid */}
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <div className="p-2.5 rounded-lg bg-white/[0.02]">
-                  <p className="text-white/30 text-[9px] font-mono uppercase tracking-widest mb-0.5">Token ID</p>
+                  <p className="text-white/60 text-[9px] font-mono uppercase tracking-widest mb-0.5">Token ID</p>
                   <p className="text-white/70 font-mono text-sm">#{cert.tokenId}</p>
                 </div>
                 <div className="p-2.5 rounded-lg bg-white/[0.02]">
-                  <p className="text-white/30 text-[9px] font-mono uppercase tracking-widest mb-0.5">Retirement Date</p>
+                  <p className="text-white/60 text-[9px] font-mono uppercase tracking-widest mb-0.5">Retirement Date</p>
                   <p className="text-white/70 font-mono text-sm">{cert.retirementDate}</p>
                 </div>
                 <div className="p-2.5 rounded-lg bg-white/[0.02]">
-                  <p className="text-white/30 text-[9px] font-mono uppercase tracking-widest mb-0.5">DAC Unit</p>
+                  <p className="text-white/60 text-[9px] font-mono uppercase tracking-widest mb-0.5">DAC Unit</p>
                   <p className="text-white/70 font-mono text-sm">{cert.dacUnit}</p>
                 </div>
                 <div className="p-2.5 rounded-lg bg-white/[0.02]">
-                  <p className="text-white/30 text-[9px] font-mono uppercase tracking-widest mb-0.5">Vintage Year</p>
+                  <p className="text-white/60 text-[9px] font-mono uppercase tracking-widest mb-0.5">Vintage Year</p>
                   <p className="text-white/70 font-mono text-sm">{cert.vintageYear}</p>
                 </div>
               </div>
@@ -1535,18 +1537,18 @@ function CertificatesTab() {
               {/* Beneficiary and reason */}
               <div className="space-y-2 mb-4">
                 <div className="p-2.5 rounded-lg bg-white/[0.02]">
-                  <p className="text-white/30 text-[9px] font-mono uppercase tracking-widest mb-0.5">Beneficiary</p>
+                  <p className="text-white/60 text-[9px] font-mono uppercase tracking-widest mb-0.5">Beneficiary</p>
                   <p className="text-white/70 text-sm">{cert.beneficiary}</p>
                 </div>
                 <div className="p-2.5 rounded-lg bg-white/[0.02]">
-                  <p className="text-white/30 text-[9px] font-mono uppercase tracking-widest mb-0.5">Retirement Reason</p>
+                  <p className="text-white/60 text-[9px] font-mono uppercase tracking-widest mb-0.5">Retirement Reason</p>
                   <p className="text-white/50 text-xs leading-relaxed">{cert.reason}</p>
                 </div>
               </div>
 
               {/* Verification chain hash */}
               <div className="p-2.5 rounded-lg bg-white/[0.02] mb-4">
-                <p className="text-white/30 text-[9px] font-mono uppercase tracking-widest mb-0.5">Verification Chain Hash</p>
+                <p className="text-white/60 text-[9px] font-mono uppercase tracking-widest mb-0.5">Verification Chain Hash</p>
                 <p className="text-white/40 text-[10px] font-mono break-all">{cert.verificationHash}</p>
               </div>
 

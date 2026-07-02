@@ -58,11 +58,11 @@ import type { MarketModule } from "./market.js";
  * // One-click offset
  * const result = await client.offset.offsetFootprint(1000, "Carbon neutral Q1 2026");
  * console.log(`Retired ${result.amountRetiredKg} kg CO2`);
- * console.log(`Cost: ${ethers.formatEther(result.cost.total)} AETH`);
+ * console.log(`Cost: ${ethers.formatEther(result.cost.total)} AETHEL`);
  *
  * // Preview cost without executing
  * const estimate = await client.offset.estimateOffset(500);
- * console.log(`Estimated cost: ${ethers.formatEther(estimate.estimatedCost.total)} AETH`);
+ * console.log(`Estimated cost: ${ethers.formatEther(estimate.estimatedCost.total)} AETHEL`);
  * ```
  */
 export class OffsetModule {

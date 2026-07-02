@@ -9,21 +9,26 @@ use terraqura_verifier::handlers;
 
 #[tokio::main]
 async fn main() {
-    let config = Config::from_env();
+    let config = Config::try_from_env().unwrap_or_else(|err| {
+        eprintln!("invalid TerraQura verifier config: {err}");
+        std::process::exit(1);
+    });
 
     // Initialise structured logging
     tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new(&config.log_level)),
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&config.log_level)),
         )
         .init();
 
     tracing::info!(
-        "TerraQura Verifier v{} starting on {}:{}",
+        "TerraQura Verifier v{} starting on {}:{} for network={} deployment={} chain_id={}",
         env!("CARGO_PKG_VERSION"),
         config.host,
-        config.port
+        config.port,
+        config.network_key,
+        config.deployment_key,
+        config.chain_id,
     );
 
     let cors = CorsLayer::new()
@@ -42,7 +47,10 @@ async fn main() {
             "/sensor/batch-validate",
             post(handlers::sensor_batch_validate),
         )
-        .layer(cors);
+        .layer(cors)
+        .with_state(handlers::AppState {
+            config: config.clone(),
+        });
 
     let addr = SocketAddr::new(config.host, config.port);
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();

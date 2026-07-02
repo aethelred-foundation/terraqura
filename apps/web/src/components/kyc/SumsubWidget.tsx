@@ -6,6 +6,8 @@
 import { useEffect, useRef, useCallback, useState } from "react";
 import Script from "next/script";
 
+import { reportClientError } from "@/lib/errors";
+
 interface SumsubWidgetProps {
   accessToken: string;
   onComplete?: (applicantId: string) => void;
@@ -74,6 +76,19 @@ export function SumsubWidget({
   const [sdkLoaded, setSdkLoaded] = useState(false);
   const [isInitialized, setIsInitialized] = useState(false);
 
+  const reportSumsubError = useCallback(
+    (error: unknown, event: string, payload?: SumsubSdkPayload) => {
+      void reportClientError(error, {
+        source: "sumsub-widget",
+        event,
+        reviewStatus: payload?.reviewStatus,
+        reviewAnswer: payload?.reviewResult?.reviewAnswer,
+        hasApplicantId: typeof payload?.applicantId === "string",
+      });
+    },
+    []
+  );
+
   const initSdk = useCallback(() => {
     if (!sdkLoaded || !accessToken || !containerRef.current || isInitialized) {
       return;
@@ -97,8 +112,9 @@ export function SumsubWidget({
             }
           },
           onError: (error) => {
-            console.error("[Sumsub] Error:", error);
-            onError?.(new Error(error.message || "Sumsub verification error"));
+            const normalized = new Error(error.message || "Sumsub verification error");
+            reportSumsubError(normalized, "sdk-error", error);
+            onError?.(normalized);
           },
         })
         .withOptions({
@@ -114,8 +130,9 @@ export function SumsubWidget({
           }
         })
         .on("idCheck.onError", (error) => {
-          console.error("[Sumsub] Check error:", error);
-          onError?.(new Error(error.message || "Verification check failed"));
+          const normalized = new Error(error.message || "Verification check failed");
+          reportSumsubError(normalized, "check-error", error);
+          onError?.(normalized);
         })
         .on("idCheck.accessTokenExpired", async () => {
           if (onTokenExpired) {
@@ -131,10 +148,10 @@ export function SumsubWidget({
       snsWebSdkInstance.launch("sumsub-websdk-container");
       setIsInitialized(true);
     } catch (error) {
-      console.error("[Sumsub] Init error:", error);
+      reportSumsubError(error, "init-error");
       onError?.(error instanceof Error ? error : new Error("Failed to initialize Sumsub"));
     }
-  }, [accessToken, sdkLoaded, isInitialized, onComplete, onError, onTokenExpired]);
+  }, [accessToken, sdkLoaded, isInitialized, onComplete, onError, onTokenExpired, reportSumsubError]);
 
   useEffect(() => {
     if (sdkLoaded && accessToken) {
@@ -152,7 +169,11 @@ export function SumsubWidget({
       <Script
         src="https://static.sumsub.com/idensic/static/sns-websdk-builder.js"
         onLoad={() => setSdkLoaded(true)}
-        onError={() => onError?.(new Error("Failed to load Sumsub SDK"))}
+        onError={() => {
+          const error = new Error("Failed to load Sumsub SDK");
+          reportSumsubError(error, "script-load-error");
+          onError?.(error);
+        }}
       />
       <div
         id="sumsub-websdk-container"

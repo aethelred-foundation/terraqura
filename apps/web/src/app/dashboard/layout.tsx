@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import { DemoBanner } from "@/components/dashboard/DemoBanner";
 
 export const metadata: Metadata = {
   title: {
@@ -15,5 +16,10 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  return children;
+  return (
+    <>
+      <DemoBanner />
+      {children}
+    </>
+  );
 }

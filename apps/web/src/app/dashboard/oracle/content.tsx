@@ -46,8 +46,11 @@ function seededFloat(seed: number, min: number, max: number, decimals: number = 
   return Math.round(val * factor) / factor;
 }
 
-function seededChoice<T>(seed: number, arr: T[]): T {
-  return arr[seededInt(seed, 0, arr.length - 1)]!;
+function seededChoice<T>(seed: number, arr: readonly T[]): T {
+  if (arr.length === 0) {
+    throw new Error("seededChoice: empty array");
+  }
+  return arr[seededInt(seed, 0, arr.length - 1)] as T;
 }
 
 // ============================================
@@ -255,7 +258,10 @@ const ANOMALY_ROOT_CAUSES = [
 const MOCK_ANOMALIES: MockAnomaly[] = Array.from({ length: 12 }, (_, i) => {
   const seed = 500 + i * 7;
   const deviceIdx = seededInt(seed, 0, MOCK_DEVICES.length - 1);
-  const device = MOCK_DEVICES[deviceIdx]!;
+  const device = MOCK_DEVICES[deviceIdx] ?? MOCK_DEVICES[0];
+  if (!device) {
+    throw new Error("MOCK_DEVICES is empty");
+  }
   const severities: AnomalySeverity[] = ["Low", "Medium", "High", "Critical"];
   const statuses: AnomalyStatus[] = ["Open", "Investigating", "Resolved", "DeviceSuspended"];
   const metrics = ["CO2 Capture Rate", "Energy Consumption", "Temperature", "Pressure", "Humidity", "Efficiency"];
@@ -378,8 +384,8 @@ function DAppFooter() {
   return (
     <footer className="border-t border-white/[0.04] mt-16">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 flex items-center justify-between">
-        <span className="text-white/30 text-xs font-mono">TerraQura NativeIoT Oracle</span>
-        <span className="text-white/30 text-xs font-mono">Aethelred Sovereign Network</span>
+        <span className="text-white/60 text-xs font-mono">TerraQura NativeIoT Oracle</span>
+        <span className="text-white/60 text-xs font-mono">Aethelred Sovereign Network</span>
       </div>
     </footer>
   );
@@ -517,7 +523,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="text-white/30 hover:text-white/60 transition-colors text-xs font-mono"
+      className="text-white/60 hover:text-white/60 transition-colors text-xs font-mono"
     >
       {copied ? "Copied" : "Copy"}
     </button>
@@ -540,7 +546,7 @@ function MiniBarChart({
   const max = maxVal ?? Math.max(...data, 1);
   return (
     <div>
-      {label && <p className="text-white/30 text-[10px] font-mono uppercase tracking-wider mb-1">{label}</p>}
+      {label && <p className="text-white/60 text-[10px] font-mono uppercase tracking-wider mb-1">{label}</p>}
       <div className="flex items-end gap-px" style={{ height }}>
         {data.map((val, i) => {
           const h = Math.max(1, (val / max) * 100);
@@ -628,7 +634,7 @@ function LiveFeedTab() {
         <div className="flex items-center gap-3 mb-5">
           <LiveDot isFresh={true} />
           <h3 className="text-white/80 font-semibold text-sm">Oracle Health Monitor</h3>
-          <span className="text-white/30 text-xs font-mono ml-auto">Heartbeat Timeout: 900s (15 min)</span>
+          <span className="text-white/60 text-xs font-mono ml-auto">Heartbeat Timeout: 900s (15 min)</span>
         </div>
 
         {/* Heartbeat Timeline */}
@@ -649,7 +655,7 @@ function LiveFeedTab() {
                 <span className={`text-xs font-mono w-16 text-right flex-shrink-0 ${getFreshnessTextColor(device.minutesAgo)}`}>
                   {device.status === "Offline" ? "OFFLINE" : formatTimeAgo(device.minutesAgo)}
                 </span>
-                <span className="text-white/20 text-[10px] font-mono w-20 text-right flex-shrink-0">
+                <span className="text-white/55 text-[10px] font-mono w-20 text-right flex-shrink-0">
                   {device.status === "Offline" ? "--" : `${countdownRemaining}s left`}
                 </span>
               </div>
@@ -684,7 +690,7 @@ function LiveFeedTab() {
         <div className="flex items-center gap-3 mb-4">
           <LiveDot isFresh={true} />
           <h3 className="text-white/80 font-semibold text-sm">Real-time Event Feed</h3>
-          <span className="text-white/30 text-xs font-mono ml-auto">
+          <span className="text-white/60 text-xs font-mono ml-auto">
             Listening for IoTDataLogged events
           </span>
         </div>
@@ -698,7 +704,7 @@ function LiveFeedTab() {
                 <span className={evt.eventName === "AnomalyDetected" ? "text-amber-400" : "text-emerald-400"}>
                   {evt.eventName}
                 </span>
-                <span className="text-white/30 truncate">
+                <span className="text-white/60 truncate">
                   Block #{evt.blockNumber.toString()}
                 </span>
               </div>
@@ -706,10 +712,10 @@ function LiveFeedTab() {
           </div>
         ) : (
           <div className="text-center py-8">
-            <p className="text-white/30 text-sm">
+            <p className="text-white/60 text-sm">
               No live events yet. Events will appear here when oracle submits data on-chain.
             </p>
-            <p className="text-white/20 text-xs mt-2 font-mono">
+            <p className="text-white/55 text-xs mt-2 font-mono">
               Monitoring: IoTDataLogged, AnomalyDetected
             </p>
           </div>
@@ -780,7 +786,7 @@ function DeviceCardExpanded({
             )}
             <StatusBadge status={device.status} />
             <svg
-              className={`h-4 w-4 text-white/30 transition-transform ${isExpanded ? "rotate-180" : ""}`}
+              className={`h-4 w-4 text-white/60 transition-transform ${isExpanded ? "rotate-180" : ""}`}
               fill="none"
               stroke="currentColor"
               viewBox="0 0 24 24"
@@ -794,13 +800,13 @@ function DeviceCardExpanded({
           <div className="bg-white/[0.03] rounded-lg p-3">
             <p className="text-white/40 text-[10px] font-mono uppercase tracking-wider mb-1">CO2 Captured</p>
             <p className="text-emerald-400 font-bold text-lg">
-              {formatNumber(co2)}<span className="text-xs text-white/30 ml-1">kg</span>
+              {formatNumber(co2)}<span className="text-xs text-white/60 ml-1">kg</span>
             </p>
           </div>
           <div className="bg-white/[0.03] rounded-lg p-3">
             <p className="text-white/40 text-[10px] font-mono uppercase tracking-wider mb-1">Energy Used</p>
             <p className="text-cyan-400 font-bold text-lg">
-              {formatNumber(energy)}<span className="text-xs text-white/30 ml-1">kWh</span>
+              {formatNumber(energy)}<span className="text-xs text-white/60 ml-1">kWh</span>
             </p>
           </div>
         </div>
@@ -826,7 +832,7 @@ function DeviceCardExpanded({
               CO2 Capture Rate (24h) -- kg/hr
             </p>
             <MiniBarChart data={co2History} barColor="bg-emerald-500" height={56} />
-            <div className="flex justify-between text-[10px] text-white/20 font-mono mt-1">
+            <div className="flex justify-between text-[10px] text-white/55 font-mono mt-1">
               <span>-24h</span>
               <span>-12h</span>
               <span>Now</span>
@@ -839,7 +845,7 @@ function DeviceCardExpanded({
               Capture Efficiency (24h) -- kg CO2 / kWh
             </p>
             <MiniBarChart data={efficiencyHistory} barColor="bg-cyan-500" height={48} />
-            <div className="flex justify-between text-[10px] text-white/20 font-mono mt-1">
+            <div className="flex justify-between text-[10px] text-white/55 font-mono mt-1">
               <span>-24h</span>
               <span>Now</span>
             </div>
@@ -866,12 +872,12 @@ function DeviceCardExpanded({
                       <SeverityBadge severity={a.severity} />
                       <span className="text-white/40 font-mono">{a.metric}</span>
                     </div>
-                    <span className="text-white/30 font-mono">{a.timestamp.slice(0, 10)}</span>
+                    <span className="text-white/60 font-mono">{a.timestamp.slice(0, 10)}</span>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-white/20 text-xs font-mono">No anomalies recorded</p>
+              <p className="text-white/55 text-xs font-mono">No anomalies recorded</p>
             )}
           </div>
         </div>
@@ -1028,17 +1034,17 @@ function DeviceStatusTab() {
                       <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M3.055 11H5a2 2 0 012 2v1a2 2 0 002 2 2 2 0 012 2v2.945M8 3.935V5.5A2.5 2.5 0 0010.5 8h.5a2 2 0 012 2 2 2 0 104 0 2 2 0 012-2h1.064M15 20.488V18a2 2 0 012-2h3.064M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
                     </svg>
                   ) : (
-                    <span className="text-white/20 text-xs font-mono">No imagery</span>
+                    <span className="text-white/55 text-xs font-mono">No imagery</span>
                   )}
                 </div>
                 <p className="text-white/70 text-xs font-semibold mb-1">{device.dacId}</p>
-                <p className="text-white/30 text-[10px] font-mono mb-2">
+                <p className="text-white/60 text-[10px] font-mono mb-2">
                   {device.lat.toFixed(4)}, {device.lon.toFixed(4)}
                 </p>
                 {hasCID ? (
                   <div className="space-y-1">
                     <div className="flex items-center gap-1">
-                      <span className="text-white/30 text-[10px] font-mono">CID:</span>
+                      <span className="text-white/60 text-[10px] font-mono">CID:</span>
                       <a
                         href={`https://ipfs.io/ipfs/${device.satelliteCID}`}
                         target="_blank"
@@ -1048,7 +1054,7 @@ function DeviceStatusTab() {
                         {device.satelliteCID.slice(0, 20)}...
                       </a>
                     </div>
-                    <p className="text-white/30 text-[10px] font-mono">Captured: 2026-03-{String(captureDay).padStart(2, "0")}</p>
+                    <p className="text-white/60 text-[10px] font-mono">Captured: 2026-03-{String(captureDay).padStart(2, "0")}</p>
                     <div className="flex items-center gap-1.5 mt-1">
                       <span className={`h-1.5 w-1.5 rounded-full ${isVerified ? "bg-emerald-500" : "bg-amber-500"}`} />
                       <span className={`text-[10px] font-mono ${isVerified ? "text-emerald-400" : "text-amber-400"}`}>
@@ -1057,7 +1063,7 @@ function DeviceStatusTab() {
                     </div>
                   </div>
                 ) : (
-                  <p className="text-white/20 text-[10px] font-mono">Device offline -- no satellite data</p>
+                  <p className="text-white/55 text-[10px] font-mono">Device offline -- no satellite data</p>
                 )}
               </div>
             );
@@ -1139,8 +1145,9 @@ function ArchitectureTab() {
     },
   ];
 
+  const defaultLayerColors = { border: "border-l-emerald-500/50", bg: "bg-emerald-500/10", text: "text-emerald-400" };
   const colorMap: Record<string, { border: string; bg: string; text: string }> = {
-    emerald: { border: "border-l-emerald-500/50", bg: "bg-emerald-500/10", text: "text-emerald-400" },
+    emerald: defaultLayerColors,
     cyan: { border: "border-l-cyan-500/50", bg: "bg-cyan-500/10", text: "text-cyan-400" },
     blue: { border: "border-l-blue-500/50", bg: "bg-blue-500/10", text: "text-blue-400" },
     purple: { border: "border-l-purple-500/50", bg: "bg-purple-500/10", text: "text-purple-400" },
@@ -1165,7 +1172,7 @@ function ArchitectureTab() {
       {/* Architecture Diagram with animated arrows */}
       <div className="space-y-3">
         {layers.map((layer, i) => {
-          const colors = colorMap[layer.color]!;
+          const colors = colorMap[layer.color] ?? defaultLayerColors;
           return (
             <div key={layer.id}>
               <GlassCard className={`p-6 border-l-4 ${colors.border}`}>
@@ -1175,7 +1182,7 @@ function ArchitectureTab() {
                   </div>
                   <div className="flex-1">
                     <div className="flex items-center gap-2 mb-2">
-                      <span className="text-white/30 text-xs font-mono">LAYER {layer.id}</span>
+                      <span className="text-white/60 text-xs font-mono">LAYER {layer.id}</span>
                       <h3 className="text-white/90 font-semibold">{layer.name}</h3>
                     </div>
                     <p className="text-white/50 text-sm leading-relaxed">{layer.description}</p>
@@ -1333,10 +1340,11 @@ function FleetAnalyticsTab() {
 
   // Monthly fleet growth (12 months, seeded)
   const monthlyGrowth = useMemo(() => {
+    const monthLabels = ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"] as const;
     return Array.from({ length: 12 }, (_, i) => {
       const seed = 800 + i * 13;
       return {
-        month: ["Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec", "Jan", "Feb", "Mar"][i]!,
+        month: monthLabels[i] ?? "",
         co2: seededInt(seed, 20000, 180000),
         devices: seededInt(seed + 1, 3, 8),
       };
@@ -1372,9 +1380,9 @@ function FleetAnalyticsTab() {
           />
         </div>
         <div className="flex justify-between mt-2">
-          <span className="text-white/30 text-[10px] font-mono">0%</span>
-          <span className="text-white/30 text-[10px] font-mono">Max Capacity: {formatNumber(maxCapacity)} kg</span>
-          <span className="text-white/30 text-[10px] font-mono">100%</span>
+          <span className="text-white/60 text-[10px] font-mono">0%</span>
+          <span className="text-white/60 text-[10px] font-mono">Max Capacity: {formatNumber(maxCapacity)} kg</span>
+          <span className="text-white/60 text-[10px] font-mono">100%</span>
         </div>
       </GlassCard>
 
@@ -1426,7 +1434,7 @@ function FleetAnalyticsTab() {
             const barPct = (device.efficiency / maxEff) * 100;
             return (
               <div key={device.dacId} className="flex items-center gap-3">
-                <span className="text-white/30 text-xs font-mono w-6 flex-shrink-0">#{idx + 1}</span>
+                <span className="text-white/60 text-xs font-mono w-6 flex-shrink-0">#{idx + 1}</span>
                 <span className="text-white/60 text-xs font-mono w-36 flex-shrink-0 truncate">{device.dacId}</span>
                 <div className="flex-1 h-5 bg-white/[0.04] rounded-full overflow-hidden relative">
                   <div
@@ -1452,7 +1460,7 @@ function FleetAnalyticsTab() {
             const h = Math.max(2, (m.co2 / maxMonthlyCO2) * 100);
             return (
               <div key={i} className="flex-1 flex flex-col items-center gap-1">
-                <span className="text-[9px] font-mono text-white/30">{formatNumber(m.co2)}</span>
+                <span className="text-[9px] font-mono text-white/60">{formatNumber(m.co2)}</span>
                 <div
                   className="w-full rounded-t-md bg-gradient-to-t from-emerald-600/60 to-emerald-400/80 hover:from-emerald-500 hover:to-emerald-300 transition-colors"
                   style={{ height: `${h}%` }}
@@ -1547,7 +1555,7 @@ function AnomalyLabTab() {
                       }`}
                     />
                   ))}
-                  <span className="text-white/30 text-[10px] font-mono ml-1">{strikes}/3</span>
+                  <span className="text-white/60 text-[10px] font-mono ml-1">{strikes}/3</span>
                 </div>
                 <p className={`text-[10px] font-mono ${strikes >= 3 ? "text-red-400" : strikes > 0 ? "text-amber-400" : "text-emerald-400"}`}>
                   {strikes >= 3 ? "AUTO-SUSPENDED" : strikes > 0 ? `${3 - strikes} strikes remaining` : "Clear"}
@@ -1577,9 +1585,9 @@ function AnomalyLabTab() {
           })}
         </div>
         <div className="flex justify-between mt-1">
-          <span className="text-white/20 text-[10px] font-mono">-30d</span>
-          <span className="text-white/20 text-[10px] font-mono">-15d</span>
-          <span className="text-white/20 text-[10px] font-mono">Today</span>
+          <span className="text-white/55 text-[10px] font-mono">-30d</span>
+          <span className="text-white/55 text-[10px] font-mono">-15d</span>
+          <span className="text-white/55 text-[10px] font-mono">Today</span>
         </div>
       </GlassCard>
 
@@ -1608,7 +1616,7 @@ function AnomalyLabTab() {
           <option value="Resolved">Resolved</option>
           <option value="DeviceSuspended">DeviceSuspended</option>
         </select>
-        <span className="text-white/30 text-xs font-mono ml-auto">{filteredAnomalies.length} results</span>
+        <span className="text-white/60 text-xs font-mono ml-auto">{filteredAnomalies.length} results</span>
       </div>
 
       {/* Anomaly List */}
@@ -1623,14 +1631,14 @@ function AnomalyLabTab() {
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-3">
-                    <span className="text-white/30 text-xs font-mono">{anomaly.id}</span>
+                    <span className="text-white/60 text-xs font-mono">{anomaly.id}</span>
                     <SeverityBadge severity={anomaly.severity} />
                     <AnomalyStatusBadge status={anomaly.status} />
                   </div>
                   <div className="flex items-center gap-3">
                     <span className="text-white/40 text-xs font-mono">{anomaly.dacId}</span>
                     <svg
-                      className={`h-4 w-4 text-white/30 transition-transform ${isExp ? "rotate-180" : ""}`}
+                      className={`h-4 w-4 text-white/60 transition-transform ${isExp ? "rotate-180" : ""}`}
                       fill="none"
                       stroke="currentColor"
                       viewBox="0 0 24 24"
@@ -1641,7 +1649,7 @@ function AnomalyLabTab() {
                 </div>
                 <div className="flex items-center gap-4 mt-2">
                   <span className="text-white/50 text-xs">{anomaly.metric}</span>
-                  <span className="text-white/30 text-xs font-mono">{anomaly.timestamp.slice(0, 16).replace("T", " ")}</span>
+                  <span className="text-white/60 text-xs font-mono">{anomaly.timestamp.slice(0, 16).replace("T", " ")}</span>
                 </div>
               </button>
 
@@ -1674,9 +1682,9 @@ function AnomalyLabTab() {
                     <p className="text-white/70 text-sm">{anomaly.rootCause}</p>
                   </div>
                   <div className="flex items-center gap-4 text-xs">
-                    <span className="text-white/30 font-mono">Device: {anomaly.dacId}</span>
-                    <span className="text-white/30 font-mono">Metric: {anomaly.metric}</span>
-                    <span className="text-white/30 font-mono">Time: {anomaly.timestamp}</span>
+                    <span className="text-white/60 font-mono">Device: {anomaly.dacId}</span>
+                    <span className="text-white/60 font-mono">Metric: {anomaly.metric}</span>
+                    <span className="text-white/60 font-mono">Time: {anomaly.timestamp}</span>
                   </div>
                 </div>
               )}
@@ -1702,9 +1710,13 @@ const TELEMETRY_METRICS = [
 ];
 
 function TelemetryTab() {
-  const [selectedDevice, setSelectedDevice] = useState(MOCK_DEVICES[0]!.dacId);
+  const firstDevice = MOCK_DEVICES[0];
+  if (!firstDevice) {
+    throw new Error("MOCK_DEVICES is empty");
+  }
+  const [selectedDevice, setSelectedDevice] = useState(firstDevice.dacId);
 
-  const device = MOCK_DEVICES.find((d) => d.dacId === selectedDevice) || MOCK_DEVICES[0]!;
+  const device = MOCK_DEVICES.find((d) => d.dacId === selectedDevice) ?? firstDevice;
 
   // Generate 7-day telemetry for each metric
   const telemetryData = useMemo(() => {
@@ -1737,7 +1749,7 @@ function TelemetryTab() {
         </select>
         <StatusBadge status={device.status} />
         <div className="ml-auto flex items-center gap-2">
-          <span className="text-white/30 text-xs font-mono">Data Quality:</span>
+          <span className="text-white/60 text-xs font-mono">Data Quality:</span>
           <span className={`text-sm font-bold font-mono ${dataQualityScore >= 95 ? "text-emerald-400" : dataQualityScore >= 85 ? "text-amber-400" : "text-red-400"}`}>
             {dataQualityScore > 0 ? `${dataQualityScore}%` : "--"}
           </span>
@@ -1751,10 +1763,10 @@ function TelemetryTab() {
             <LiveDot isFresh={device.minutesAgo <= 10 && device.status === "Active"} />
             <span className="text-white/60 font-mono">{device.label}</span>
           </div>
-          <span className="text-white/30 font-mono">Location: {device.location}</span>
-          <span className="text-white/30 font-mono">Lat: {device.lat.toFixed(4)}, Lon: {device.lon.toFixed(4)}</span>
-          <span className="text-white/30 font-mono">Firmware: {device.firmwareVersion}</span>
-          <span className="text-white/30 font-mono">Last seen: {formatTimeAgo(device.minutesAgo)}</span>
+          <span className="text-white/60 font-mono">Location: {device.location}</span>
+          <span className="text-white/60 font-mono">Lat: {device.lat.toFixed(4)}, Lon: {device.lon.toFixed(4)}</span>
+          <span className="text-white/60 font-mono">Firmware: {device.firmwareVersion}</span>
+          <span className="text-white/60 font-mono">Last seen: {formatTimeAgo(device.minutesAgo)}</span>
         </div>
       </GlassCard>
 
@@ -1764,9 +1776,9 @@ function TelemetryTab() {
           <div className="flex items-center justify-between mb-3">
             <h3 className="text-white/80 font-semibold text-sm">
               {metric.name}
-              <span className="text-white/30 font-normal ml-2 text-xs">({metric.unit})</span>
+              <span className="text-white/60 font-normal ml-2 text-xs">({metric.unit})</span>
             </h3>
-            <span className="text-white/30 text-[10px] font-mono">7 days, 168 data points</span>
+            <span className="text-white/60 text-[10px] font-mono">7 days, 168 data points</span>
           </div>
 
           {/* CSS Bar Chart */}
@@ -1785,9 +1797,9 @@ function TelemetryTab() {
             })}
           </div>
           <div className="flex justify-between mt-1 mb-4">
-            <span className="text-white/20 text-[10px] font-mono">-7d</span>
-            <span className="text-white/20 text-[10px] font-mono">-3.5d</span>
-            <span className="text-white/20 text-[10px] font-mono">Now</span>
+            <span className="text-white/55 text-[10px] font-mono">-7d</span>
+            <span className="text-white/55 text-[10px] font-mono">-3.5d</span>
+            <span className="text-white/55 text-[10px] font-mono">Now</span>
           </div>
 
           {/* Statistical Summary */}
@@ -1870,7 +1882,7 @@ function ComplianceTab() {
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-4">
           <div className="bg-white/[0.03] rounded-lg p-3">
             <p className="text-white/40 text-[10px] font-mono uppercase mb-1">Target Interval</p>
-            <p className="text-white/70 font-bold text-lg">15 <span className="text-xs text-white/30">min</span></p>
+            <p className="text-white/70 font-bold text-lg">15 <span className="text-xs text-white/60">min</span></p>
           </div>
           <div className="bg-white/[0.03] rounded-lg p-3">
             <p className="text-white/40 text-[10px] font-mono uppercase mb-1">Daily per Device</p>
@@ -1914,29 +1926,29 @@ function ComplianceTab() {
 
               <div className="grid grid-cols-2 sm:grid-cols-5 gap-3 mb-3">
                 <div>
-                  <p className="text-white/30 text-[10px] font-mono uppercase">Availability</p>
+                  <p className="text-white/60 text-[10px] font-mono uppercase">Availability</p>
                   <p className={`font-bold text-sm ${device.availability >= 95 ? "text-emerald-400" : device.availability >= 80 ? "text-amber-400" : "text-red-400"}`}>
                     {device.availability}%
                   </p>
                 </div>
                 <div>
-                  <p className="text-white/30 text-[10px] font-mono uppercase">Submissions</p>
+                  <p className="text-white/60 text-[10px] font-mono uppercase">Submissions</p>
                   <p className="text-white/70 font-bold text-sm">{formatNumber(device.last30DaysSubmissions)}</p>
                 </div>
                 <div>
-                  <p className="text-white/30 text-[10px] font-mono uppercase">Missed</p>
+                  <p className="text-white/60 text-[10px] font-mono uppercase">Missed</p>
                   <p className={`font-bold text-sm ${device.missedSubmissions > 100 ? "text-red-400" : "text-white/50"}`}>
                     {formatNumber(device.missedSubmissions)}
                   </p>
                 </div>
                 <div>
-                  <p className="text-white/30 text-[10px] font-mono uppercase">Avg Freq</p>
+                  <p className="text-white/60 text-[10px] font-mono uppercase">Avg Freq</p>
                   <p className="text-white/70 font-bold text-sm">
                     {device.avgFrequencyMin > 0 ? `${device.avgFrequencyMin} min` : "--"}
                   </p>
                 </div>
                 <div>
-                  <p className="text-white/30 text-[10px] font-mono uppercase">SLA Status</p>
+                  <p className="text-white/60 text-[10px] font-mono uppercase">SLA Status</p>
                   <p className={`font-bold text-sm ${device.availability >= 95 ? "text-emerald-400" : "text-red-400"}`}>
                     {device.availability >= 95 ? "PASS" : "FAIL"}
                   </p>
@@ -1990,33 +2002,33 @@ function ComplianceTab() {
 
                 <div className="space-y-1.5 mb-3">
                   <div className="flex justify-between text-xs">
-                    <span className="text-white/30 font-mono">Period</span>
+                    <span className="text-white/60 font-mono">Period</span>
                     <span className="text-white/50 font-mono">{periodStart} to {periodEnd}</span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-white/30 font-mono">Data Availability</span>
+                    <span className="text-white/60 font-mono">Data Availability</span>
                     <span className={`font-mono font-bold ${device.availability >= 95 ? "text-emerald-400" : "text-red-400"}`}>
                       {device.availability}%
                     </span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-white/30 font-mono">Submissions</span>
+                    <span className="text-white/60 font-mono">Submissions</span>
                     <span className="text-white/50 font-mono">{formatNumber(device.last30DaysSubmissions)} / {formatNumber(device.expected30Days)}</span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-white/30 font-mono">Integrity</span>
+                    <span className="text-white/60 font-mono">Integrity</span>
                     <span className={`font-mono ${device.integrityVerified ? "text-emerald-400" : "text-red-400"}`}>
                       {device.integrityVerified ? "Verified" : "Unverified"}
                     </span>
                   </div>
                   <div className="flex justify-between text-xs">
-                    <span className="text-white/30 font-mono">Issued</span>
+                    <span className="text-white/60 font-mono">Issued</span>
                     <span className="text-white/50 font-mono">{issuedDate}</span>
                   </div>
                 </div>
 
                 <div className="border-t border-white/[0.06] pt-2.5">
-                  <p className="text-white/20 text-[10px] font-mono">
+                  <p className="text-white/55 text-[10px] font-mono">
                     MRV Framework: ISO 14064-2 aligned | Verification: Hardware-attested IoT telemetry
                   </p>
                 </div>

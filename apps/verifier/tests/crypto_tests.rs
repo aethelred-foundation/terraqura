@@ -68,10 +68,8 @@ fn deterministic_json_hash_key_order() {
 
 #[test]
 fn deterministic_json_hash_nested_objects() {
-    let a: Value =
-        serde_json::from_str(r#"{"outer":{"z":3,"a":1},"inner":[1,2]}"#).unwrap();
-    let b: Value =
-        serde_json::from_str(r#"{"inner":[1,2],"outer":{"a":1,"z":3}}"#).unwrap();
+    let a: Value = serde_json::from_str(r#"{"outer":{"z":3,"a":1},"inner":[1,2]}"#).unwrap();
+    let b: Value = serde_json::from_str(r#"{"inner":[1,2],"outer":{"a":1,"z":3}}"#).unwrap();
     assert_eq!(compute_data_hash(&a), compute_data_hash(&b));
 }
 

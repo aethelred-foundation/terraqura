@@ -19,6 +19,7 @@ import { WagmiProvider, useAccount, useChainId } from "wagmi";
 import { RainbowKitProvider, darkTheme } from "@rainbow-me/rainbowkit";
 import "@rainbow-me/rainbowkit/styles.css";
 import { config, ACTIVE_NETWORK, configError } from "@/lib/wagmi";
+import { reportClientError } from "@/lib/errors";
 
 // ============================================
 // Query Client Configuration
@@ -38,7 +39,9 @@ function handleQueryError(error: Error): void {
   );
 
   if (!shouldIgnore) {
-    console.error("[TerraQura Query Error]", error.message);
+    void reportClientError(error, {
+      source: "web3-query-client",
+    });
   }
 }
 
@@ -133,9 +136,12 @@ function ConnectionMonitor(): null {
   useEffect(() => {
     if (isConnected && address) {
       if (chainId !== ACTIVE_NETWORK.id) {
-        console.warn(
-          `[TerraQura] Wrong network detected. Expected ${ACTIVE_NETWORK.name} (${ACTIVE_NETWORK.id}), got ${chainId}`
-        );
+        void reportClientError(new Error("Wrong network detected"), {
+          source: "connection-monitor",
+          expectedChainId: ACTIVE_NETWORK.id,
+          expectedNetwork: ACTIVE_NETWORK.name,
+          actualChainId: chainId,
+        });
       }
     }
   }, [isConnected, address, chainId]);
@@ -170,7 +176,10 @@ class ProviderErrorBoundary extends React.Component<
   }
 
   componentDidCatch(error: Error, errorInfo: React.ErrorInfo): void {
-    console.error("[TerraQura Provider Error]", error, errorInfo);
+    void reportClientError(error, {
+      source: "web3-provider-boundary",
+      componentStack: errorInfo.componentStack,
+    });
   }
 
   render(): React.ReactNode {

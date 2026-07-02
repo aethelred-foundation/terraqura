@@ -14,7 +14,7 @@ import "../access/TerraQuraAccessControl.sol";
  * @title CarbonFutures
  * @author TerraQura
  * @notice Forward contracts for future carbon credit delivery
- * @dev Sellers post collateral in AETH. Buyers lock AETH at the agreed price.
+ * @dev Sellers post collateral in AETHEL. Buyers lock AETHEL at the agreed price.
  *      At maturity the seller delivers ERC-1155 credits and receives payment.
  *      UUPS upgradeable with TerraQuraAccessControl RBAC.
  */
@@ -51,12 +51,12 @@ contract CarbonFutures is
         uint256 id;
         uint256 creditId;
         uint256 amount;
-        uint256 pricePerUnit; // AETH per credit unit
+        uint256 pricePerUnit; // AETHEL per credit unit
         address seller;
         address buyer;
         uint256 maturityTimestamp;
-        uint256 collateral; // seller's AETH collateral
-        uint256 buyerDeposit; // buyer's locked AETH (amount * pricePerUnit)
+        uint256 collateral; // seller's AETHEL collateral
+        uint256 buyerDeposit; // buyer's locked AETHEL (amount * pricePerUnit)
         FutureStatus status;
     }
 
@@ -112,7 +112,7 @@ contract CarbonFutures is
 
     /**
      * @inheritdoc ICarbonFutures
-     * @dev Seller creates a future and posts collateral in AETH.
+     * @dev Seller creates a future and posts collateral in AETHEL.
      *      collateralBps determines the collateral as a % of notional (amount * pricePerUnit).
      *      If collateralBps is 0, DEFAULT_COLLATERAL_BPS (20%) is used.
      */
@@ -153,7 +153,7 @@ contract CarbonFutures is
 
     /**
      * @inheritdoc ICarbonFutures
-     * @dev Buyer locks AETH equal to the total price (amount * pricePerUnit).
+     * @dev Buyer locks AETHEL equal to the total price (amount * pricePerUnit).
      */
     function buyFuture(uint256 futureId) external payable whenNotPaused nonReentrant {
         FutureData storage f = futures[futureId];
@@ -278,7 +278,7 @@ contract CarbonFutures is
     }
 
     /**
-     * @dev Required to receive AETH
+     * @dev Required to receive AETHEL
      */
     receive() external payable {}
 }

@@ -26,6 +26,8 @@
     "@fastify/rate-limit": "^10.0.0",
     "@fastify/swagger": "^9.0.0",
     "@fastify/swagger-ui": "^5.0.0",
+    "@terraqura/database": "workspace:*",
+    "@terraqura/network-manifest": "workspace:*",
     "@terraqura/types": "workspace:*",
     "drizzle-orm": "^0.29.3",
     "ethers": "^6.10.0",

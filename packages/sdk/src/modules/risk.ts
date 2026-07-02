@@ -1030,21 +1030,17 @@ export class RiskModule {
   /**
    * Resolve the RiskOracle contract address.
    *
-   * Uses the circuitBreaker address slot as a placeholder
-   * until RiskOracle is deployed and added to CONTRACT_ADDRESSES.
-   * In production, this would be a dedicated `riskOracle` field.
+   * On-chain risk methods intentionally fail closed until deployment metadata
+   * or client config provides a dedicated RiskOracle address.
    */
   private resolveOracleAddress(): string {
-    // Future: this.config.addresses.riskOracle
-    // For now, use a convention-based approach
-    const addr = (this.config as unknown as Record<string, unknown>)["riskOracleAddress"] as string | undefined;
-    if (addr && ethers.isAddress(addr)) {
-      return addr;
+    const address = this.config.addresses.riskOracle;
+    if (address && ethers.isAddress(address) && address !== ethers.ZeroAddress) {
+      return address;
     }
 
-    // Fallback: derive from network config (placeholder for pre-deployment)
     throw new ValidationError(
-      "RiskOracle address not configured. Set `riskOracleAddress` in client config or deploy RiskOracle.sol.",
+      "RiskOracle address not configured. Set `riskOracleAddress` in client config or deploy RiskOracle and publish it in the network manifest.",
       { network: this.config.network },
     );
   }

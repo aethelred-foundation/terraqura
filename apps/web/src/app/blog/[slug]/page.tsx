@@ -2,6 +2,8 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { Navbar } from "@/components/layout/Navbar";
 import { Footer } from "@/components/layout/Footer";
+import { JsonLd } from "@/components/shared/JsonLd";
+import { blogPostingSchema, breadcrumbListSchema } from "@/lib/jsonld";
 import { articles, getArticleBySlug } from "../articles";
 
 import { Article1Content } from "./article-1-proof-of-physics";
@@ -46,12 +48,18 @@ export async function generateMetadata({
   return {
     title: `${article.title} | TerraQura Blog`,
     description: article.excerpt,
+    alternates: { canonical: `/blog/${article.slug}` },
     openGraph: {
       title: article.title,
       description: article.excerpt,
       type: "article",
+      url: `/blog/${article.slug}`,
       publishedTime: article.date,
       authors: [article.author],
+    },
+    twitter: {
+      title: article.title,
+      description: article.excerpt,
     },
   };
 }
@@ -70,6 +78,24 @@ export default async function ArticlePage({
 
   return (
     <>
+      <JsonLd
+        id={`ld-blogposting-${article.slug}`}
+        data={blogPostingSchema({
+          slug: article.slug,
+          title: article.title,
+          description: article.excerpt,
+          datePublished: new Date(article.date).toISOString(),
+          author: article.author,
+        })}
+      />
+      <JsonLd
+        id={`ld-breadcrumb-${article.slug}`}
+        data={breadcrumbListSchema([
+          { name: "Home", path: "/" },
+          { name: "Blog", path: "/blog" },
+          { name: article.title, path: `/blog/${article.slug}` },
+        ])}
+      />
       <Navbar />
       <main id="main-content" className="min-h-screen bg-midnight-950 pt-20">
         <ContentComponent />

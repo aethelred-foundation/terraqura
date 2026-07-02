@@ -42,13 +42,3 @@ export {
   type UseKycStatusReturn,
 } from "./useKycStatus";
 
-// Export scroll animation hooks
-export {
-  useScrollAnimation,
-  useParallax,
-  useRevealAnimation,
-  useStaggerReveal,
-  useCountUp,
-  useTextReveal,
-  useSmoothScroll,
-} from "./useScrollAnimation";

@@ -1,3 +1,14 @@
+import {
+  getActiveDeployment,
+  getActiveDeploymentKey,
+  getActiveNetwork,
+  getActiveNetworkKey,
+  type DeploymentDefinition,
+  type DeploymentKey,
+  type NetworkDefinition,
+  type NetworkKey,
+} from "@terraqura/network-manifest";
+
 export type KycProvider = "sumsub" | "onfido" | "disabled";
 
 export interface WorkerRuntimeEnv {
@@ -5,6 +16,10 @@ export interface WorkerRuntimeEnv {
   SUMSUB_APP_TOKEN?: string;
   SUMSUB_SECRET_KEY?: string;
   ONFIDO_API_TOKEN?: string;
+  TERRAQURA_NETWORK?: NetworkKey;
+  TERRAQURA_DEPLOYMENT?: DeploymentKey;
+  ACTIVE_NETWORK?: NetworkDefinition;
+  ACTIVE_DEPLOYMENT?: DeploymentDefinition;
 }
 
 let cachedEnv: WorkerRuntimeEnv | null = null;
@@ -49,6 +64,10 @@ export function getWorkerRuntimeEnv(): WorkerRuntimeEnv {
     SUMSUB_APP_TOKEN: sumsubAppToken,
     SUMSUB_SECRET_KEY: sumsubSecretKey,
     ONFIDO_API_TOKEN: onfidoApiToken,
+    TERRAQURA_NETWORK: getActiveNetworkKey(process.env),
+    TERRAQURA_DEPLOYMENT: getActiveDeploymentKey(process.env),
+    ACTIVE_NETWORK: getActiveNetwork(process.env),
+    ACTIVE_DEPLOYMENT: getActiveDeployment(process.env),
   };
 
   return cachedEnv;

@@ -1,0 +1,117 @@
+# TerraQura production Alertmanager routing.
+#
+# Secrets must be mounted as files; do not commit webhook URLs, PagerDuty
+# routing keys, or email credentials into this repository.
+
+global:
+  resolve_timeout: 5m
+
+templates:
+  - /etc/alertmanager/templates/*.tmpl
+
+route:
+  receiver: slack-ops-monitoring
+  group_by:
+    - alertname
+    - severity
+    - owner
+    - category
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - receiver: pagerduty-critical
+      matchers:
+        - severity="critical"
+      continue: true
+      repeat_interval: 30m
+
+    - receiver: slack-security-response
+      matchers:
+        - owner="security-response"
+      continue: true
+      repeat_interval: 30m
+
+    - receiver: slack-ops-alerts
+      matchers:
+        - severity="critical"
+      continue: false
+      repeat_interval: 30m
+
+    - receiver: slack-ops-alerts
+      matchers:
+        - severity="warning"
+      repeat_interval: 2h
+
+    - receiver: slack-ops-monitoring
+      matchers:
+        - severity="info"
+      repeat_interval: 24h
+
+inhibit_rules:
+  - source_matchers:
+      - severity="critical"
+    target_matchers:
+      - severity=~"warning|info"
+    equal:
+      - alertname
+      - owner
+      - category
+
+receivers:
+  - name: slack-ops-monitoring
+    slack_configs:
+      - api_url_file: /etc/alertmanager/secrets/slack-ops-monitoring-webhook
+        channel: "#ops-monitoring"
+        send_resolved: true
+        title: "{{ .CommonLabels.severity | toUpper }} {{ .CommonLabels.alertname }}"
+        text: >-
+          {{ range .Alerts }}
+          *Summary:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Owner:* {{ .Labels.owner }}
+          *Category:* {{ .Labels.category }}
+          *Runbook:* {{ .Labels.runbook }}
+          {{ end }}
+
+  - name: slack-ops-alerts
+    slack_configs:
+      - api_url_file: /etc/alertmanager/secrets/slack-ops-alerts-webhook
+        channel: "#ops-alerts"
+        send_resolved: true
+        title: "{{ .CommonLabels.severity | toUpper }} {{ .CommonLabels.alertname }}"
+        text: >-
+          {{ range .Alerts }}
+          *Summary:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Owner:* {{ .Labels.owner }}
+          *Category:* {{ .Labels.category }}
+          *Runbook:* {{ .Labels.runbook }}
+          {{ end }}
+
+  - name: slack-security-response
+    slack_configs:
+      - api_url_file: /etc/alertmanager/secrets/slack-security-response-webhook
+        channel: "#security-response"
+        send_resolved: true
+        title: "SECURITY {{ .CommonLabels.alertname }}"
+        text: >-
+          {{ range .Alerts }}
+          *Summary:* {{ .Annotations.summary }}
+          *Description:* {{ .Annotations.description }}
+          *Owner:* {{ .Labels.owner }}
+          *Category:* {{ .Labels.category }}
+          *Runbook:* {{ .Labels.runbook }}
+          {{ end }}
+
+  - name: pagerduty-critical
+    pagerduty_configs:
+      - routing_key_file: /etc/alertmanager/secrets/pagerduty-routing-key
+        send_resolved: true
+        severity: "{{ .CommonLabels.severity }}"
+        description: "{{ .CommonLabels.alertname }}: {{ .CommonAnnotations.summary }}"
+        details:
+          owner: "{{ .CommonLabels.owner }}"
+          category: "{{ .CommonLabels.category }}"
+          runbook: "{{ .CommonLabels.runbook }}"
+          environment: "{{ .CommonLabels.environment }}"

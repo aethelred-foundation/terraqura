@@ -1,34 +1,37 @@
 import { run } from "hardhat";
+import { DEPLOYMENTS } from "@terraqura/network-manifest";
 
 /**
- * Verify All TerraQura Contracts on Aethelred Explorer
+ * Verify legacy TerraQura validation contracts on the configured explorer.
  *
  * Prerequisites:
- * 1. Get API key from https://explorer-testnet.aethelred.network/myapikey
- * 2. Add to .env.local: AETHELRED_API_KEY=your_key_here
+ * 1. Confirm the selected Hardhat network matches the deployment manifest.
+ * 2. Add the matching explorer API key to .env.local.
  *
- * Run: npx hardhat run scripts/verify-all-contracts.ts --network aethelredTestnet
+ * Run: npx hardhat run scripts/verify-all-contracts.ts --network <validation-network>
  */
 
-// Implementation addresses (the actual contract code to verify) - Solidity 0.8.28 - ALL BUG-FREE
+const VALIDATION_DEPLOYMENT = DEPLOYMENTS.polygonAmoyV3Final;
+
+// Implementation addresses (the actual contract code to verify).
 const IMPLEMENTATIONS = {
   // Core (UUPS - verify implementations)
-  accessControl: "0x7e3bf0EBAF28bcC9A7d96a54Ad6FFEfA0b4Ebc17",
-  verificationEngine: "0x2b7881C372f2244020c91c2d8c2421513Cf769c0",
-  carbonCredit: "0xBF82A70152CAA15cdD8f451128ccF5a7A7b8155c",
-  carbonMarketplace: "0x85b13A91e1DE82a6eE628dc17865bfAED01a49de",
+  accessControl: VALIDATION_DEPLOYMENT.implementations.accessControl!,
+  verificationEngine: VALIDATION_DEPLOYMENT.implementations.verificationEngine!,
+  carbonCredit: VALIDATION_DEPLOYMENT.implementations.carbonCredit!,
+  carbonMarketplace: VALIDATION_DEPLOYMENT.implementations.carbonMarketplace!,
 
   // Security (UUPS - verify implementations)
-  circuitBreaker: "0x324a72C8A99D27C2d285Feb837Ee4243Fb6ee938",
+  circuitBreaker: VALIDATION_DEPLOYMENT.implementations.circuitBreaker!,
 
   // Gasless (UUPS - verify implementation)
-  gaslessMarketplace: "0x6Fbfe3A06a82d3357D21B16bAad92dc14103c45B",
+  gaslessMarketplace: VALIDATION_DEPLOYMENT.implementations.gaslessMarketplace!,
 };
 
 // Standard contracts (non-proxy, verify directly)
 const STANDARD_CONTRACTS = {
   multisig: {
-    address: "0x0805E6ffDE71fd798F3Fe787D1dC907aABA65bAD",
+    address: VALIDATION_DEPLOYMENT.contracts.multisig,
     constructorArgs: [
       [
         "0x7F6A87fE3191FFBFa06D37939F3a3a4341159ABc",
@@ -39,10 +42,10 @@ const STANDARD_CONTRACTS = {
     ],
   },
   timelock: {
-    address: "0xb8b01581d61Bf2D58B8B8626Ebb7Ab959ccF6354",
+    address: VALIDATION_DEPLOYMENT.contracts.timelock,
     constructorArgs: [
       3600, // minDelay (1 hour)
-      ["0x0805E6ffDE71fd798F3Fe787D1dC907aABA65bAD"], // proposers (multisig)
+      [VALIDATION_DEPLOYMENT.contracts.multisig], // proposers (multisig)
       ["0x0000000000000000000000000000000000000000"], // executors (anyone)
       "0x7F6A87fE3191FFBFa06D37939F3a3a4341159ABc", // admin
       false, // isProduction
@@ -76,7 +79,7 @@ async function verifyContract(
 
 async function main() {
   console.log("╔════════════════════════════════════════════════════════╗");
-  console.log("║   TerraQura Contract Verification on Aethelred Explorer  ║");
+  console.log("║   TerraQura Legacy Validation Contract Verification    ║");
   console.log("╚════════════════════════════════════════════════════════╝");
 
   let verified = 0;

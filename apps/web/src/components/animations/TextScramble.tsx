@@ -2,6 +2,7 @@
 
 import { useEffect, useState, useRef } from "react";
 import { motion, useInView } from "framer-motion";
+import { cryptoRandomChar } from "@/lib/random";
 
 interface TextScrambleProps {
   text: string;
@@ -11,7 +12,7 @@ interface TextScrambleProps {
   duration?: number;
 }
 
-const chars = "!<>-_\\/[]{}—=+*^?#________";
+const chars = "!<>-_\\/[]{}-=+*^?#________";
 
 export function TextScramble({
   text,
@@ -47,7 +48,7 @@ export function TextScramble({
               if (index < iteration / 3) {
                 return text[index];
               }
-              return chars[Math.floor(Math.random() * chars.length)];
+              return cryptoRandomChar(chars);
             })
             .join("")
         );

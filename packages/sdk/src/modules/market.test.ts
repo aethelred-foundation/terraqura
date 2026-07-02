@@ -31,6 +31,7 @@ function makeConfig(hasSigner = false): InternalConfig {
       carbonMarketplace: "0x0000000000000000000000000000000000000004",
       gaslessMarketplace: "0x0000000000000000000000000000000000000005",
       circuitBreaker: "0x0000000000000000000000000000000000000006",
+      riskOracle: "0x0000000000000000000000000000000000000007",
     },
     subgraphUrl: "",
     gas: { multiplier: 1.2, maxGasPrice: 100n, maxPriorityFee: 30n, cacheTtlMs: 15000, gasLimits: {} },

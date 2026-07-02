@@ -4,7 +4,7 @@ sidebar_position: 1
 
 # Smart Contracts Overview
 
-TerraQura's smart contracts are deployed on Polygon PoS and implement institutional-grade security and upgradeability patterns.
+TerraQura's smart contracts target the Aethelred sovereign EVM network and implement institutional-grade security and upgradeability patterns. Polygon Amoy remains historical validation evidence only.
 
 ## Contract Architecture
 
@@ -30,13 +30,13 @@ All contracts use the **UUPS (Universal Upgradeable Proxy Standard)** pattern fo
 
 ## Deployed Contracts
 
-| Contract | Network | Address | Verified |
-|----------|---------|---------|----------|
-| CarbonCredit | Polygon | `0x...` | ✓ |
-| VerificationEngine | Polygon | `0x...` | ✓ |
-| CarbonMarketplace | Polygon | `0x...` | ✓ |
-| TerraQuraAccessControl | Polygon | `0x...` | ✓ |
-| TerraQuraForwarder | Polygon | `0x...` | ✓ |
+| Contract | Network | Address Source | Status |
+|----------|---------|----------------|--------|
+| CarbonCredit | Aethelred Testnet | `@terraqura/network-manifest` or `TERRAQURA_CONTRACT_CARBON_CREDIT` | Pending deployment |
+| VerificationEngine | Aethelred Testnet | `@terraqura/network-manifest` or `TERRAQURA_CONTRACT_VERIFICATION_ENGINE` | Pending deployment |
+| CarbonMarketplace | Aethelred Testnet | `@terraqura/network-manifest` or `TERRAQURA_CONTRACT_CARBON_MARKETPLACE` | Pending deployment |
+| TerraQuraAccessControl | Aethelred Testnet | `@terraqura/network-manifest` or `TERRAQURA_CONTRACT_ACCESS_CONTROL` | Pending deployment |
+| GaslessMarketplace | Aethelred Testnet | `@terraqura/network-manifest` or `TERRAQURA_CONTRACT_GASLESS_MARKETPLACE` | Pending deployment |
 
 ## Security Features
 
@@ -66,15 +66,15 @@ All administrative functions are controlled by a **Gnosis Safe** with 3-of-5 sig
 
 ## Gas Optimization
 
-Estimated gas costs on Polygon:
+Estimated gas costs on Aethelred-compatible EVM execution:
 
 | Operation | Gas Units | Cost (100 gwei) |
 |-----------|-----------|-----------------|
-| Mint Credit | ~150,000 | ~0.015 MATIC |
-| Transfer | ~65,000 | ~0.0065 MATIC |
-| Create Listing | ~120,000 | ~0.012 MATIC |
-| Purchase | ~200,000 | ~0.02 MATIC |
-| Retire Credit | ~80,000 | ~0.008 MATIC |
+| Mint Credit | ~150,000 | Network gas dependent |
+| Transfer | ~65,000 | Network gas dependent |
+| Create Listing | ~120,000 | Network gas dependent |
+| Purchase | ~200,000 | Network gas dependent |
+| Retire Credit | ~80,000 | Network gas dependent |
 
 ## Audit Status
 
@@ -84,7 +84,7 @@ Estimated gas costs on Polygon:
 
 ## Source Code
 
-All contracts are verified on PolygonScan and open source:
+All deployment addresses must be sourced from the canonical manifest package:
 
 - [GitHub Repository](https://github.com/terraqura/terraqura/tree/main/apps/contracts)
-- [PolygonScan](https://polygonscan.com/address/0x...)
+- `packages/network-manifest`

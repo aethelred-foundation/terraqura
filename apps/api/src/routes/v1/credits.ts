@@ -1,9 +1,13 @@
-import { randomBytes } from "crypto";
-
-import { CreditStatus, ProvenanceEvent, VerificationStatus } from "@terraqura/types";
+import {
+  CreditStatus,
+  ProvenanceEvent,
+  VerificationStatus,
+} from "@terraqura/types";
+import { getActiveNetwork } from "@terraqura/network-manifest";
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
+import { generateId, generateTxHash } from "../../lib/ids.js";
 import { mutateState, readState } from "../../lib/state-store.js";
 
 const MintCreditsSchema = z.object({
@@ -80,6 +84,7 @@ const VERIFICATIONS_STORE_KEY = "verification:v1";
 const DEFAULT_VERIFICATIONS_STATE: VerificationsState = {
   verifications: {},
 };
+const ACTIVE_CHAIN_ID = getActiveNetwork(process.env).chainId;
 
 function getAuthenticatedAddress(request: { user?: unknown }): string | null {
   const user = request.user as { address?: string } | undefined;
@@ -91,17 +96,13 @@ function isAdmin(request: { user?: unknown }): boolean {
   return user?.userType === "admin";
 }
 
-function generateTxHash(): string {
-  return `0x${randomBytes(32).toString("hex")}`;
-}
-
 function numberToTokenId(value: number): string {
   return `0x${BigInt(value).toString(16).padStart(64, "0")}`;
 }
 
 export async function creditsRoutes(
   fastify: FastifyInstance,
-  _options: FastifyPluginOptions
+  _options: FastifyPluginOptions,
 ) {
   fastify.get(
     "/",
@@ -167,11 +168,15 @@ export async function creditsRoutes(
       let credits = Object.values(state.credits);
 
       if (query.ownerId) {
-        credits = credits.filter((credit) => credit.currentOwnerId === query.ownerId);
+        credits = credits.filter(
+          (credit) => credit.currentOwnerId === query.ownerId,
+        );
       }
 
       if (query.status) {
-        credits = credits.filter((credit) => credit.verificationStatus === query.status);
+        credits = credits.filter(
+          (credit) => credit.verificationStatus === query.status,
+        );
       }
 
       const total = credits.length;
@@ -196,7 +201,7 @@ export async function creditsRoutes(
           offset,
         },
       };
-    }
+    },
   );
 
   fastify.get(
@@ -205,7 +210,8 @@ export async function creditsRoutes(
       schema: {
         tags: ["Credits"],
         summary: "Get credit details",
-        description: "Returns detailed information about a carbon credit with provenance",
+        description:
+          "Returns detailed information about a carbon credit with provenance",
         params: {
           type: "object",
           properties: {
@@ -270,7 +276,7 @@ export async function creditsRoutes(
           captureEndTime: credit.captureEndTime,
         },
       };
-    }
+    },
   );
 
   fastify.get(
@@ -381,7 +387,7 @@ export async function creditsRoutes(
           })),
         },
       };
-    }
+    },
   );
 
   fastify.post(
@@ -390,7 +396,8 @@ export async function creditsRoutes(
       schema: {
         tags: ["Credits"],
         summary: "Mint verified credits",
-        description: "Mint carbon credits to the blockchain after successful verification",
+        description:
+          "Mint carbon credits to the blockchain after successful verification",
         security: [{ bearerAuth: [] }],
         body: {
           type: "object",
@@ -477,9 +484,10 @@ export async function creditsRoutes(
 
       const verificationsState = await readState(
         VERIFICATIONS_STORE_KEY,
-        DEFAULT_VERIFICATIONS_STATE
+        DEFAULT_VERIFICATIONS_STATE,
       );
-      const verification = verificationsState.verifications[body.verificationId];
+      const verification =
+        verificationsState.verifications[body.verificationId];
       if (!verification) {
         return reply.status(404).send({
           success: false,
@@ -505,13 +513,13 @@ export async function creditsRoutes(
       const mintedCredit = await mutateState(
         CREDITS_STORE_KEY,
         DEFAULT_CREDITS_STATE,
-        async (state) => {
+        async (state, context) => {
           if (state.verificationToCredit[body.verificationId]) {
             return null;
           }
 
           const nowIso = new Date().toISOString();
-          const id = `cred_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          const id = generateId("cred");
           const tokenId = numberToTokenId(state.nextTokenId);
           state.nextTokenId += 1;
           const txHash = generateTxHash();
@@ -545,8 +553,30 @@ export async function creditsRoutes(
 
           state.credits[id] = credit;
           state.verificationToCredit[body.verificationId] = id;
+          context.recordDomainEvent({
+            eventType: "carbon_credit.minted",
+            aggregateType: "carbon_credit",
+            aggregateId: id,
+            chainId: ACTIVE_CHAIN_ID,
+            txHash,
+            payload: {
+              creditId: id,
+              tokenId,
+              verificationId: body.verificationId,
+              dacUnitId: verification.dacUnitId,
+              ownerWallet: recipientWallet,
+              creditsIssued: creditsToMint,
+              co2CapturedKg: verification.totalCo2CapturedKg,
+              energyConsumedKwh: verification.totalEnergyKwh,
+              sourceDataHash: verification.sourceDataHash,
+              ipfsMetadataCid: body.ipfsMetadataCid,
+              arweaveTxId: body.arweaveTxId ?? null,
+              captureStartTime: verification.startTime,
+              captureEndTime: verification.endTime,
+            },
+          });
           return credit;
-        }
+        },
       );
 
       if (!mintedCredit) {
@@ -566,7 +596,7 @@ export async function creditsRoutes(
           explorerUrl: `https://explorer.aethelred.network/tx/${mintedCredit.mintTxHash}`,
         },
       });
-    }
+    },
   );
 
   fastify.post(
@@ -650,47 +680,73 @@ export async function creditsRoutes(
         });
       }
 
-      const result = await mutateState(CREDITS_STORE_KEY, DEFAULT_CREDITS_STATE, async (state) => {
-        const credit = state.credits[params.id];
-        if (!credit) {
-          return { kind: "not_found" as const };
-        }
+      const result = await mutateState(
+        CREDITS_STORE_KEY,
+        DEFAULT_CREDITS_STATE,
+        async (state, context) => {
+          const credit = state.credits[params.id];
+          if (!credit) {
+            return { kind: "not_found" as const };
+          }
 
-        if (credit.isRetired) {
-          return { kind: "already_retired" as const };
-        }
+          if (credit.isRetired) {
+            return { kind: "already_retired" as const };
+          }
 
-        const ownedByCaller = credit.currentOwnerWallet?.toLowerCase() === callerWallet;
-        if (!ownedByCaller && !isAdmin(request)) {
-          return { kind: "forbidden" as const };
-        }
+          const ownedByCaller =
+            credit.currentOwnerWallet?.toLowerCase() === callerWallet;
+          if (!ownedByCaller && !isAdmin(request)) {
+            return { kind: "forbidden" as const };
+          }
 
-        if (body.amount > credit.creditsIssued) {
-          return { kind: "amount_too_large" as const };
-        }
+          if (body.amount > credit.creditsIssued) {
+            return { kind: "amount_too_large" as const };
+          }
 
-        const nowIso = new Date().toISOString();
-        const txHash = generateTxHash();
-        const remaining = credit.creditsIssued - body.amount;
+          const nowIso = new Date().toISOString();
+          const txHash = generateTxHash();
+          const remaining = credit.creditsIssued - body.amount;
 
-        credit.creditsIssued = remaining;
-        credit.retiredAmount += body.amount;
-        credit.updatedAt = nowIso;
-        if (remaining === 0) {
-          credit.isRetired = true;
-          credit.retiredAt = nowIso;
-          credit.retirementReason = body.reason;
-          credit.verificationStatus = CreditStatus.RETIRED;
-        }
+          credit.creditsIssued = remaining;
+          credit.retiredAmount += body.amount;
+          credit.updatedAt = nowIso;
+          if (remaining === 0) {
+            credit.isRetired = true;
+            credit.retiredAt = nowIso;
+            credit.retirementReason = body.reason;
+            credit.verificationStatus = CreditStatus.RETIRED;
+          }
 
-        state.credits[params.id] = credit;
-        return {
-          kind: "success" as const,
-          credit,
-          txHash,
-          retiredAt: nowIso,
-        };
-      });
+          state.credits[params.id] = credit;
+          context.recordDomainEvent({
+            eventType:
+              remaining === 0
+                ? "carbon_credit.retired"
+                : "carbon_credit.partially_retired",
+            aggregateType: "carbon_credit",
+            aggregateId: credit.id,
+            chainId: ACTIVE_CHAIN_ID,
+            txHash,
+            payload: {
+              creditId: credit.id,
+              tokenId: credit.tokenId,
+              retiredByWallet: callerWallet,
+              amountRetired: body.amount,
+              totalRetiredAmount: credit.retiredAmount,
+              remainingCredits: remaining,
+              reason: body.reason,
+              retiredAt: nowIso,
+              fullyRetired: remaining === 0,
+            },
+          });
+          return {
+            kind: "success" as const,
+            credit,
+            txHash,
+            retiredAt: nowIso,
+          };
+        },
+      );
 
       if (result.kind === "not_found") {
         return reply.status(404).send({
@@ -730,6 +786,6 @@ export async function creditsRoutes(
           certificateUrl: `https://terraqura.io/certificates/${result.credit.id}`,
         },
       };
-    }
+    },
   );
 }

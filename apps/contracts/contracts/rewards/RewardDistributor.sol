@@ -11,7 +11,7 @@ import "../interfaces/IRewardDistributor.sol";
 /**
  * @title RewardDistributor
  * @author TerraQura
- * @notice Distributes AETH rewards to verifiers, stakers, and early adopters
+ * @notice Distributes AETHEL rewards to verifiers, stakers, and early adopters
  *         with linear vesting and optional Merkle-proof-based airdrops.
  * @dev UUPS upgradeable, uses TerraQuraAccessControl for RBAC.
  */

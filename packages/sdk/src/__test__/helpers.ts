@@ -8,6 +8,7 @@
 
 import { vi } from "vitest";
 import { ethers } from "ethers";
+import { DEPLOYMENTS } from "@terraqura/network-manifest";
 
 import type { InternalConfig } from "../types.js";
 import type { ITelemetry } from "../telemetry.js";
@@ -18,13 +19,16 @@ import type { IdempotencyStore } from "../utils.js";
 // Test Constants
 // ============================================
 
+const VALIDATION_CONTRACTS = DEPLOYMENTS.polygonAmoyV3Final.contracts;
+
 export const TEST_ADDRESSES = {
-  carbonCredit: "0x29B58064fD95b175e5824767d3B18bACFafaF959",
-  carbonMarketplace: "0x5a4cb32709AB829E2918F0a914FBa1e0Dab2Fdec",
-  gaslessMarketplace: "0x45a65e46e8C1D588702cB659b7d3786476Be0A80",
-  verificationEngine: "0x8dad7E87646e9607Fae225e3A7EAD17ce179dEA8",
-  accessControl: "0x55695aAAEC30AB495074c57e85Ae2E1A4866B83b",
-  circuitBreaker: "0x24192ecf06aA782F1dF69878413D217d9319e257",
+  carbonCredit: VALIDATION_CONTRACTS.carbonCredit,
+  carbonMarketplace: VALIDATION_CONTRACTS.carbonMarketplace,
+  gaslessMarketplace: VALIDATION_CONTRACTS.gaslessMarketplace,
+  verificationEngine: VALIDATION_CONTRACTS.verificationEngine,
+  accessControl: VALIDATION_CONTRACTS.accessControl,
+  circuitBreaker: VALIDATION_CONTRACTS.circuitBreaker,
+  riskOracle: "0x7777777777777777777777777777777777777777",
   user: "0x1234567890abcdef1234567890abcdef12345678",
   operator: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 } as const;
@@ -59,7 +63,7 @@ export function mockTelemetry(): ITelemetry {
 
 export function mockProvider(): ethers.Provider {
   return {
-    getNetwork: vi.fn().mockResolvedValue({ chainId: 78432n, name: "aethelred-testnet" }),
+    getNetwork: vi.fn().mockResolvedValue({ chainId: 7332n, name: "aethelred-testnet" }),
     getBlockNumber: vi.fn().mockResolvedValue(1000),
     getBlock: vi.fn().mockResolvedValue({ timestamp: Math.floor(Date.now() / 1000) }),
     getFeeData: vi.fn().mockResolvedValue({
@@ -236,6 +240,7 @@ export function buildTestConfig(overrides: Partial<InternalConfig> = {}): Intern
       carbonMarketplace: TEST_ADDRESSES.carbonMarketplace,
       gaslessMarketplace: TEST_ADDRESSES.gaslessMarketplace,
       circuitBreaker: TEST_ADDRESSES.circuitBreaker,
+      riskOracle: TEST_ADDRESSES.riskOracle,
     },
     subgraphUrl: "https://api.studio.thegraph.com/query/terraqura/carbon-credits-testnet/version/latest",
     gas: {

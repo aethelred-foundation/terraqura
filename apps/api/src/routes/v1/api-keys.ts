@@ -3,6 +3,7 @@ import { createHash, randomBytes } from "crypto";
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
+import { generateId } from "../../lib/ids.js";
 import { mutateState, readState } from "../../lib/state-store.js";
 
 const ApiKeyType = z.enum(["sensor", "read-only", "full-access"]);
@@ -249,7 +250,7 @@ export async function apiKeysRoutes(
         API_KEYS_STORE_KEY,
         DEFAULT_API_KEYS_STATE,
         async (state) => {
-          const id = `key_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          const id = generateId("key");
           const nowIso = new Date().toISOString();
 
           const expiresAt = body.expiresInDays

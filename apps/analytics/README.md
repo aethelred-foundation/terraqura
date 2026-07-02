@@ -4,7 +4,7 @@ Analytics and machine learning service for the TerraQura carbon credit platform 
 
 ## Features
 
-- **Carbon Price Prediction** -- Linear regression and random forest models for forecasting credit prices in AETH.
+- **Carbon Price Prediction** -- Linear regression and random forest models for forecasting credit prices in AETHEL.
 - **Sensor Anomaly Detection** -- Isolation forest model to flag anomalous DAC unit readings (CO2 capture rate, energy consumption, flow rate).
 - **Environmental Impact Calculator** -- EPA-equivalent impact metrics (trees planted, cars removed, homes powered, flights offset).
 - **Risk Assessment** -- Credit quality scoring, counterparty risk evaluation, and Value-at-Risk (VaR) calculation.

@@ -13,7 +13,7 @@ import "../access/TerraQuraAccessControl.sol";
 /**
  * @title CarbonAMM
  * @author TerraQura
- * @notice Automated Market Maker for AETH / CarbonCredit trading pairs
+ * @notice Automated Market Maker for AETHEL / CarbonCredit trading pairs
  * @dev Implements constant product (x*y=k) AMM with UUPS upgradeability.
  *      LP token accounting is internal (not separate ERC-20 tokens).
  *      Swap fees are split 80% to LPs, 20% to protocol treasury.
@@ -69,7 +69,7 @@ contract CarbonAMM is
     /// @notice Track whether a creditId already has a pool
     mapping(uint256 => bool) public poolExists;
 
-    /// @notice Accumulated protocol fees (AETH) ready for withdrawal
+    /// @notice Accumulated protocol fees (AETHEL) ready for withdrawal
     uint256 public protocolFees;
 
     // ============================================
@@ -248,7 +248,7 @@ contract CarbonAMM is
         uint256 protocolFee = fee - lpFee;
         protocolFees += protocolFee;
 
-        // Update reserves (LP fee portion is added to AETH reserve)
+        // Update reserves (LP fee portion is added to AETHEL reserve)
         pool.aethReserve += amountIn - protocolFee;
         pool.creditReserve -= creditsOut;
 
@@ -294,7 +294,7 @@ contract CarbonAMM is
         pool.creditReserve += creditAmount - protocolFeeCredits;
         pool.aethReserve -= aethOut;
 
-        // Transfer AETH out
+        // Transfer AETHEL out
         (bool success, ) = msg.sender.call{value: aethOut}("");
         if (!success) revert TransferFailed();
 
@@ -344,7 +344,7 @@ contract CarbonAMM is
 
     /**
      * @inheritdoc ICarbonAMM
-     * @dev Returns price in AETH per credit with 1e18 precision
+     * @dev Returns price in AETHEL per credit with 1e18 precision
      */
     function getSpotPrice(uint256 poolId) external view returns (uint256) {
         Pool storage pool = pools[poolId];
@@ -402,7 +402,7 @@ contract CarbonAMM is
     }
 
     /**
-     * @dev Required to receive AETH
+     * @dev Required to receive AETHEL
      */
     receive() external payable {}
 }

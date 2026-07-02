@@ -1,13 +1,13 @@
-import { randomBytes } from "crypto";
-
-import {
-  ListingStatus,
-  OfferStatus,
-  MarketStats,
-} from "@terraqura/types";
+import { ListingStatus, OfferStatus, MarketStats } from "@terraqura/types";
+import { getActiveNetwork } from "@terraqura/network-manifest";
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
+import {
+  generateId,
+  generateSimulatedBlockNumber,
+  generateTxHash,
+} from "../../lib/ids.js";
 import { mutateState, readState } from "../../lib/state-store.js";
 
 const CreateListingSchema = z.object({
@@ -124,6 +124,7 @@ const CREDITS_STORE_KEY = "credits:v1";
 const DEFAULT_CREDITS_STATE: CreditsState = {
   credits: {},
 };
+const ACTIVE_CHAIN_ID = getActiveNetwork(process.env).chainId;
 
 function getAuthenticatedAddress(request: { user?: unknown }): string | null {
   const user = request.user as { address?: string } | undefined;
@@ -139,10 +140,6 @@ function weiToUsd(wei: string): number {
   const maticUsd = Number.parseFloat(process.env.MATIC_USD_PRICE || "0.5");
   const matic = Number(wei) / 1e18;
   return Number.isFinite(matic) ? matic * maticUsd : 0;
-}
-
-function generateTxHash(): string {
-  return `0x${randomBytes(32).toString("hex")}`;
 }
 
 function isExpired(dateIso: string | null): boolean {
@@ -196,7 +193,7 @@ function offerResponse(offer: StoredOffer) {
 
 export async function marketplaceRoutes(
   fastify: FastifyInstance,
-  _options: FastifyPluginOptions
+  _options: FastifyPluginOptions,
 ) {
   fastify.get(
     "/listings",
@@ -208,7 +205,10 @@ export async function marketplaceRoutes(
         querystring: {
           type: "object",
           properties: {
-            status: { type: "string", enum: ["active", "sold", "cancelled", "expired"] },
+            status: {
+              type: "string",
+              enum: ["active", "sold", "cancelled", "expired"],
+            },
             tokenId: { type: "string" },
             sellerId: { type: "string" },
             minPrice: { type: "string" },
@@ -235,48 +235,66 @@ export async function marketplaceRoutes(
         offset?: number;
       };
 
-      const state = await readState(MARKETPLACE_STORE_KEY, DEFAULT_MARKETPLACE_STATE);
+      const state = await readState(
+        MARKETPLACE_STORE_KEY,
+        DEFAULT_MARKETPLACE_STATE,
+      );
       let listings = Object.values(state.listings).map((listing) => ({
         ...listing,
         status: getActiveListingStatus(listing),
       }));
 
       if (query.status) {
-        listings = listings.filter((listing) => listing.status === query.status);
+        listings = listings.filter(
+          (listing) => listing.status === query.status,
+        );
       } else {
-        listings = listings.filter((listing) => listing.status === ListingStatus.ACTIVE);
+        listings = listings.filter(
+          (listing) => listing.status === ListingStatus.ACTIVE,
+        );
       }
 
       if (query.tokenId) {
-        listings = listings.filter((listing) => listing.tokenId === query.tokenId);
+        listings = listings.filter(
+          (listing) => listing.tokenId === query.tokenId,
+        );
       }
 
       if (query.sellerId) {
-        listings = listings.filter((listing) => listing.sellerId === query.sellerId);
+        listings = listings.filter(
+          (listing) => listing.sellerId === query.sellerId,
+        );
       }
 
       if (typeof query.minPrice === "string") {
         listings = listings.filter(
-          (listing) => BigInt(listing.pricePerUnit) >= BigInt(query.minPrice as string)
+          (listing) =>
+            BigInt(listing.pricePerUnit) >= BigInt(query.minPrice as string),
         );
       }
 
       if (typeof query.maxPrice === "string") {
         listings = listings.filter(
-          (listing) => BigInt(listing.pricePerUnit) <= BigInt(query.maxPrice as string)
+          (listing) =>
+            BigInt(listing.pricePerUnit) <= BigInt(query.maxPrice as string),
         );
       }
 
       switch (query.sortBy) {
         case "price_asc":
-          listings.sort((a, b) => (BigInt(a.pricePerUnit) > BigInt(b.pricePerUnit) ? 1 : -1));
+          listings.sort((a, b) =>
+            BigInt(a.pricePerUnit) > BigInt(b.pricePerUnit) ? 1 : -1,
+          );
           break;
         case "price_desc":
-          listings.sort((a, b) => (BigInt(a.pricePerUnit) < BigInt(b.pricePerUnit) ? 1 : -1));
+          listings.sort((a, b) =>
+            BigInt(a.pricePerUnit) < BigInt(b.pricePerUnit) ? 1 : -1,
+          );
           break;
         case "oldest":
           listings.sort(
-            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+            (a, b) =>
+              new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
           );
           break;
         case "amount":
@@ -285,7 +303,8 @@ export async function marketplaceRoutes(
         case "newest":
         default:
           listings.sort(
-            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            (a, b) =>
+              new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
           );
       }
 
@@ -299,7 +318,7 @@ export async function marketplaceRoutes(
         data: listings.map((listing) => listingResponse(listing)),
         pagination: { total, limit, offset },
       };
-    }
+    },
   );
 
   fastify.post(
@@ -336,8 +355,8 @@ export async function marketplaceRoutes(
       const listing = await mutateState(
         MARKETPLACE_STORE_KEY,
         DEFAULT_MARKETPLACE_STATE,
-        async (state) => {
-          const id = `listing_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+        async (state, context) => {
+          const id = generateId("listing");
           const listingId = String(state.nextListingId++);
           const txHash = generateTxHash();
           const nowIso = new Date().toISOString();
@@ -358,7 +377,9 @@ export async function marketplaceRoutes(
             status: ListingStatus.ACTIVE,
             createdAt: nowIso,
             expiresAt: body.durationDays
-              ? new Date(Date.now() + body.durationDays * 24 * 60 * 60 * 1000).toISOString()
+              ? new Date(
+                  Date.now() + body.durationDays * 24 * 60 * 60 * 1000,
+                ).toISOString()
               : null,
             soldAt: null,
             cancelledAt: null,
@@ -366,8 +387,28 @@ export async function marketplaceRoutes(
           };
 
           state.listings[id] = created;
+          context.recordDomainEvent({
+            eventType: "market_listing.created",
+            aggregateType: "market_listing",
+            aggregateId: id,
+            chainId: ACTIVE_CHAIN_ID,
+            txHash,
+            payload: {
+              listingId: id,
+              marketplaceListingId: listingId,
+              tokenId: body.tokenId,
+              creditId: created.creditId,
+              sellerWallet,
+              amount: body.amount,
+              remainingAmount: body.amount,
+              pricePerUnit: body.pricePerUnit,
+              minPurchaseAmount: created.minPurchaseAmount,
+              status: created.status,
+              expiresAt: created.expiresAt,
+            },
+          });
           return created;
-        }
+        },
       );
 
       return reply.status(201).send({
@@ -378,7 +419,7 @@ export async function marketplaceRoutes(
           txHash: listing.txHash,
         },
       });
-    }
+    },
   );
 
   fastify.get(
@@ -392,18 +433,23 @@ export async function marketplaceRoutes(
     },
     async (request, reply) => {
       const params = request.params as { id: string };
-      const state = await readState(MARKETPLACE_STORE_KEY, DEFAULT_MARKETPLACE_STATE);
+      const state = await readState(
+        MARKETPLACE_STORE_KEY,
+        DEFAULT_MARKETPLACE_STATE,
+      );
       const listing = state.listings[params.id];
 
       if (!listing) {
-        return reply.status(404).send({ success: false, error: "Listing not found" });
+        return reply
+          .status(404)
+          .send({ success: false, error: "Listing not found" });
       }
 
       return {
         success: true,
         data: listingResponse(listing),
       };
-    }
+    },
   );
 
   fastify.delete(
@@ -455,15 +501,19 @@ export async function marketplaceRoutes(
           listing.cancelledAt = new Date().toISOString();
           state.listings[params.id] = listing;
           return { kind: "success" as const, listing };
-        }
+        },
       );
 
       if (result.kind === "not_found") {
-        return reply.status(404).send({ success: false, error: "Listing not found" });
+        return reply
+          .status(404)
+          .send({ success: false, error: "Listing not found" });
       }
 
       if (result.kind === "expired") {
-        return reply.status(400).send({ success: false, error: "Listing expired" });
+        return reply
+          .status(400)
+          .send({ success: false, error: "Listing expired" });
       }
 
       if (result.kind === "forbidden") {
@@ -474,7 +524,9 @@ export async function marketplaceRoutes(
       }
 
       if (result.kind === "not_active") {
-        return reply.status(400).send({ success: false, error: "Listing not active" });
+        return reply
+          .status(400)
+          .send({ success: false, error: "Listing not active" });
       }
 
       return {
@@ -485,7 +537,7 @@ export async function marketplaceRoutes(
           txHash: generateTxHash(),
         },
       };
-    }
+    },
   );
 
   fastify.post(
@@ -517,7 +569,7 @@ export async function marketplaceRoutes(
       const result = await mutateState(
         MARKETPLACE_STORE_KEY,
         DEFAULT_MARKETPLACE_STATE,
-        async (state) => {
+        async (state, context) => {
           const listing = state.listings[params.id];
           if (!listing) {
             return { kind: "not_found" as const };
@@ -546,9 +598,13 @@ export async function marketplaceRoutes(
             return { kind: "below_minimum" as const };
           }
 
-          const totalPrice = (BigInt(listing.pricePerUnit) * BigInt(body.amount)).toString();
+          const totalPrice = (
+            BigInt(listing.pricePerUnit) * BigInt(body.amount)
+          ).toString();
           const platformFee = computePlatformFee(totalPrice);
-          const sellerProceeds = (BigInt(totalPrice) - BigInt(platformFee)).toString();
+          const sellerProceeds = (
+            BigInt(totalPrice) - BigInt(platformFee)
+          ).toString();
           const txHash = generateTxHash();
 
           listing.remainingAmount -= body.amount;
@@ -559,7 +615,7 @@ export async function marketplaceRoutes(
           state.listings[params.id] = listing;
 
           const purchase: StoredPurchase = {
-            id: `purchase_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            id: generateId("purchase"),
             listingId: params.id,
             offerId: null,
             buyerId: `user_${buyerWallet.slice(2, 10)}`,
@@ -574,23 +630,52 @@ export async function marketplaceRoutes(
             platformFee,
             sellerProceeds,
             txHash,
-            blockNumber: Math.floor(Math.random() * 1000000) + 50000000,
+            blockNumber: generateSimulatedBlockNumber(),
             purchasedAt: new Date().toISOString(),
           };
           state.purchases.push(purchase);
+          context.recordDomainEvent({
+            eventType: "market_purchase.settled",
+            aggregateType: "market_purchase",
+            aggregateId: purchase.id,
+            chainId: ACTIVE_CHAIN_ID,
+            txHash,
+            payload: {
+              purchaseId: purchase.id,
+              listingId: params.id,
+              tokenId: listing.tokenId,
+              creditId: listing.creditId,
+              buyerWallet,
+              sellerWallet: listing.sellerWallet,
+              amount: body.amount,
+              pricePerUnit: listing.pricePerUnit,
+              totalPrice,
+              platformFee,
+              sellerProceeds,
+              remainingListingAmount: listing.remainingAmount,
+              listingStatus: listing.status,
+              purchasedAt: purchase.purchasedAt,
+            },
+          });
 
           return { kind: "success" as const, purchase, listing };
-        }
+        },
       );
 
       if (result.kind === "not_found") {
-        return reply.status(404).send({ success: false, error: "Listing not found" });
+        return reply
+          .status(404)
+          .send({ success: false, error: "Listing not found" });
       }
       if (result.kind === "expired") {
-        return reply.status(400).send({ success: false, error: "Listing expired" });
+        return reply
+          .status(400)
+          .send({ success: false, error: "Listing expired" });
       }
       if (result.kind === "not_active") {
-        return reply.status(400).send({ success: false, error: "Listing not active" });
+        return reply
+          .status(400)
+          .send({ success: false, error: "Listing not active" });
       }
       if (result.kind === "self_purchase") {
         return reply.status(400).send({
@@ -599,10 +684,14 @@ export async function marketplaceRoutes(
         });
       }
       if (result.kind === "insufficient") {
-        return reply.status(400).send({ success: false, error: "Insufficient credits available" });
+        return reply
+          .status(400)
+          .send({ success: false, error: "Insufficient credits available" });
       }
       if (result.kind === "below_minimum") {
-        return reply.status(400).send({ success: false, error: "Below minimum purchase amount" });
+        return reply
+          .status(400)
+          .send({ success: false, error: "Below minimum purchase amount" });
       }
 
       return reply.status(201).send({
@@ -616,7 +705,7 @@ export async function marketplaceRoutes(
           explorerUrl: `https://explorer.aethelred.network/tx/${result.purchase.txHash}`,
         },
       });
-    }
+    },
   );
 
   fastify.get(
@@ -646,7 +735,10 @@ export async function marketplaceRoutes(
         offset?: number;
       };
 
-      const state = await readState(MARKETPLACE_STORE_KEY, DEFAULT_MARKETPLACE_STATE);
+      const state = await readState(
+        MARKETPLACE_STORE_KEY,
+        DEFAULT_MARKETPLACE_STATE,
+      );
       let offers = Object.values(state.offers).map((offer) => ({
         ...offer,
         status: getActiveOfferStatus(offer),
@@ -666,7 +758,10 @@ export async function marketplaceRoutes(
         offers = offers.filter((offer) => offer.buyerId === query.buyerId);
       }
 
-      offers.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      offers.sort(
+        (a, b) =>
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      );
 
       const total = offers.length;
       const limit = query.limit || 50;
@@ -678,7 +773,7 @@ export async function marketplaceRoutes(
         data: offers.map((offer) => offerResponse(offer)),
         pagination: { total, limit, offset },
       };
-    }
+    },
   );
 
   fastify.post(
@@ -715,13 +810,15 @@ export async function marketplaceRoutes(
         MARKETPLACE_STORE_KEY,
         DEFAULT_MARKETPLACE_STATE,
         async (state) => {
-          const id = `offer_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          const id = generateId("offer");
           const offerId = String(state.nextOfferId++);
-          const depositAmount = (BigInt(body.pricePerUnit) * BigInt(body.amount)).toString();
+          const depositAmount = (
+            BigInt(body.pricePerUnit) * BigInt(body.amount)
+          ).toString();
           const txHash = generateTxHash();
           const createdAt = new Date().toISOString();
           const expiresAt = new Date(
-            Date.now() + body.durationDays * 24 * 60 * 60 * 1000
+            Date.now() + body.durationDays * 24 * 60 * 60 * 1000,
           ).toISOString();
 
           const created: StoredOffer = {
@@ -748,7 +845,7 @@ export async function marketplaceRoutes(
 
           state.offers[id] = created;
           return created;
-        }
+        },
       );
 
       return reply.status(201).send({
@@ -761,7 +858,7 @@ export async function marketplaceRoutes(
           txHash: offer.txHash,
         },
       });
-    }
+    },
   );
 
   fastify.post(
@@ -811,7 +908,9 @@ export async function marketplaceRoutes(
 
           const acceptTxHash = generateTxHash();
           const platformFee = computePlatformFee(offer.depositAmount);
-          const sellerProceeds = (BigInt(offer.depositAmount) - BigInt(platformFee)).toString();
+          const sellerProceeds = (
+            BigInt(offer.depositAmount) - BigInt(platformFee)
+          ).toString();
           const acceptedAt = new Date().toISOString();
 
           offer.status = OfferStatus.ACCEPTED;
@@ -822,7 +921,7 @@ export async function marketplaceRoutes(
           state.offers[params.id] = offer;
 
           const purchase: StoredPurchase = {
-            id: `purchase_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
+            id: generateId("purchase"),
             listingId: null,
             offerId: params.id,
             buyerId: offer.buyerId,
@@ -837,23 +936,29 @@ export async function marketplaceRoutes(
             platformFee,
             sellerProceeds,
             txHash: acceptTxHash,
-            blockNumber: Math.floor(Math.random() * 1000000) + 50000000,
+            blockNumber: generateSimulatedBlockNumber(),
             purchasedAt: acceptedAt,
           };
           state.purchases.push(purchase);
 
           return { kind: "success" as const, offer, purchase };
-        }
+        },
       );
 
       if (result.kind === "not_found") {
-        return reply.status(404).send({ success: false, error: "Offer not found" });
+        return reply
+          .status(404)
+          .send({ success: false, error: "Offer not found" });
       }
       if (result.kind === "expired") {
-        return reply.status(400).send({ success: false, error: "Offer expired" });
+        return reply
+          .status(400)
+          .send({ success: false, error: "Offer expired" });
       }
       if (result.kind === "not_active") {
-        return reply.status(400).send({ success: false, error: "Offer not active" });
+        return reply
+          .status(400)
+          .send({ success: false, error: "Offer not active" });
       }
       if (result.kind === "self_accept") {
         return reply.status(400).send({
@@ -874,7 +979,7 @@ export async function marketplaceRoutes(
           explorerUrl: `https://explorer.aethelred.network/tx/${result.offer.acceptTxHash}`,
         },
       };
-    }
+    },
   );
 
   fastify.delete(
@@ -926,17 +1031,23 @@ export async function marketplaceRoutes(
           offer.cancelledAt = new Date().toISOString();
           state.offers[params.id] = offer;
           return { kind: "success" as const, offer };
-        }
+        },
       );
 
       if (result.kind === "not_found") {
-        return reply.status(404).send({ success: false, error: "Offer not found" });
+        return reply
+          .status(404)
+          .send({ success: false, error: "Offer not found" });
       }
       if (result.kind === "expired") {
-        return reply.status(400).send({ success: false, error: "Offer expired" });
+        return reply
+          .status(400)
+          .send({ success: false, error: "Offer expired" });
       }
       if (result.kind === "not_active") {
-        return reply.status(400).send({ success: false, error: "Offer not active" });
+        return reply
+          .status(400)
+          .send({ success: false, error: "Offer not active" });
       }
       if (result.kind === "forbidden") {
         return reply.status(403).send({
@@ -954,7 +1065,7 @@ export async function marketplaceRoutes(
           txHash: generateTxHash(),
         },
       };
-    }
+    },
   );
 
   fastify.get(
@@ -967,18 +1078,24 @@ export async function marketplaceRoutes(
       },
     },
     async (_request, _reply) => {
-      const state = await readState(MARKETPLACE_STORE_KEY, DEFAULT_MARKETPLACE_STATE);
-      const creditsState = await readState(CREDITS_STORE_KEY, DEFAULT_CREDITS_STATE);
+      const state = await readState(
+        MARKETPLACE_STORE_KEY,
+        DEFAULT_MARKETPLACE_STATE,
+      );
+      const creditsState = await readState(
+        CREDITS_STORE_KEY,
+        DEFAULT_CREDITS_STATE,
+      );
 
       const now = Date.now();
       const oneDayAgo = now - 24 * 60 * 60 * 1000;
       const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
 
       const purchases24h = state.purchases.filter(
-        (purchase) => new Date(purchase.purchasedAt).getTime() > oneDayAgo
+        (purchase) => new Date(purchase.purchasedAt).getTime() > oneDayAgo,
       );
       const purchases7d = state.purchases.filter(
-        (purchase) => new Date(purchase.purchasedAt).getTime() > sevenDaysAgo
+        (purchase) => new Date(purchase.purchasedAt).getTime() > sevenDaysAgo,
       );
 
       const totalVolume24h = purchases24h
@@ -989,41 +1106,43 @@ export async function marketplaceRoutes(
         .toString();
 
       const activeListings = Object.values(state.listings).filter(
-        (listing) => getActiveListingStatus(listing) === ListingStatus.ACTIVE
+        (listing) => getActiveListingStatus(listing) === ListingStatus.ACTIVE,
       );
       const totalCreditsListed = activeListings.reduce(
         (sum, listing) => sum + listing.remainingAmount,
-        0
+        0,
       );
       const firstActiveListing = activeListings[0];
 
-      const floorPrice =
-        firstActiveListing
-          ? activeListings.reduce(
-              (min, listing) =>
-                BigInt(listing.pricePerUnit) < BigInt(min) ? listing.pricePerUnit : min,
-              firstActiveListing.pricePerUnit
-            )
-          : "0";
+      const floorPrice = firstActiveListing
+        ? activeListings.reduce(
+            (min, listing) =>
+              BigInt(listing.pricePerUnit) < BigInt(min)
+                ? listing.pricePerUnit
+                : min,
+            firstActiveListing.pricePerUnit,
+          )
+        : "0";
 
       const avgPrice24h =
         purchases24h.length > 0
           ? (
               purchases24h.reduce(
                 (sum, purchase) => sum + BigInt(purchase.pricePerUnit),
-                BigInt(0)
+                BigInt(0),
               ) / BigInt(purchases24h.length)
             ).toString()
           : "0";
 
       const creditValues = Object.values(creditsState.credits);
       const totalCreditsMinted = creditValues.reduce(
-        (sum, credit) => sum + (credit.initialCreditsIssued ?? credit.creditsIssued),
-        0
+        (sum, credit) =>
+          sum + (credit.initialCreditsIssued ?? credit.creditsIssued),
+        0,
       );
       const totalCreditsRetired = creditValues.reduce(
         (sum, credit) => sum + (credit.retiredAmount ?? 0),
-        0
+        0,
       );
 
       const stats: MarketStats = {
@@ -1041,11 +1160,14 @@ export async function marketplaceRoutes(
         avgPriceUsd24h: weiToUsd(avgPrice24h),
         totalCreditsMinted,
         totalCreditsRetired,
-        totalCreditsTraded: state.purchases.reduce((sum, purchase) => sum + purchase.amount, 0),
+        totalCreditsTraded: state.purchases.reduce(
+          (sum, purchase) => sum + purchase.amount,
+          0,
+        ),
       };
 
       return { success: true, data: stats };
-    }
+    },
   );
 
   fastify.get(
@@ -1075,21 +1197,31 @@ export async function marketplaceRoutes(
         offset?: number;
       };
 
-      const state = await readState(MARKETPLACE_STORE_KEY, DEFAULT_MARKETPLACE_STATE);
+      const state = await readState(
+        MARKETPLACE_STORE_KEY,
+        DEFAULT_MARKETPLACE_STATE,
+      );
       let purchases = [...state.purchases];
 
       if (query.tokenId) {
-        purchases = purchases.filter((purchase) => purchase.tokenId === query.tokenId);
+        purchases = purchases.filter(
+          (purchase) => purchase.tokenId === query.tokenId,
+        );
       }
       if (query.buyerId) {
-        purchases = purchases.filter((purchase) => purchase.buyerId === query.buyerId);
+        purchases = purchases.filter(
+          (purchase) => purchase.buyerId === query.buyerId,
+        );
       }
       if (query.sellerId) {
-        purchases = purchases.filter((purchase) => purchase.sellerId === query.sellerId);
+        purchases = purchases.filter(
+          (purchase) => purchase.sellerId === query.sellerId,
+        );
       }
 
       purchases.sort(
-        (a, b) => new Date(b.purchasedAt).getTime() - new Date(a.purchasedAt).getTime()
+        (a, b) =>
+          new Date(b.purchasedAt).getTime() - new Date(a.purchasedAt).getTime(),
       );
 
       const total = purchases.length;
@@ -1102,6 +1234,6 @@ export async function marketplaceRoutes(
         data: purchases,
         pagination: { total, limit, offset },
       };
-    }
+    },
   );
 }

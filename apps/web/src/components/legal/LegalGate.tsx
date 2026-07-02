@@ -6,6 +6,7 @@
 import { ReactNode, useState, useEffect } from "react";
 import { useAccount } from "wagmi";
 import { TermsModal, useTermsAccepted } from "./TermsModal";
+import { reportClientError } from "@/lib/errors";
 
 interface LegalGateProps {
   children: ReactNode;
@@ -37,7 +38,11 @@ export function LegalGate({ children, requireTerms = true }: LegalGateProps) {
         }),
       });
     } catch (error) {
-      console.error("Failed to store terms acceptance:", error);
+      void reportClientError(error, {
+        source: "legal-gate",
+        action: "store-terms-acceptance",
+        hasWalletAddress: Boolean(address),
+      });
     }
 
     setShowTerms(false);

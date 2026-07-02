@@ -42,7 +42,10 @@ fn credit_id_mismatch_detected() {
     chain.events[1].credit_id = "CREDIT-999".into();
     let result = verify_chain(&chain);
     assert!(!result.valid);
-    assert!(result.errors.iter().any(|e| e.contains("credit_id mismatch")));
+    assert!(result
+        .errors
+        .iter()
+        .any(|e| e.contains("credit_id mismatch")));
 }
 
 #[test]

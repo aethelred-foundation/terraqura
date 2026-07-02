@@ -3,6 +3,8 @@
 
 export * from "./timescale/index.js";
 export * from "./prisma/index.js";
+export * from "./domain/index.js";
+export * from "./logger.js";
 
 // Re-export Prisma client (generated)
 export { PrismaClient } from "@prisma/client";

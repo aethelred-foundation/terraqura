@@ -13,7 +13,7 @@ import "../access/TerraQuraAccessControl.sol";
 /**
  * @title CarbonVault
  * @author TerraQura
- * @notice Staking vault for carbon credits to earn AETH rewards
+ * @notice Staking vault for carbon credits to earn AETHEL rewards
  * @dev Uses Synthetix StakingRewards pattern: rewardPerTokenStored / userRewardPerTokenPaid.
  *      UUPS upgradeable with TerraQuraAccessControl RBAC.
  */
@@ -37,7 +37,7 @@ contract CarbonVault is
     struct Vault {
         uint256 creditId;
         uint256 totalStaked;
-        uint256 rewardRate; // AETH wei per second
+        uint256 rewardRate; // AETHEL wei per second
         uint256 lockPeriod; // seconds
         uint256 lastUpdateTime;
         uint256 rewardPerTokenStored; // scaled by 1e18
@@ -270,7 +270,7 @@ contract CarbonVault is
     // ============================================
 
     /**
-     * @notice Fund the vault with AETH for rewards
+     * @notice Fund the vault with AETHEL for rewards
      */
     function fundRewards() external payable {}
 
@@ -308,7 +308,7 @@ contract CarbonVault is
     }
 
     /**
-     * @dev Required to receive AETH for reward funding
+     * @dev Required to receive AETHEL for reward funding
      */
     receive() external payable {}
 }

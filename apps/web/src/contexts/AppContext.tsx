@@ -3,6 +3,8 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, useMemo, type ReactNode } from 'react';
 import { useAccount, useBalance, useChainId, useBlockNumber, useDisconnect } from 'wagmi';
 import { useConnectModal } from '@rainbow-me/rainbowkit';
+import { NETWORKS } from '@terraqura/network-manifest';
+import { createClientId } from '@/lib/clientIds';
 
 // Types
 interface Notification {
@@ -54,7 +56,7 @@ export function AppProviderSSR({ children }: { children: ReactNode }) {
   const [searchOpen, setSearchOpen] = useState(false);
 
   const addNotification = useCallback((n: Omit<Notification, 'id'>) => {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const id = createClientId('notification');
     setNotifications(prev => [...prev, { ...n, id }]);
     setTimeout(() => setNotifications(prev => prev.filter(item => item.id !== id)), n.duration || 5000);
   }, []);
@@ -91,9 +93,16 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
 
-  // Expected chain IDs from env
-  const expectedChainId = parseInt(process.env.NEXT_PUBLIC_AETHELRED_CHAIN_ID || '123456');
-  const expectedTestnetId = parseInt(process.env.NEXT_PUBLIC_AETHELRED_TESTNET_CHAIN_ID || '123457');
+  // Expected chain IDs come from the canonical network manifest.
+  const expectedChainId = parseInt(
+    process.env.NEXT_PUBLIC_AETHELRED_CHAIN_ID || String(NETWORKS.aethelred.chainId),
+    10
+  );
+  const expectedTestnetId = parseInt(
+    process.env.NEXT_PUBLIC_AETHELRED_TESTNET_CHAIN_ID ||
+      String(NETWORKS.aethelredTestnet.chainId),
+    10
+  );
   const isWrongNetwork = isConnected && chainId !== expectedChainId && chainId !== expectedTestnetId;
 
   const wallet: WalletState = useMemo(() => ({
@@ -111,7 +120,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   }), [blockNumber]);
 
   const addNotification = useCallback((n: Omit<Notification, 'id'>) => {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const id = createClientId('notification');
     const notification = { ...n, id };
     setNotifications(prev => [...prev, notification]);
     const duration = n.duration || 5000;

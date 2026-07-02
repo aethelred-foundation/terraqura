@@ -1,4 +1,5 @@
 import { aethelred, aethelredTestnet } from "@/lib/wagmi";
+import { NETWORKS } from "@terraqura/network-manifest";
 
 const isDevelopment = process.env.NODE_ENV === "development";
 const isTestnet = process.env.NEXT_PUBLIC_USE_TESTNET === "true" || isDevelopment;
@@ -8,14 +9,14 @@ export const SUPPORTED_CHAINS = {
     id: aethelred.id,
     name: aethelred.name,
     isTestnet: false,
-    explorerUrl: "https://explorer.aethelred.network",
+    explorerUrl: NETWORKS.aethelred.explorerUrl,
     nativeCurrency: aethelred.nativeCurrency,
   },
   aethelredTestnet: {
     id: aethelredTestnet.id,
     name: aethelredTestnet.name,
     isTestnet: true,
-    explorerUrl: "https://testnet-explorer.aethelred.network",
+    explorerUrl: NETWORKS.aethelredTestnet.explorerUrl,
     nativeCurrency: aethelredTestnet.nativeCurrency,
   },
 } as const;

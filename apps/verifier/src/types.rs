@@ -115,4 +115,7 @@ pub struct PhaseResultResponse {
 pub struct HealthResponse {
     pub status: String,
     pub version: String,
+    pub network_key: String,
+    pub deployment_key: String,
+    pub chain_id: u64,
 }

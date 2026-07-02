@@ -12,7 +12,7 @@ Welcome to the TerraQura documentation. TerraQura is an **Institutional-Grade Ca
 TerraQura provides:
 
 - **Proof-of-Physics Verification**: Three-phase verification using real-time IoT sensor data
-- **Blockchain-Based Carbon Credits**: ERC-1155 tokens on Polygon representing verified CO2 removal
+- **Blockchain-Based Carbon Credits**: ERC-1155 tokens on Aethelred representing verified CO2 removal
 - **P2P Marketplace**: Trade carbon credits with KYC-verified counterparties
 - **ADGM Compliance**: Built for regulatory compliance in Abu Dhabi Global Market
 
@@ -28,7 +28,7 @@ Every carbon credit is backed by verifiable sensor data:
 
 ### 🔗 Blockchain Infrastructure
 
-- **Network**: Polygon PoS (Layer 2 Ethereum)
+- **Network**: Aethelred sovereign EVM
 - **Token Standard**: ERC-1155 (multi-token)
 - **Upgradeability**: UUPS Proxy pattern
 - **Admin**: Gnosis Safe (3-of-5 multi-sig)
@@ -62,7 +62,7 @@ Every carbon credit is backed by verifiable sensor data:
                               ↓
 ┌─────────────────────────────────────────────────────────────────┐
 │                       BLOCKCHAIN LAYER                           │
-│  UUPS Proxy Contracts on Polygon                                │
+│  UUPS Proxy Contracts on Aethelred                              │
 │  ├── CarbonCredit (ERC-1155)                                    │
 │  ├── VerificationEngine                                          │
 │  ├── CarbonMarketplace                                          │

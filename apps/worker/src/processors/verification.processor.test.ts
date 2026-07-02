@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
+import { afterEach, describe, it, expect, vi, beforeEach } from "vitest";
 import type { VerificationJobData } from "@terraqura/queue";
 import { createMockJob } from "../../test/helpers.js";
 
@@ -19,9 +19,21 @@ function baseJobData(
   };
 }
 
+const GOOD_TELEMETRY: NonNullable<VerificationJobData["telemetrySnapshot"]> = {
+  totalCO2CapturedTonnes: 12.5,
+  totalEnergyKwh: 4500,
+  dataPointCount: 17280,
+  anomalyCount: 23,
+  avgQualityScore: 0.97,
+};
+
 describe("verificationProcessor", () => {
   beforeEach(() => {
     vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
   });
 
   // -------------------------------------------------------
@@ -84,7 +96,9 @@ describe("verificationProcessor", () => {
       const result = await verificationProcessor(job);
 
       expect(result.details.dataIntegrity).toBeDefined();
-      expect(result.details.dataIntegrity).toBe(1.0); // 17280/17280
+      expect(result.details.dataIntegrity).toBe(1.0);
+      expect(result.details.expectedDataPoints).toBe(17280);
+      expect(result.details.receivedDataPoints).toBe(17280);
     });
 
     it("updates progress at 10, 50, and 100", async () => {
@@ -101,8 +115,40 @@ describe("verificationProcessor", () => {
       const job = createMockJob(baseJobData({ phase: "source" }));
       const result = await verificationProcessor(job);
 
-      // Both simulated values are 17280, so integrity = 1.0
       expect(result.details.dataIntegrity).toBeCloseTo(1.0, 5);
+    });
+
+    it("fails source check when attached evidence shows low integrity", async () => {
+      const job = createMockJob(
+        baseJobData({
+          phase: "source",
+          sourceValidation: {
+            registeredSensors: 8,
+            activeSensors: 8,
+            dataPointsReceived: 900,
+            expectedDataPoints: 1000,
+            signatureValid: true,
+            timestampSequenceValid: true,
+            noGapsDetected: true,
+          },
+        })
+      );
+
+      const result = await verificationProcessor(job);
+
+      expect(result.passed).toBe(false);
+      expect(result.nextPhase).toBeUndefined();
+      expect(result.details.dataIntegrity).toBe(0.9);
+    });
+
+    it("fails fast in production when source evidence is missing", async () => {
+      vi.stubEnv("NODE_ENV", "production");
+
+      const job = createMockJob(baseJobData({ phase: "source" }));
+
+      await expect(verificationProcessor(job)).rejects.toThrow(
+        /missing sourceValidation evidence/
+      );
     });
   });
 
@@ -111,16 +157,19 @@ describe("verificationProcessor", () => {
   // -------------------------------------------------------
   describe("logic check", () => {
     it("returns passed=true for efficiency within bounds (200-600 kWh/tonne)", async () => {
-      const job = createMockJob(baseJobData({ phase: "logic" }));
+      const job = createMockJob(
+        baseJobData({ phase: "logic", telemetrySnapshot: GOOD_TELEMETRY })
+      );
       const result = await verificationProcessor(job);
 
-      // Simulated: 4500 kWh / 12.5 tonnes = 360 kWh/tonne (within 200-600)
       expect(result.passed).toBe(true);
       expect(result.details.efficiency).toBe(360);
     });
 
     it("includes totalCO2 and totalEnergy in details", async () => {
-      const job = createMockJob(baseJobData({ phase: "logic" }));
+      const job = createMockJob(
+        baseJobData({ phase: "logic", telemetrySnapshot: GOOD_TELEMETRY })
+      );
       const result = await verificationProcessor(job);
 
       expect(result.details.totalCO2).toBe(12.5);
@@ -128,10 +177,13 @@ describe("verificationProcessor", () => {
     });
 
     it("includes anomalyCount in details", async () => {
-      const job = createMockJob(baseJobData({ phase: "logic" }));
+      const job = createMockJob(
+        baseJobData({ phase: "logic", telemetrySnapshot: GOOD_TELEMETRY })
+      );
       const result = await verificationProcessor(job);
 
       expect(result.details.anomalyCount).toBe(23);
+      expect(result.details.anomalyRate).toBeCloseTo(23 / 17280, 8);
     });
 
     it("generates a SHA256 dataHash from batch metadata", async () => {
@@ -145,8 +197,12 @@ describe("verificationProcessor", () => {
     });
 
     it("produces deterministic dataHash for same input", async () => {
-      const job1 = createMockJob(baseJobData({ phase: "logic" }));
-      const job2 = createMockJob(baseJobData({ phase: "logic" }));
+      const job1 = createMockJob(
+        baseJobData({ phase: "logic", telemetrySnapshot: GOOD_TELEMETRY })
+      );
+      const job2 = createMockJob(
+        baseJobData({ phase: "logic", telemetrySnapshot: GOOD_TELEMETRY })
+      );
 
       const result1 = await verificationProcessor(job1);
       const result2 = await verificationProcessor(job2);
@@ -155,8 +211,20 @@ describe("verificationProcessor", () => {
     });
 
     it("produces different dataHash for different batchId", async () => {
-      const job1 = createMockJob(baseJobData({ phase: "logic", batchId: "batch-001" }));
-      const job2 = createMockJob(baseJobData({ phase: "logic", batchId: "batch-002" }));
+      const job1 = createMockJob(
+        baseJobData({
+          phase: "logic",
+          batchId: "batch-001",
+          telemetrySnapshot: GOOD_TELEMETRY,
+        })
+      );
+      const job2 = createMockJob(
+        baseJobData({
+          phase: "logic",
+          batchId: "batch-002",
+          telemetrySnapshot: GOOD_TELEMETRY,
+        })
+      );
 
       const result1 = await verificationProcessor(job1);
       const result2 = await verificationProcessor(job2);
@@ -165,18 +233,22 @@ describe("verificationProcessor", () => {
     });
 
     it("sets nextPhase to mint when logic check passes", async () => {
-      const job = createMockJob(baseJobData({ phase: "logic" }));
+      const job = createMockJob(
+        baseJobData({ phase: "logic", telemetrySnapshot: GOOD_TELEMETRY })
+      );
       const result = await verificationProcessor(job);
 
       expect(result.nextPhase).toBe("mint");
     });
 
     it("includes dataIntegrity (avgQualityScore) in details", async () => {
-      const job = createMockJob(baseJobData({ phase: "logic" }));
+      const job = createMockJob(
+        baseJobData({ phase: "logic", telemetrySnapshot: GOOD_TELEMETRY })
+      );
       const result = await verificationProcessor(job);
 
-      // Simulated avgQualityScore = 0.97
       expect(result.details.dataIntegrity).toBe(0.97);
+      expect(result.details.qualityScore).toBe(0.97);
     });
 
     it("updates progress at 10, 40, 70, and 100", async () => {
@@ -190,11 +262,41 @@ describe("verificationProcessor", () => {
     });
 
     it("computes efficiency as totalEnergy / totalCO2", async () => {
-      const job = createMockJob(baseJobData({ phase: "logic" }));
+      const job = createMockJob(
+        baseJobData({ phase: "logic", telemetrySnapshot: GOOD_TELEMETRY })
+      );
       const result = await verificationProcessor(job);
 
-      // 4500 / 12.5 = 360
       expect(result.details.efficiency).toBe(4500 / 12.5);
+    });
+
+    it("fails logic check when telemetry evidence is outside physics bounds", async () => {
+      const job = createMockJob(
+        baseJobData({
+          phase: "logic",
+          telemetrySnapshot: {
+            ...GOOD_TELEMETRY,
+            totalCO2CapturedTonnes: 10,
+            totalEnergyKwh: 7000,
+          },
+        })
+      );
+
+      const result = await verificationProcessor(job);
+
+      expect(result.passed).toBe(false);
+      expect(result.nextPhase).toBeUndefined();
+      expect(result.details.efficiency).toBe(700);
+    });
+
+    it("fails fast in production when telemetry evidence is missing", async () => {
+      vi.stubEnv("NODE_ENV", "production");
+
+      const job = createMockJob(baseJobData({ phase: "logic" }));
+
+      await expect(verificationProcessor(job)).rejects.toThrow(
+        /missing telemetrySnapshot evidence/
+      );
     });
   });
 
@@ -230,15 +332,50 @@ describe("verificationProcessor", () => {
     });
 
     it("returns success=true with passed=false and error when batch already minted", async () => {
-      // The current simulated code sets previouslyMinted=false, so this path
-      // is not naturally triggered. We verify the structure of the result
-      // for the passing case instead, confirming the duplicate-check guard exists.
-      const job = createMockJob(baseJobData({ phase: "mint" }));
+      const job = createMockJob(
+        baseJobData({
+          phase: "mint",
+          mintValidation: {
+            previouslyMinted: true,
+            overlappingBatches: [],
+            operatorKycStatus: "VERIFIED",
+            sanctionsCleared: true,
+          },
+        })
+      );
       const result = await verificationProcessor(job);
 
-      // Since simulated duplicateCheck.previouslyMinted is false, it passes
-      expect(result.passed).toBe(true);
-      expect(result.error).toBeUndefined();
+      expect(result.passed).toBe(false);
+      expect(result.error).toMatch(/already minted/i);
+    });
+
+    it("returns passed=false when KYC evidence is rejected", async () => {
+      const job = createMockJob(
+        baseJobData({
+          phase: "mint",
+          mintValidation: {
+            previouslyMinted: false,
+            overlappingBatches: [],
+            operatorKycStatus: "REJECTED",
+            sanctionsCleared: true,
+          },
+        })
+      );
+
+      const result = await verificationProcessor(job);
+
+      expect(result.passed).toBe(false);
+      expect(result.error).toMatch(/KYC/i);
+    });
+
+    it("fails fast in production when mint evidence is missing", async () => {
+      vi.stubEnv("NODE_ENV", "production");
+
+      const job = createMockJob(baseJobData({ phase: "mint" }));
+
+      await expect(verificationProcessor(job)).rejects.toThrow(
+        /missing mintValidation evidence/
+      );
     });
 
     it("returns details as empty object in mint phase", async () => {

@@ -14,11 +14,16 @@ import (
 type Handlers struct {
 	store     store.Store
 	startTime time.Time
+	runtime   RuntimeInfo
 }
 
 // NewHandlers creates a Handlers instance.
-func NewHandlers(s store.Store, startTime time.Time) *Handlers {
-	return &Handlers{store: s, startTime: startTime}
+func NewHandlers(s store.Store, startTime time.Time, runtimeInfo ...RuntimeInfo) *Handlers {
+	runtime := RuntimeInfo{}
+	if len(runtimeInfo) > 0 {
+		runtime = runtimeInfo[0]
+	}
+	return &Handlers{store: s, startTime: startTime, runtime: runtime}
 }
 
 // Health returns service health and basic indexer stats.
@@ -29,12 +34,25 @@ func (h *Handlers) Health(c *gin.Context) {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to get stats"})
 		return
 	}
-	c.JSON(http.StatusOK, gin.H{
+	payload := gin.H{
 		"status":       "ok",
 		"uptime":       uptime.String(),
 		"total_events": stats.TotalEvents,
 		"last_block":   stats.LastBlock,
-	})
+	}
+
+	if h.runtime.NetworkKey != "" {
+		payload["network_key"] = h.runtime.NetworkKey
+		payload["deployment_key"] = h.runtime.DeploymentKey
+		payload["chain_id"] = h.runtime.ChainID
+		payload["manifest_path"] = h.runtime.ManifestPath
+		payload["store_backend"] = h.runtime.StoreBackend
+		payload["indexer_enabled"] = h.runtime.IndexerEnabled
+		payload["contract_filter_count"] = h.runtime.ContractFilterCount
+		payload["confirmations"] = h.runtime.Confirmations
+	}
+
+	c.JSON(http.StatusOK, payload)
 }
 
 // GetEvents returns a paginated, filterable list of events.

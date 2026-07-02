@@ -274,7 +274,7 @@ export function Article7Content() {
             <h3 className="text-sm font-bold text-white/80 uppercase tracking-wider mb-2">About TerraQura</h3>
             <p className="text-sm text-white/60 font-body leading-relaxed">
               TerraQura is building institutional-grade carbon verification infrastructure powered by Proof-of-Physics on the
-              Aethelred sovereign blockchain. Founded by Zhyra Holdings in Abu Dhabi, TerraQura provides real-time,
+              Aethelred sovereign blockchain. Founded in Abu Dhabi, TerraQura provides real-time,
               physics-verified carbon credits for enterprise buyers, DAC operators, and institutional investors.
             </p>
           </div>

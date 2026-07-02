@@ -4,13 +4,13 @@ import { Footer } from "@/components/layout/Footer";
 import { RegulatoryContent } from "./content";
 
 export const metadata: Metadata = {
-  title: "Regulatory Compliance | ADGM Framework & Compliance",
+  title: "Regulatory | TerraQura",
   description:
-    "TerraQura's regulatory framework, ADGM compliance approach, KYC/AML procedures, and important disclaimers regarding carbon credit tokens.",
+    "TerraQura aligns carbon market infrastructure with evolving standards, policy frameworks, compliance tools, and audit readiness.",
   openGraph: {
-    title: "Regulatory Compliance | TerraQura",
+    title: "Regulatory | TerraQura",
     description:
-      "Our approach to regulatory compliance, ADGM frameworks, and important legal disclaimers.",
+      "TerraQura aligns carbon market infrastructure with evolving standards, policy frameworks, compliance tools, and audit readiness.",
   },
 };
 

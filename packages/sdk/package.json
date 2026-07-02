@@ -25,6 +25,7 @@
   },
   "dependencies": {
     "@opentelemetry/api": "^1.7.0",
+    "@terraqura/network-manifest": "workspace:*",
     "@terraqura/types": "workspace:*",
     "ethers": "^6.10.0",
     "zod": "^3.22.4"

@@ -7,7 +7,7 @@ import { CarbonVault, TerraQuraAccessControl, MockERC1155 } from "../typechain-t
 describe("CarbonVault", function () {
   const CREDIT_ID = 1;
   const LOCK_PERIOD = 7 * 24 * 3600; // 7 days
-  const REWARD_RATE = ethers.parseEther("0.001"); // 0.001 AETH per second
+  const REWARD_RATE = ethers.parseEther("0.001"); // 0.001 AETHEL per second
 
   async function deployFixture() {
     const [owner, alice, bob, unauthorized] = await ethers.getSigners();
@@ -42,7 +42,7 @@ describe("CarbonVault", function () {
     await mockCredit.connect(alice).setApprovalForAll(vaultAddr, true);
     await mockCredit.connect(bob).setApprovalForAll(vaultAddr, true);
 
-    // Fund vault with AETH for rewards
+    // Fund vault with AETHEL for rewards
     await owner.sendTransaction({ to: vaultAddr, value: ethers.parseEther("100") });
 
     return { vault, accessControl, mockCredit, owner, alice, bob, unauthorized };
@@ -192,7 +192,7 @@ describe("CarbonVault", function () {
       await time.increase(100);
 
       const pending = await vault.pendingRewards(1, alice.address);
-      // ~100 seconds * 0.001 AETH/s = ~0.1 AETH
+      // ~100 seconds * 0.001 AETHEL/s = ~0.1 AETHEL
       expect(pending).to.be.gt(0);
     });
 

@@ -115,7 +115,7 @@ function ProtocolKPIsTab() {
         <MetricCard
           label="Total Value Locked"
           value={formatDecimal(tvl)}
-          unit="AETH"
+          unit="AETHEL"
           icon={TrendingUp}
           trend={{ value: 12.4, label: "vs last month" }}
         />
@@ -154,7 +154,7 @@ function ProtocolKPIsTab() {
         <MetricCard
           label="Protocol Revenue"
           value={formatDecimal(protocolRevenue)}
-          unit="AETH"
+          unit="AETHEL"
           icon={BarChart3}
           trend={{ value: 6.8, label: "vs last month" }}
         />
@@ -189,7 +189,7 @@ function ProtocolKPIsTab() {
             );
           })}
         </div>
-        <div className="flex justify-between mt-2 text-[10px] text-white/30">
+        <div className="flex justify-between mt-2 text-[10px] text-white/60">
           <span>Day 1</span>
           <span>Day 15</span>
           <span>Day 30</span>
@@ -270,9 +270,9 @@ function CarbonIntelligenceTab() {
     <div className="space-y-8">
       {/* Price per tonne header metrics */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <MetricCard label="Min Price (90d)" value={formatDecimal(minPrice, 2)} unit="AETH/tCO2" icon={TrendingUp} />
-        <MetricCard label="Avg Price (90d)" value={formatDecimal(avgPrice, 2)} unit="AETH/tCO2" icon={BarChart3} />
-        <MetricCard label="Max Price (90d)" value={formatDecimal(maxPrice, 2)} unit="AETH/tCO2" icon={TrendingUp} />
+        <MetricCard label="Min Price (90d)" value={formatDecimal(minPrice, 2)} unit="AETHEL/tCO2" icon={TrendingUp} />
+        <MetricCard label="Avg Price (90d)" value={formatDecimal(avgPrice, 2)} unit="AETHEL/tCO2" icon={BarChart3} />
+        <MetricCard label="Max Price (90d)" value={formatDecimal(maxPrice, 2)} unit="AETHEL/tCO2" icon={TrendingUp} />
       </div>
 
       {/* 90-day price chart */}
@@ -292,13 +292,13 @@ function CarbonIntelligenceTab() {
                   style={{ height: `${clampedHeight}%` }}
                 />
                 <div className="absolute -top-8 left-1/2 -translate-x-1/2 hidden group-hover:block bg-midnight-900 border border-white/10 rounded-lg px-2 py-1 text-[10px] text-white whitespace-nowrap z-10">
-                  Day {p.day}: {p.price} AETH
+                  Day {p.day}: {p.price} AETHEL
                 </div>
               </div>
             );
           })}
         </div>
-        <div className="flex justify-between mt-2 text-[10px] text-white/30">
+        <div className="flex justify-between mt-2 text-[10px] text-white/60">
           <span>90 days ago</span>
           <span>45 days ago</span>
           <span>Today</span>
@@ -408,7 +408,7 @@ function CarbonIntelligenceTab() {
           <div className="mt-6 pt-4 border-t border-white/[0.06]">
             <div className="flex items-center justify-between">
               <span className="text-xs text-white/40 uppercase tracking-wider">Market Cap Equivalent</span>
-              <span className="text-lg font-bold text-white font-mono">{formatNumber(Math.round(marketCap))} <span className="text-sm text-white/40 font-normal">AETH</span></span>
+              <span className="text-lg font-bold text-white font-mono">{formatNumber(Math.round(marketCap))} <span className="text-sm text-white/40 font-normal">AETHEL</span></span>
             </div>
           </div>
         </GlassCard>
@@ -420,11 +420,11 @@ function CarbonIntelligenceTab() {
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
           {[
             { metric: "Verification Time", terraqura: "4.2 hours", traditional: "6-18 months", improvement: "99.7% faster" },
-            { metric: "Cost per Credit", terraqura: "0.003 AETH", traditional: "$0.15-0.50", improvement: "~95% cheaper" },
+            { metric: "Cost per Credit", terraqura: "0.003 AETHEL", traditional: "$0.15-0.50", improvement: "~95% cheaper" },
             { metric: "Transparency", terraqura: "Full on-chain", traditional: "PDF reports", improvement: "100% auditable" },
           ].map((row) => (
             <GlassCard key={row.metric} className="p-4 bg-white/[0.01]">
-              <p className="text-[10px] text-white/30 uppercase tracking-wider mb-3">{row.metric}</p>
+              <p className="text-[10px] text-white/60 uppercase tracking-wider mb-3">{row.metric}</p>
               <div className="space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="text-xs text-emerald-400">TerraQura</span>
@@ -520,7 +520,7 @@ function EnvironmentalImpactTab() {
         <p className="text-lg text-white/40 mt-2">tonnes of CO2 permanently removed</p>
         <div className="mt-4 flex items-center justify-center gap-2">
           <StatusBadge status="Verified" />
-          <span className="text-xs text-white/30">On-chain verified via Proof-of-Physics</span>
+          <span className="text-xs text-white/60">On-chain verified via Proof-of-Physics</span>
         </div>
       </GlassCard>
 
@@ -535,7 +535,7 @@ function EnvironmentalImpactTab() {
                   {ms.achieved ? (
                     <CheckCircle className="w-4 h-4 text-emerald-400" />
                   ) : (
-                    <Clock className="w-4 h-4 text-white/30" />
+                    <Clock className="w-4 h-4 text-white/60" />
                   )}
                   <span className={`text-sm font-medium ${ms.achieved ? "text-emerald-400" : "text-white/60"}`}>
                     {ms.label}
@@ -595,7 +595,7 @@ function EnvironmentalImpactTab() {
               <div className="h-full bg-amber-500/60 rounded-full" style={{ width: "87%" }} />
             </div>
           </div>
-          <p className="text-xs text-white/30 leading-relaxed">
+          <p className="text-xs text-white/60 leading-relaxed">
             DAC-powered carbon removal incentivizes renewable energy adoption. Protocol fees fund clean energy infrastructure on Aethelred.
           </p>
         </GlassCard>
@@ -619,7 +619,7 @@ function EnvironmentalImpactTab() {
               <div className="h-full bg-emerald-500/60 rounded-full" style={{ width: "94%" }} />
             </div>
           </div>
-          <p className="text-xs text-white/30 leading-relaxed">
+          <p className="text-xs text-white/60 leading-relaxed">
             Direct atmospheric CO2 removal with on-chain verification ensures measurable, permanent climate impact with full transparency.
           </p>
         </GlassCard>
@@ -640,7 +640,7 @@ function EnvironmentalImpactTab() {
                 <div className="absolute -top-8 left-1/2 -translate-x-1/2 hidden group-hover:block bg-midnight-900 border border-white/10 rounded-lg px-2 py-1 text-[10px] text-white whitespace-nowrap z-10">
                   {m.month}: {formatNumber(m.tonnes)} t
                 </div>
-                <span className="text-[9px] text-white/30 mt-1">{m.month}</span>
+                <span className="text-[9px] text-white/60 mt-1">{m.month}</span>
               </div>
             );
           })}
@@ -659,19 +659,19 @@ function EnvironmentalImpactTab() {
           </p>
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 max-w-2xl mx-auto">
             <div className="text-center">
-              <p className="text-xs text-white/30 uppercase tracking-wider">Total Removed</p>
+              <p className="text-xs text-white/60 uppercase tracking-wider">Total Removed</p>
               <p className="text-lg font-bold text-emerald-400 font-mono">{formatNumber(totalCO2Removed)} t</p>
             </div>
             <div className="text-center">
-              <p className="text-xs text-white/30 uppercase tracking-wider">Verification</p>
+              <p className="text-xs text-white/60 uppercase tracking-wider">Verification</p>
               <p className="text-lg font-bold text-emerald-400">On-Chain</p>
             </div>
             <div className="text-center">
-              <p className="text-xs text-white/30 uppercase tracking-wider">Method</p>
+              <p className="text-xs text-white/60 uppercase tracking-wider">Method</p>
               <p className="text-lg font-bold text-emerald-400">DAC</p>
             </div>
             <div className="text-center">
-              <p className="text-xs text-white/30 uppercase tracking-wider">Status</p>
+              <p className="text-xs text-white/60 uppercase tracking-wider">Status</p>
               <p className="text-lg font-bold text-emerald-400">Permanent</p>
             </div>
           </div>
@@ -815,7 +815,7 @@ function VerificationMetricsTab() {
             );
           })}
         </div>
-        <div className="flex justify-between mt-2 text-[10px] text-white/30">
+        <div className="flex justify-between mt-2 text-[10px] text-white/60">
           <span>Day 1</span>
           <span>Day 15</span>
           <span>Day 30</span>
@@ -861,17 +861,17 @@ function VerificationMetricsTab() {
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <GlassCard className="p-5 text-center border-emerald-500/10">
           <Gauge className="w-6 h-6 text-emerald-400 mx-auto mb-2" />
-          <p className="text-xs text-white/30 uppercase tracking-wider mb-1">Fastest</p>
+          <p className="text-xs text-white/60 uppercase tracking-wider mb-1">Fastest</p>
           <p className="text-2xl font-bold text-emerald-400 font-mono">{fastestVerification}</p>
         </GlassCard>
         <GlassCard className="p-5 text-center border-cyan-500/10">
           <Clock className="w-6 h-6 text-cyan-400 mx-auto mb-2" />
-          <p className="text-xs text-white/30 uppercase tracking-wider mb-1">Average</p>
+          <p className="text-xs text-white/60 uppercase tracking-wider mb-1">Average</p>
           <p className="text-2xl font-bold text-cyan-400 font-mono">{averageVerification}</p>
         </GlassCard>
         <GlassCard className="p-5 text-center border-amber-500/10">
           <AlertTriangle className="w-6 h-6 text-amber-400 mx-auto mb-2" />
-          <p className="text-xs text-white/30 uppercase tracking-wider mb-1">Slowest</p>
+          <p className="text-xs text-white/60 uppercase tracking-wider mb-1">Slowest</p>
           <p className="text-2xl font-bold text-amber-400 font-mono">{slowestVerification}</p>
         </GlassCard>
       </div>
@@ -883,10 +883,10 @@ function VerificationMetricsTab() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-white/[0.06]">
-                <th className="text-left py-3 px-3 text-[10px] text-white/30 uppercase tracking-wider font-medium">Verifier Address</th>
-                <th className="text-right py-3 px-3 text-[10px] text-white/30 uppercase tracking-wider font-medium">Pass Rate</th>
-                <th className="text-right py-3 px-3 text-[10px] text-white/30 uppercase tracking-wider font-medium">Volume</th>
-                <th className="text-right py-3 px-3 text-[10px] text-white/30 uppercase tracking-wider font-medium">Avg Time</th>
+                <th className="text-left py-3 px-3 text-[10px] text-white/60 uppercase tracking-wider font-medium">Verifier Address</th>
+                <th className="text-right py-3 px-3 text-[10px] text-white/60 uppercase tracking-wider font-medium">Pass Rate</th>
+                <th className="text-right py-3 px-3 text-[10px] text-white/60 uppercase tracking-wider font-medium">Volume</th>
+                <th className="text-right py-3 px-3 text-[10px] text-white/60 uppercase tracking-wider font-medium">Avg Time</th>
               </tr>
             </thead>
             <tbody>
@@ -990,7 +990,7 @@ function NetworkHealthTab() {
             <StatusBadge status="Operational" />
           </div>
           <p className="text-3xl font-bold text-emerald-400 font-mono">{uptimePct}%</p>
-          <p className="text-xs text-white/30 mt-1">{formatNumber(uptimeDays)} consecutive days</p>
+          <p className="text-xs text-white/60 mt-1">{formatNumber(uptimeDays)} consecutive days</p>
         </GlassCard>
         <MetricCard label="Peer Count" value={formatNumber(peerCount)} icon={Server} />
         <MetricCard label="Active Validators" value={`${activeValidators}/${validatorCount}`} icon={ShieldCheck} />
@@ -1057,16 +1057,16 @@ function NetworkHealthTab() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-white/[0.06]">
-                  <th className="text-left py-2 px-2 text-[10px] text-white/30 uppercase tracking-wider font-medium">#</th>
-                  <th className="text-left py-2 px-2 text-[10px] text-white/30 uppercase tracking-wider font-medium">Contract</th>
-                  <th className="text-right py-2 px-2 text-[10px] text-white/30 uppercase tracking-wider font-medium">Calls</th>
-                  <th className="text-right py-2 px-2 text-[10px] text-white/30 uppercase tracking-wider font-medium">Share</th>
+                  <th className="text-left py-2 px-2 text-[10px] text-white/60 uppercase tracking-wider font-medium">#</th>
+                  <th className="text-left py-2 px-2 text-[10px] text-white/60 uppercase tracking-wider font-medium">Contract</th>
+                  <th className="text-right py-2 px-2 text-[10px] text-white/60 uppercase tracking-wider font-medium">Calls</th>
+                  <th className="text-right py-2 px-2 text-[10px] text-white/60 uppercase tracking-wider font-medium">Share</th>
                 </tr>
               </thead>
               <tbody>
                 {contractCalls.map((c, i) => (
                   <tr key={i} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition">
-                    <td className="py-2.5 px-2 text-xs text-white/30">{i + 1}</td>
+                    <td className="py-2.5 px-2 text-xs text-white/60">{i + 1}</td>
                     <td className="py-2.5 px-2 text-xs text-white/70">{c.name}</td>
                     <td className="py-2.5 px-2 text-right text-xs text-white/60 font-mono">{formatNumber(c.calls)}</td>
                     <td className="py-2.5 px-2 text-right text-xs text-emerald-400/70 font-mono">{c.pct}%</td>
@@ -1091,7 +1091,7 @@ function NetworkHealthTab() {
             </div>
           </div>
           <p className="text-2xl font-bold text-white font-mono">{failedTxPct}%</p>
-          <p className="text-xs text-white/30 mt-1">{failedTxCount} of {formatNumber(totalTxToday)} today</p>
+          <p className="text-xs text-white/60 mt-1">{failedTxCount} of {formatNumber(totalTxToday)} today</p>
           <div className="mt-3 h-2 bg-white/[0.04] rounded-full overflow-hidden">
             <div className="h-full bg-emerald-500/60 rounded-full" style={{ width: `${100 - failedTxPct}%` }} />
           </div>

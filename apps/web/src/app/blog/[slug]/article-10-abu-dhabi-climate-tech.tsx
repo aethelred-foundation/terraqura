@@ -242,7 +242,7 @@ export function Article10Content() {
               TerraQura&apos;s Role in the Ecosystem
             </h2>
             <p className="text-white/70 font-body leading-relaxed mb-4">
-              TerraQura, founded by Zhyra Holdings in Abu Dhabi, is positioned at the intersection of several converging
+              TerraQura, founded in Abu Dhabi, is positioned at the intersection of several converging
               trends in the UAE&apos;s climate strategy: the scaling of carbon capture and storage infrastructure, the
               development of blockchain-based financial infrastructure through ADGM, the deployment of IoT and sensor
               technologies for industrial monitoring, and the growing global demand for high-integrity carbon credits.
@@ -307,7 +307,7 @@ export function Article10Content() {
             <h3 className="text-sm font-bold text-white/80 uppercase tracking-wider mb-2">About TerraQura</h3>
             <p className="text-sm text-white/60 font-body leading-relaxed">
               TerraQura is building institutional-grade carbon verification infrastructure powered by Proof-of-Physics on the
-              Aethelred sovereign blockchain. Founded by Zhyra Holdings in Abu Dhabi, TerraQura provides real-time,
+              Aethelred sovereign blockchain. Founded in Abu Dhabi, TerraQura provides real-time,
               physics-verified carbon credits for enterprise buyers, DAC operators, and institutional investors.
             </p>
           </div>

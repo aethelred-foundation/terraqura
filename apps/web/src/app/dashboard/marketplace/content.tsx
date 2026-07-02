@@ -37,8 +37,11 @@ function seededInt(seed: number, min: number, max: number): number {
   return Math.floor(seededRandom(seed) * (max - min + 1)) + min;
 }
 
-function seededChoice<T>(seed: number, arr: T[]): T {
-  return arr[seededInt(seed, 0, arr.length - 1)]!;
+function seededChoice<T>(seed: number, arr: readonly T[]): T {
+  if (arr.length === 0) {
+    throw new Error("seededChoice: empty array");
+  }
+  return arr[seededInt(seed, 0, arr.length - 1)] as T;
 }
 
 function seededFloat(seed: number, min: number, max: number, decimals: number = 2): number {
@@ -153,21 +156,21 @@ const MOCK_LISTINGS: MockListing[] = Array.from({ length: 15 }, (_, i) => {
   const prices = [45, 38, 32, 52, 65, 55, 28, 72, 35, 48, 42, 39, 26, 85, 31];
   const amounts = [10, 5, 20, 3, 25, 15, 8, 30, 12, 7, 18, 9, 22, 2, 14];
   const purities = [97, 95, 93, 96, 98, 97, 91, 99, 94, 96, 95, 92, 90, 99, 93];
-  const seller = SELLER_ADDRESSES[seededInt(seed + 1, 0, SELLER_ADDRESSES.length - 1)]!;
+  const seller = SELLER_ADDRESSES[seededInt(seed + 1, 0, SELLER_ADDRESSES.length - 1)] ?? SELLER_ADDRESSES[0] ?? "0x0";
   const srcVerified = seededRandom(seed + 2) > 0.1;
   const logVerified = seededRandom(seed + 3) > 0.2;
   const mntVerified = seededRandom(seed + 4) > 0.25;
 
   return {
     listingId: i + 1,
-    tokenId: tokenIds[i]!,
+    tokenId: tokenIds[i] ?? 0,
     seller,
-    co2AmountKg: co2Amounts[i]!,
-    pricePerUnit: BigInt(prices[i]!) * 1000000000000000n, // prices in finney
-    amount: amounts[i]!,
+    co2AmountKg: co2Amounts[i] ?? 0,
+    pricePerUnit: BigInt(prices[i] ?? 0) * 1000000000000000n, // prices in finney
+    amount: amounts[i] ?? 0,
     isActive: true,
     createdAt: 1770000000 + i * 43200,
-    purityPercentage: purities[i]!,
+    purityPercentage: purities[i] ?? 0,
     sourceVerified: srcVerified,
     logicVerified: logVerified,
     mintVerified: mntVerified,
@@ -192,14 +195,14 @@ const MOCK_TRADES: MockTradeEvent[] = Array.from({ length: 25 }, (_, i) => {
   const hexChars = '0123456789abcdef';
   let txHash = '0x';
   for (let j = 0; j < 64; j++) {
-    txHash += hexChars[seededInt(seed + j + 100, 0, 15)]!;
+    txHash += hexChars[seededInt(seed + j + 100, 0, 15)] ?? "0";
   }
 
   return {
     id: i + 1,
     type: seededChoice(seed + 3, tradeTypes),
-    buyer: BUYER_ADDRESSES[seededInt(seed + 4, 0, BUYER_ADDRESSES.length - 1)]!,
-    seller: SELLER_ADDRESSES[seededInt(seed + 5, 0, SELLER_ADDRESSES.length - 1)]!,
+    buyer: BUYER_ADDRESSES[seededInt(seed + 4, 0, BUYER_ADDRESSES.length - 1)] ?? BUYER_ADDRESSES[0] ?? "0x0",
+    seller: SELLER_ADDRESSES[seededInt(seed + 5, 0, SELLER_ADDRESSES.length - 1)] ?? SELLER_ADDRESSES[0] ?? "0x0",
     tokenId,
     amount,
     totalPrice,
@@ -216,17 +219,21 @@ const MOCK_TRADES: MockTradeEvent[] = Array.from({ length: 25 }, (_, i) => {
 const MOCK_OFFERS: MockOffer[] = Array.from({ length: 5 }, (_, i) => {
   const seed = i * 317 + 59;
   const statuses: MockOffer['status'][] = ['Pending', 'Accepted', 'Rejected', 'Expired', 'Countered'];
-  const listing = MOCK_LISTINGS[seededInt(seed, 0, MOCK_LISTINGS.length - 1)]!;
+  const fallbackListing = MOCK_LISTINGS[0];
+  const listing = MOCK_LISTINGS[seededInt(seed, 0, MOCK_LISTINGS.length - 1)] ?? fallbackListing;
+  if (!listing) {
+    throw new Error("MOCK_LISTINGS is empty");
+  }
   const priceDelta = seededFloat(seed + 1, -0.02, 0.01, 4);
   const basePrice = Number(listing.pricePerUnit) / 1e18;
   const offerPrice = Math.max(0.01, basePrice + priceDelta);
-  const status = statuses[i]!;
+  const status = statuses[i] ?? "Pending";
 
   return {
     offerId: i + 1,
     listingId: listing.listingId,
     tokenId: listing.tokenId,
-    offerer: BUYER_ADDRESSES[seededInt(seed + 2, 0, BUYER_ADDRESSES.length - 1)]!,
+    offerer: BUYER_ADDRESSES[seededInt(seed + 2, 0, BUYER_ADDRESSES.length - 1)] ?? BUYER_ADDRESSES[0] ?? "0x0",
     pricePerUnit: BigInt(Math.round(offerPrice * 1e18)),
     quantity: seededInt(seed + 3, 1, Math.min(listing.amount, 10)),
     expiresAt: 1770500000 + seededInt(seed + 4, 86400, 604800),
@@ -242,14 +249,20 @@ const MOCK_OFFERS: MockOffer[] = Array.from({ length: 5 }, (_, i) => {
 
 const MOCK_WATCHLIST: MockWatchlistItem[] = Array.from({ length: 5 }, (_, i) => {
   const seed = i * 443 + 31;
-  const tokenIds = [1, 13, 42, 67, 103];
-  const prices = [45, 65, 72, 48, 85];
+  const tokenIds = [1, 13, 42, 67, 103] as const;
+  const prices = [45, 65, 72, 48, 85] as const;
+  // Bounds-safe access - i is 0..4 by construction (Array.from length: 5).
+  const tokenId = tokenIds[i] ?? 0;
+  const price = prices[i] ?? 0;
+  const sellerAddress =
+    SELLER_ADDRESSES[seededInt(seed, 0, SELLER_ADDRESSES.length - 1)] ??
+    SELLER_ADDRESSES[0] ?? "0x0";
   return {
-    tokenId: tokenIds[i]!,
-    seller: SELLER_ADDRESSES[seededInt(seed, 0, SELLER_ADDRESSES.length - 1)]!,
-    lastPrice: BigInt(prices[i]!) * 1000000000000000n,
-    alertAbove: BigInt(prices[i]! + seededInt(seed + 1, 5, 15)) * 1000000000000000n,
-    alertBelow: BigInt(Math.max(10, prices[i]! - seededInt(seed + 2, 5, 15))) * 1000000000000000n,
+    tokenId,
+    seller: sellerAddress,
+    lastPrice: BigInt(price) * 1000000000000000n,
+    alertAbove: BigInt(price + seededInt(seed + 1, 5, 15)) * 1000000000000000n,
+    alertBelow: BigInt(Math.max(10, price - seededInt(seed + 2, 5, 15))) * 1000000000000000n,
     priceChange: seededFloat(seed + 3, -8, 12, 2),
     addedAt: 1770300000 + seededInt(seed + 4, 0, 86400),
     co2AmountKg: seededInt(seed + 5, 500, 5000),
@@ -286,7 +299,7 @@ const ANALYTICS_PRICE_HISTORY = Array.from({ length: 30 }, (_, i) => {
 const ANALYTICS_TOP_BUYERS = Array.from({ length: 5 }, (_, i) => {
   const seed = i * 293 + 17;
   return {
-    address: BUYER_ADDRESSES[i]!,
+    address: BUYER_ADDRESSES[i] ?? BUYER_ADDRESSES[0] ?? "0x0",
     totalVolume: seededFloat(seed, 2.0, 25.0, 3),
     trades: seededInt(seed + 1, 5, 60),
     co2Acquired: seededInt(seed + 2, 5000, 80000),
@@ -296,7 +309,7 @@ const ANALYTICS_TOP_BUYERS = Array.from({ length: 5 }, (_, i) => {
 const ANALYTICS_TOP_SELLERS = Array.from({ length: 5 }, (_, i) => {
   const seed = i * 349 + 23;
   return {
-    address: SELLER_ADDRESSES[i]!,
+    address: SELLER_ADDRESSES[i] ?? SELLER_ADDRESSES[0] ?? "0x0",
     totalVolume: seededFloat(seed, 3.0, 30.0, 3),
     trades: seededInt(seed + 1, 8, 70),
     co2Sold: seededInt(seed + 2, 8000, 100000),
@@ -360,14 +373,14 @@ function ListingCard({ listing, showWatchlistButton }: { listing: MockListing; s
             <StatusBadge status={allVerified ? 'Verified' : 'Pending'} />
           </div>
           <div className="flex items-center gap-2">
-            <p className="text-white/30 text-xs font-mono">{truncateAddress(listing.seller)}</p>
+            <p className="text-white/60 text-xs font-mono">{truncateAddress(listing.seller)}</p>
             <span className="text-[10px] text-amber-400/70 font-mono" title="Seller reputation">
               Rep: {listing.reputationScore}
             </span>
           </div>
         </div>
         <div className="text-right">
-          <span className="text-white/20 text-xs font-mono block">{formatHoursAgo(listing.timeSinceListed)}</span>
+          <span className="text-white/55 text-xs font-mono block">{formatHoursAgo(listing.timeSinceListed)}</span>
           <span className="text-white/15 text-[10px] font-mono flex items-center justify-end gap-1 mt-0.5">
             <Eye className="w-3 h-3" /> {listing.viewCount}
           </span>
@@ -386,7 +399,7 @@ function ListingCard({ listing, showWatchlistButton }: { listing: MockListing; s
         </div>
         <div className="flex justify-between text-xs">
           <span className="text-white/40">Price / Unit</span>
-          <span className="text-cyan-400 font-mono font-bold">{weiToEth(listing.pricePerUnit)} AETH</span>
+          <span className="text-cyan-400 font-mono font-bold">{weiToEth(listing.pricePerUnit)} AETHEL</span>
         </div>
         <div className="flex justify-between text-xs">
           <span className="text-white/40">Purity</span>
@@ -394,15 +407,15 @@ function ListingCard({ listing, showWatchlistButton }: { listing: MockListing; s
         </div>
         <div className="flex justify-between text-xs">
           <span className="text-white/40">Total Value</span>
-          <span className="text-white/50 font-mono">{weiToEth(listing.pricePerUnit * BigInt(listing.amount))} AETH</span>
+          <span className="text-white/50 font-mono">{weiToEth(listing.pricePerUnit * BigInt(listing.amount))} AETHEL</span>
         </div>
       </div>
 
       {/* Verification mini-badges */}
       <div className="flex gap-1.5 mb-4">
-        <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${listing.sourceVerified ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-white/30'}`}>SRC</span>
-        <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${listing.logicVerified ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-white/30'}`}>LOG</span>
-        <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${listing.mintVerified ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-white/30'}`}>MNT</span>
+        <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${listing.sourceVerified ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-white/60'}`}>SRC</span>
+        <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${listing.logicVerified ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-white/60'}`}>LOG</span>
+        <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${listing.mintVerified ? 'bg-emerald-500/10 text-emerald-400' : 'bg-white/[0.04] text-white/60'}`}>MNT</span>
       </div>
 
       {/* Actions */}
@@ -531,7 +544,7 @@ function ActiveListingsTab() {
         <MetricCard
           label="Total Volume"
           value="142.7"
-          unit="AETH"
+          unit="AETHEL"
         />
       </div>
 
@@ -551,7 +564,7 @@ function ActiveListingsTab() {
           {/* Row 1: Search + Sort */}
           <div className="flex flex-col sm:flex-row gap-3">
             <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-white/60" />
               <input
                 type="text"
                 placeholder="Search by Token ID or seller address..."
@@ -561,7 +574,7 @@ function ActiveListingsTab() {
               />
             </div>
             <div className="flex items-center gap-2">
-              <ArrowUpDown className="w-4 h-4 text-white/30" />
+              <ArrowUpDown className="w-4 h-4 text-white/60" />
               <select
                 value={sortBy}
                 onChange={(e) => setSortBy(e.target.value as SortOption)}
@@ -579,7 +592,7 @@ function ActiveListingsTab() {
           {/* Row 2: Advanced filters */}
           <div className="flex flex-wrap gap-3 items-end">
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-white/30 uppercase tracking-wider">Price Range (AETH)</label>
+              <label className="text-[10px] text-white/60 uppercase tracking-wider">Price Range (AETHEL)</label>
               <div className="flex items-center gap-1">
                 <input
                   type="number"
@@ -589,7 +602,7 @@ function ActiveListingsTab() {
                   onChange={(e) => setPriceMin(e.target.value)}
                   className="w-20 px-2 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white placeholder-white/25 focus:outline-none focus:border-emerald-500/30"
                 />
-                <span className="text-white/20 text-xs">-</span>
+                <span className="text-white/55 text-xs">-</span>
                 <input
                   type="number"
                   step="0.001"
@@ -601,7 +614,7 @@ function ActiveListingsTab() {
               </div>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-white/30 uppercase tracking-wider">CO2 Range (kg)</label>
+              <label className="text-[10px] text-white/60 uppercase tracking-wider">CO2 Range (kg)</label>
               <div className="flex items-center gap-1">
                 <input
                   type="number"
@@ -610,7 +623,7 @@ function ActiveListingsTab() {
                   onChange={(e) => setCo2Min(e.target.value)}
                   className="w-20 px-2 py-1.5 bg-white/[0.04] border border-white/[0.08] rounded-lg text-xs text-white placeholder-white/25 focus:outline-none focus:border-emerald-500/30"
                 />
-                <span className="text-white/20 text-xs">-</span>
+                <span className="text-white/55 text-xs">-</span>
                 <input
                   type="number"
                   placeholder="Max"
@@ -621,7 +634,7 @@ function ActiveListingsTab() {
               </div>
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-white/30 uppercase tracking-wider">Min Purity %</label>
+              <label className="text-[10px] text-white/60 uppercase tracking-wider">Min Purity %</label>
               <input
                 type="number"
                 min="0"
@@ -633,7 +646,7 @@ function ActiveListingsTab() {
               />
             </div>
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-white/30 uppercase tracking-wider">Verification</label>
+              <label className="text-[10px] text-white/60 uppercase tracking-wider">Verification</label>
               <select
                 value={verificationFilter}
                 onChange={(e) => setVerificationFilter(e.target.value as VerificationFilter)}
@@ -698,24 +711,29 @@ function MyListingsTab() {
   // Extended listings with statuses for demo
   const myListingsWithStatus: (MockListing & { displayStatus: 'active' | 'expired' | 'sold' })[] = [
     ...myListings.map((l) => ({ ...l, displayStatus: 'active' as const })),
-    // Add some mock expired/sold listings
-    {
-      ...MOCK_LISTINGS[0]!,
+  ];
+  const templateSold = MOCK_LISTINGS[0];
+  if (templateSold) {
+    myListingsWithStatus.push({
+      ...templateSold,
       listingId: 100,
       tokenId: 150,
       seller: wallet.address,
-      displayStatus: 'sold' as const,
+      displayStatus: 'sold',
       isActive: false,
-    },
-    {
-      ...MOCK_LISTINGS[1]!,
+    });
+  }
+  const templateExpired = MOCK_LISTINGS[1];
+  if (templateExpired) {
+    myListingsWithStatus.push({
+      ...templateExpired,
       listingId: 101,
       tokenId: 162,
       seller: wallet.address,
-      displayStatus: 'expired' as const,
+      displayStatus: 'expired',
       isActive: false,
-    },
-  ];
+    });
+  }
 
   const platformFee = 0.025;
   const priceNum = parseFloat(listingPrice) || 0;
@@ -759,7 +777,7 @@ function MyListingsTab() {
         <GlassCard className="p-6 mb-6">
           <div className="flex items-center justify-between mb-6">
             <h3 className="text-white font-semibold">Create New Listing</h3>
-            <button onClick={resetWizard} className="text-white/30 hover:text-white/60 text-xs">Cancel</button>
+            <button onClick={resetWizard} className="text-white/60 hover:text-white/60 text-xs">Cancel</button>
           </div>
 
           {/* Step indicators */}
@@ -773,7 +791,7 @@ function MyListingsTab() {
                       : wizardStep === step
                         ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
                         : 'bg-emerald-500/10 text-emerald-400/60 border border-emerald-500/20'
-                    : 'bg-white/[0.04] text-white/30 border border-white/[0.08]'
+                    : 'bg-white/[0.04] text-white/60 border border-white/[0.08]'
                 }`}>
                   {wizardComplete && step < 4 ? '\u2713' : step}
                 </div>
@@ -800,7 +818,7 @@ function MyListingsTab() {
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="text-white font-mono font-bold text-sm">Token #{token.tokenId}</span>
-                        <span className="text-[10px] text-white/30 font-mono">{token.dacUnitId}</span>
+                        <span className="text-[10px] text-white/60 font-mono">{token.dacUnitId}</span>
                       </div>
                       <div className="flex items-center gap-3 mt-1">
                         <span className="text-xs text-emerald-400/70">{token.co2AmountKg.toLocaleString()} kg CO2</span>
@@ -809,7 +827,7 @@ function MyListingsTab() {
                     </div>
                     <div className="text-right">
                       <span className="text-white/70 font-mono text-sm font-bold">{token.balance}</span>
-                      <span className="text-white/30 text-xs block">units</span>
+                      <span className="text-white/60 text-xs block">units</span>
                     </div>
                   </button>
                 ))}
@@ -825,7 +843,7 @@ function MyListingsTab() {
               </p>
               <div className="space-y-4">
                 <div>
-                  <label className="text-xs text-white/40 uppercase tracking-wider block mb-1">Price per Unit (AETH)</label>
+                  <label className="text-xs text-white/40 uppercase tracking-wider block mb-1">Price per Unit (AETHEL)</label>
                   <input
                     type="number"
                     step="0.001"
@@ -894,7 +912,7 @@ function MyListingsTab() {
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-white/40">Price per Unit</span>
-                  <span className="text-cyan-400 font-mono font-bold">{listingPrice} AETH</span>
+                  <span className="text-cyan-400 font-mono font-bold">{listingPrice} AETHEL</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-white/40">Min Purchase</span>
@@ -907,15 +925,15 @@ function MyListingsTab() {
                 <hr className="border-white/[0.06]" />
                 <div className="flex justify-between text-sm">
                   <span className="text-white/40">Platform Fee (2.5%)</span>
-                  <span className="text-amber-400/70 font-mono">{feeAmount.toFixed(6)} AETH</span>
+                  <span className="text-amber-400/70 font-mono">{feeAmount.toFixed(6)} AETHEL</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-white/40">You Receive per Unit</span>
-                  <span className="text-emerald-400 font-mono font-bold">{youReceive.toFixed(6)} AETH</span>
+                  <span className="text-emerald-400 font-mono font-bold">{youReceive.toFixed(6)} AETHEL</span>
                 </div>
                 <div className="flex justify-between text-sm">
                   <span className="text-white/40">Max Revenue (all sold)</span>
-                  <span className="text-emerald-400 font-mono">{(youReceive * selectedToken.balance).toFixed(4)} AETH</span>
+                  <span className="text-emerald-400 font-mono">{(youReceive * selectedToken.balance).toFixed(4)} AETHEL</span>
                 </div>
               </div>
               <div className="flex gap-3">
@@ -940,7 +958,7 @@ function MyListingsTab() {
               <p className="text-white/40 text-sm mb-1">
                 Token #{selectedToken?.tokenId} has been listed on the marketplace.
               </p>
-              <p className="text-white/30 text-xs font-mono mb-6">
+              <p className="text-white/60 text-xs font-mono mb-6">
                 Transaction would be submitted to the Aethelred network.
               </p>
               <button onClick={resetWizard} className="px-6 py-2.5 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-sm font-semibold hover:bg-emerald-500/30 transition-all">
@@ -985,7 +1003,7 @@ function MyListingsTab() {
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-white/40">Price / Unit</span>
-                  <span className="text-cyan-400 font-mono font-bold">{weiToEth(listing.pricePerUnit)} AETH</span>
+                  <span className="text-cyan-400 font-mono font-bold">{weiToEth(listing.pricePerUnit)} AETHEL</span>
                 </div>
                 <div className="flex justify-between text-xs">
                   <span className="text-white/40">Available</span>
@@ -1058,8 +1076,8 @@ function TradeHistoryTab() {
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         <MetricCard label="Total Trades" value={MOCK_TRADES.length.toString()} />
-        <MetricCard label="Total Volume" value={totalVolume.toFixed(2)} unit="AETH" />
-        <MetricCard label="Avg Price/Unit" value={avgPrice.toFixed(4)} unit="AETH" />
+        <MetricCard label="Total Volume" value={totalVolume.toFixed(2)} unit="AETHEL" />
+        <MetricCard label="Avg Price/Unit" value={avgPrice.toFixed(4)} unit="AETHEL" />
         <MetricCard label="CO2 Traded" value={(totalCo2Traded / 1000).toFixed(1)} unit="tCO2" />
       </div>
 
@@ -1074,8 +1092,8 @@ function TradeHistoryTab() {
             {liveEvents.map((evt, i) => (
               <div key={i} className="flex items-center gap-3 text-xs">
                 <span className="text-emerald-400 font-mono">Purchase</span>
-                <span className="text-white/30 font-mono truncate">{evt.transactionHash.slice(0, 16)}...</span>
-                <span className="text-white/20 font-mono">Block {evt.blockNumber.toString()}</span>
+                <span className="text-white/60 font-mono truncate">{evt.transactionHash.slice(0, 16)}...</span>
+                <span className="text-white/55 font-mono">Block {evt.blockNumber.toString()}</span>
               </div>
             ))}
           </div>
@@ -1151,10 +1169,10 @@ function TradeHistoryTab() {
                     <span className="text-emerald-400/60 font-mono text-xs">{trade.co2AmountKg.toLocaleString()} kg</span>
                   </td>
                   <td className="py-3 px-4 text-right">
-                    <span className="text-cyan-400 font-mono font-bold">{formatEther(trade.totalPrice)} AETH</span>
+                    <span className="text-cyan-400 font-mono font-bold">{formatEther(trade.totalPrice)} AETHEL</span>
                   </td>
                   <td className="py-3 px-4 text-right">
-                    <span className="text-white/30 font-mono text-xs">{timeAgo(trade.timestamp)}</span>
+                    <span className="text-white/60 font-mono text-xs">{timeAgo(trade.timestamp)}</span>
                   </td>
                 </tr>
               ))}
@@ -1162,7 +1180,7 @@ function TradeHistoryTab() {
           </table>
         </div>
         {filteredTrades.length === 0 && (
-          <div className="py-12 text-center text-white/30 text-sm">No trades found for the selected filters.</div>
+          <div className="py-12 text-center text-white/60 text-sm">No trades found for the selected filters.</div>
         )}
       </GlassCard>
     </div>
@@ -1187,8 +1205,8 @@ function AnalyticsTab() {
     <div>
       {/* Top metrics */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
-        <MetricCard label="VWAP (30d)" value={vwap.toFixed(4)} unit="AETH" />
-        <MetricCard label="Price per tCO2" value={(vwap * 1000).toFixed(2)} unit="AETH/tCO2" />
+        <MetricCard label="VWAP (30d)" value={vwap.toFixed(4)} unit="AETHEL" />
+        <MetricCard label="Price per tCO2" value={(vwap * 1000).toFixed(2)} unit="AETHEL/tCO2" />
         <MetricCard label="30d Volume" value={totalVol.toLocaleString()} unit="units" />
         <MetricCard label="30d Trades" value={totalTrades30d.toString()} />
       </div>
@@ -1201,11 +1219,11 @@ function AnalyticsTab() {
           </div>
           <div>
             <p className="text-sm text-white/80">
-              <span className="text-emerald-400 font-semibold">TerraQura avg: {vwap.toFixed(4)} AETH/tCO2</span>
+              <span className="text-emerald-400 font-semibold">TerraQura avg: {vwap.toFixed(4)} AETHEL/tCO2</span>
               {' '}vs{' '}
               <span className="text-white/50">Verra avg: $12/tCO2</span>
             </p>
-            <p className="text-xs text-white/30 mt-0.5">On-chain carbon credits offer transparent, verifiable pricing with lower intermediary costs.</p>
+            <p className="text-xs text-white/60 mt-0.5">On-chain carbon credits offer transparent, verifiable pricing with lower intermediary costs.</p>
           </div>
         </div>
       </GlassCard>
@@ -1221,16 +1239,16 @@ function AnalyticsTab() {
                 <div
                   className="w-full bg-emerald-500/30 rounded-t-sm hover:bg-emerald-500/50 transition-colors cursor-default"
                   style={{ height: `${barH}px` }}
-                  title={`Day ${d.day}: ${d.avgPrice.toFixed(4)} AETH | Vol: ${d.volume}`}
+                  title={`Day ${d.day}: ${d.avgPrice.toFixed(4)} AETHEL | Vol: ${d.volume}`}
                 />
                 {d.day % 5 === 0 && (
-                  <span className="text-[8px] text-white/20 mt-1">{d.day}</span>
+                  <span className="text-[8px] text-white/55 mt-1">{d.day}</span>
                 )}
               </div>
             );
           })}
         </div>
-        <div className="flex items-center justify-between mt-2 text-[10px] text-white/20">
+        <div className="flex items-center justify-between mt-2 text-[10px] text-white/55">
           <span>Day 1</span>
           <span>Day 30</span>
         </div>
@@ -1250,13 +1268,13 @@ function AnalyticsTab() {
                   title={`Day ${d.day}: ${d.volume} units | ${d.trades} trades`}
                 />
                 {d.day % 5 === 0 && (
-                  <span className="text-[8px] text-white/20 mt-1">{d.day}</span>
+                  <span className="text-[8px] text-white/55 mt-1">{d.day}</span>
                 )}
               </div>
             );
           })}
         </div>
-        <div className="flex items-center justify-between mt-2 text-[10px] text-white/20">
+        <div className="flex items-center justify-between mt-2 text-[10px] text-white/55">
           <span>Day 1</span>
           <span>Day 30</span>
         </div>
@@ -1307,10 +1325,10 @@ function AnalyticsTab() {
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-white/[0.06]">
-                  <th className="text-left py-2 text-white/30 font-normal">Address</th>
-                  <th className="text-right py-2 text-white/30 font-normal">Volume (AETH)</th>
-                  <th className="text-right py-2 text-white/30 font-normal">Trades</th>
-                  <th className="text-right py-2 text-white/30 font-normal">CO2 (kg)</th>
+                  <th className="text-left py-2 text-white/60 font-normal">Address</th>
+                  <th className="text-right py-2 text-white/60 font-normal">Volume (AETHEL)</th>
+                  <th className="text-right py-2 text-white/60 font-normal">Trades</th>
+                  <th className="text-right py-2 text-white/60 font-normal">CO2 (kg)</th>
                 </tr>
               </thead>
               <tbody>
@@ -1333,10 +1351,10 @@ function AnalyticsTab() {
             <table className="w-full text-xs">
               <thead>
                 <tr className="border-b border-white/[0.06]">
-                  <th className="text-left py-2 text-white/30 font-normal">Address</th>
-                  <th className="text-right py-2 text-white/30 font-normal">Volume (AETH)</th>
-                  <th className="text-right py-2 text-white/30 font-normal">Trades</th>
-                  <th className="text-right py-2 text-white/30 font-normal">CO2 (kg)</th>
+                  <th className="text-left py-2 text-white/60 font-normal">Address</th>
+                  <th className="text-right py-2 text-white/60 font-normal">Volume (AETHEL)</th>
+                  <th className="text-right py-2 text-white/60 font-normal">Trades</th>
+                  <th className="text-right py-2 text-white/60 font-normal">CO2 (kg)</th>
                 </tr>
               </thead>
               <tbody>
@@ -1376,8 +1394,8 @@ function OffersTab() {
     .map((o) => Number(formatEther(o.pricePerUnit)));
   const askPrices = MOCK_LISTINGS.slice(0, 5).map((l) => Number(formatEther(l.pricePerUnit)));
   const allPrices = [...bidPrices, ...askPrices].sort((a, b) => a - b);
-  const spreadMin = allPrices.length > 0 ? allPrices[0]! : 0;
-  const spreadMax = allPrices.length > 0 ? allPrices[allPrices.length - 1]! : 1;
+  const spreadMin = allPrices[0] ?? 0;
+  const spreadMax = allPrices[allPrices.length - 1] ?? 1;
   const spreadRange = spreadMax - spreadMin || 0.001;
 
   return (
@@ -1395,7 +1413,7 @@ function OffersTab() {
         <h3 className="text-sm text-white/60 font-semibold uppercase tracking-wider mb-4">Make an Offer</h3>
         <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
           <div>
-            <label className="text-[10px] text-white/30 uppercase tracking-wider block mb-1">Price per Unit (AETH)</label>
+            <label className="text-[10px] text-white/60 uppercase tracking-wider block mb-1">Price per Unit (AETHEL)</label>
             <input
               type="number"
               step="0.001"
@@ -1406,7 +1424,7 @@ function OffersTab() {
             />
           </div>
           <div>
-            <label className="text-[10px] text-white/30 uppercase tracking-wider block mb-1">Quantity</label>
+            <label className="text-[10px] text-white/60 uppercase tracking-wider block mb-1">Quantity</label>
             <input
               type="number"
               min="1"
@@ -1417,7 +1435,7 @@ function OffersTab() {
             />
           </div>
           <div>
-            <label className="text-[10px] text-white/30 uppercase tracking-wider block mb-1">Expiration</label>
+            <label className="text-[10px] text-white/60 uppercase tracking-wider block mb-1">Expiration</label>
             <select
               value={offerExpiry}
               onChange={(e) => setOfferExpiry(e.target.value)}
@@ -1450,7 +1468,7 @@ function OffersTab() {
                 key={`bid-${i}`}
                 className="absolute top-0 h-full w-1 bg-emerald-500/50"
                 style={{ left: `${Math.min(pos, 99)}%` }}
-                title={`Bid: ${p.toFixed(4)} AETH`}
+                title={`Bid: ${p.toFixed(4)} AETHEL`}
               />
             );
           })}
@@ -1462,18 +1480,18 @@ function OffersTab() {
                 key={`ask-${i}`}
                 className="absolute top-0 h-full w-1 bg-red-500/50"
                 style={{ left: `${Math.min(pos, 99)}%` }}
-                title={`Ask: ${p.toFixed(4)} AETH`}
+                title={`Ask: ${p.toFixed(4)} AETHEL`}
               />
             );
           })}
         </div>
-        <div className="flex items-center justify-between mt-2 text-[10px] text-white/20">
-          <span>{spreadMin.toFixed(4)} AETH</span>
+        <div className="flex items-center justify-between mt-2 text-[10px] text-white/55">
+          <span>{spreadMin.toFixed(4)} AETHEL</span>
           <div className="flex gap-4">
             <span className="flex items-center gap-1"><span className="w-3 h-2 bg-emerald-500/50 rounded-sm" /> Bids</span>
             <span className="flex items-center gap-1"><span className="w-3 h-2 bg-red-500/50 rounded-sm" /> Asks</span>
           </div>
-          <span>{spreadMax.toFixed(4)} AETH</span>
+          <span>{spreadMax.toFixed(4)} AETHEL</span>
         </div>
       </GlassCard>
 
@@ -1500,13 +1518,13 @@ function OffersTab() {
                         {offer.status}
                       </span>
                     </div>
-                    <p className="text-white/30 text-xs font-mono">From: {truncateAddress(offer.offerer)}</p>
+                    <p className="text-white/60 text-xs font-mono">From: {truncateAddress(offer.offerer)}</p>
                   </div>
                 </div>
                 <div className="flex items-center gap-6">
                   <div className="text-right">
                     <p className="text-xs text-white/40">Offered Price</p>
-                    <p className="text-cyan-400 font-mono font-bold text-sm">{formatEther(offer.pricePerUnit)} AETH</p>
+                    <p className="text-cyan-400 font-mono font-bold text-sm">{formatEther(offer.pricePerUnit)} AETHEL</p>
                   </div>
                   <div className="text-right">
                     <p className="text-xs text-white/40">Qty</p>
@@ -1515,7 +1533,7 @@ function OffersTab() {
                   {offer.counterPrice && (
                     <div className="text-right">
                       <p className="text-xs text-white/40">Counter</p>
-                      <p className="text-amber-400 font-mono font-bold text-sm">{formatEther(offer.counterPrice)} AETH</p>
+                      <p className="text-amber-400 font-mono font-bold text-sm">{formatEther(offer.counterPrice)} AETHEL</p>
                     </div>
                   )}
                   {offer.status === 'Pending' && (
@@ -1555,7 +1573,7 @@ function GaslessTab() {
       {/* Stats */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
         <MetricCard label="Gasless Trades" value={totalGaslessTrades.toLocaleString()} />
-        <MetricCard label="Gas Saved" value={gasSavedAeth.toFixed(3)} unit="AETH" />
+        <MetricCard label="Gas Saved" value={gasSavedAeth.toFixed(3)} unit="AETHEL" />
         <MetricCard label="Relayer Status" value="Online" />
         <MetricCard label="Avg Confirmation" value="~4s" />
       </div>
@@ -1590,8 +1608,8 @@ function GaslessTab() {
             <tbody>
               <tr className="border-b border-white/[0.03]">
                 <td className="py-3 text-white/60">Gas Cost</td>
-                <td className="py-3 text-center text-amber-400 font-mono">~0.003 AETH</td>
-                <td className="py-3 text-center text-emerald-400 font-mono font-bold">0 AETH</td>
+                <td className="py-3 text-center text-amber-400 font-mono">~0.003 AETHEL</td>
+                <td className="py-3 text-center text-emerald-400 font-mono font-bold">0 AETHEL</td>
               </tr>
               <tr className="border-b border-white/[0.03]">
                 <td className="py-3 text-white/60">Confirmation Time</td>
@@ -1664,12 +1682,12 @@ function GaslessTab() {
             <LiveDot color="emerald" />
             <div>
               <h4 className="text-white text-sm font-semibold">Relayer Online</h4>
-              <p className="text-white/30 text-xs">Processing gasless transactions in real-time</p>
+              <p className="text-white/60 text-xs">Processing gasless transactions in real-time</p>
             </div>
           </div>
           <div className="text-right">
             <p className="text-emerald-400 font-mono text-sm font-bold">{totalGaslessTrades.toLocaleString()}</p>
-            <p className="text-white/30 text-[10px]">total gasless trades</p>
+            <p className="text-white/60 text-[10px]">total gasless trades</p>
           </div>
         </div>
       </GlassCard>
@@ -1719,7 +1737,7 @@ function WatchlistTab() {
                         {isUp ? '+' : ''}{item.priceChange.toFixed(2)}%
                       </span>
                     </div>
-                    <div className="flex items-center gap-3 text-xs text-white/30">
+                    <div className="flex items-center gap-3 text-xs text-white/60">
                       <span className="font-mono">{truncateAddress(item.seller)}</span>
                       <span>{item.co2AmountKg.toLocaleString()} kg CO2</span>
                       <span>Purity: {item.purity}%</span>
@@ -1729,16 +1747,16 @@ function WatchlistTab() {
 
                 <div className="flex items-center gap-6">
                   <div className="text-right">
-                    <p className="text-[10px] text-white/30 uppercase tracking-wider">Last Price</p>
-                    <p className="text-cyan-400 font-mono font-bold">{priceEth.toFixed(3)} AETH</p>
+                    <p className="text-[10px] text-white/60 uppercase tracking-wider">Last Price</p>
+                    <p className="text-cyan-400 font-mono font-bold">{priceEth.toFixed(3)} AETHEL</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-[10px] text-white/30 uppercase tracking-wider">Alert Above</p>
-                    <p className="text-emerald-400/60 font-mono text-sm">{alertAboveEth.toFixed(3)} AETH</p>
+                    <p className="text-[10px] text-white/60 uppercase tracking-wider">Alert Above</p>
+                    <p className="text-emerald-400/60 font-mono text-sm">{alertAboveEth.toFixed(3)} AETHEL</p>
                   </div>
                   <div className="text-right">
-                    <p className="text-[10px] text-white/30 uppercase tracking-wider">Alert Below</p>
-                    <p className="text-red-400/60 font-mono text-sm">{alertBelowEth.toFixed(3)} AETH</p>
+                    <p className="text-[10px] text-white/60 uppercase tracking-wider">Alert Below</p>
+                    <p className="text-red-400/60 font-mono text-sm">{alertBelowEth.toFixed(3)} AETHEL</p>
                   </div>
                   <div className="flex gap-2">
                     <button className="px-3 py-1.5 rounded-lg bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-semibold hover:bg-emerald-500/30 transition-all">
@@ -1753,7 +1771,7 @@ function WatchlistTab() {
 
               {/* Price movement mini-bar */}
               <div className="mt-3 pt-3 border-t border-white/[0.04]">
-                <p className="text-[10px] text-white/20 mb-1">Recent Price Movement (7d)</p>
+                <p className="text-[10px] text-white/55 mb-1">Recent Price Movement (7d)</p>
                 <div className="flex items-end gap-px h-6">
                   {Array.from({ length: 14 }, (_, j) => {
                     const s = item.tokenId * 100 + j * 7;
@@ -1771,9 +1789,9 @@ function WatchlistTab() {
       {/* Add to watchlist concept */}
       <GlassCard className="p-5 mt-6 border-dashed border-white/[0.08]">
         <div className="text-center">
-          <Eye className="w-6 h-6 text-white/20 mx-auto mb-2" />
+          <Eye className="w-6 h-6 text-white/55 mx-auto mb-2" />
           <p className="text-white/40 text-sm mb-1">Add tokens to your watchlist</p>
-          <p className="text-white/20 text-xs">
+          <p className="text-white/55 text-xs">
             Click the <Eye className="w-3 h-3 inline" /> icon on any listing in the Active Listings tab to track price changes and set alerts.
           </p>
         </div>

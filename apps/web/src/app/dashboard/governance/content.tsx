@@ -124,8 +124,8 @@ function DAppFooter() {
   return (
     <footer className="border-t border-white/[0.04] mt-16">
       <div className="mx-auto max-w-7xl px-4 sm:px-6 py-6 flex items-center justify-between">
-        <span className="text-white/30 text-xs font-mono">TerraQura Governance</span>
-        <span className="text-white/30 text-xs font-mono">Aethelred Sovereign Network</span>
+        <span className="text-white/60 text-xs font-mono">TerraQura Governance</span>
+        <span className="text-white/60 text-xs font-mono">Aethelred Sovereign Network</span>
       </div>
     </footer>
   );
@@ -233,7 +233,7 @@ function CopyButton({ text }: { text: string }) {
   return (
     <button
       onClick={handleCopy}
-      className="text-white/30 hover:text-white/60 transition-colors text-xs font-mono"
+      className="text-white/60 hover:text-white/60 transition-colors text-xs font-mono"
     >
       {copied ? "Copied" : "Copy"}
     </button>
@@ -305,6 +305,7 @@ function OverviewTab() {
       "setURI(ipfs://Qm...)",
       "setSecurityLevel(1)",
     ];
+    const fallbackTarget = { name: "Unknown", addr: "0x0" };
     return statuses.map((status, i) => {
       const scheduledOffset = seededInt(200 + i, 3600, 86400);
       const scheduledTimestamp = 1742200000 + scheduledOffset * (i + 1);
@@ -314,8 +315,8 @@ function OverviewTab() {
       return {
         id: seededHash(400 + i),
         status,
-        target: targets[i],
-        description: descriptions[i],
+        target: targets[i] ?? fallbackTarget,
+        description: descriptions[i] ?? "",
         scheduledTimestamp,
         readyTimestamp,
         timeRemaining,
@@ -335,7 +336,7 @@ function OverviewTab() {
         <div className="flex items-center justify-between flex-wrap gap-4">
           <div>
             <div className="flex items-center gap-3 mb-2">
-              <span className="text-white/30 text-xs font-mono">GOVERNANCE MODEL</span>
+              <span className="text-white/60 text-xs font-mono">GOVERNANCE MODEL</span>
               <StatusBadge status="Active" />
             </div>
             <h2 className="text-white/90 text-xl font-bold">Multi-Signature</h2>
@@ -383,16 +384,16 @@ function OverviewTab() {
       <GlassCard className="p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-white/80 font-semibold">Treasury Summary</h3>
-          <span className="text-white/30 text-xs font-mono">Multisig-controlled</span>
+          <span className="text-white/60 text-xs font-mono">Multisig-controlled</span>
         </div>
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
           <div>
             <p className="text-white/40 text-xs font-mono uppercase tracking-wider mb-1">Total Balance</p>
-            <p className="text-emerald-400 text-xl font-bold">{formatAeth(treasuryBalance)} <span className="text-sm text-white/40 font-normal">AETH</span></p>
+            <p className="text-emerald-400 text-xl font-bold">{formatAeth(treasuryBalance)} <span className="text-sm text-white/40 font-normal">AETHEL</span></p>
           </div>
           <div>
             <p className="text-white/40 text-xs font-mono uppercase tracking-wider mb-1">Monthly Inflow</p>
-            <p className="text-cyan-400 text-xl font-bold">+{formatAeth(monthlyInflow)} <span className="text-sm text-white/40 font-normal">AETH</span></p>
+            <p className="text-cyan-400 text-xl font-bold">+{formatAeth(monthlyInflow)} <span className="text-sm text-white/40 font-normal">AETHEL</span></p>
           </div>
           <div>
             <p className="text-white/40 text-xs font-mono uppercase tracking-wider mb-1">Fee Rate</p>
@@ -447,7 +448,7 @@ function OverviewTab() {
       <GlassCard className="p-6">
         <div className="flex items-center justify-between mb-4">
           <h3 className="text-white/80 font-semibold">Timelock Operations</h3>
-          <span className="text-white/30 text-xs font-mono">{timelockOps.length} operations</span>
+          <span className="text-white/60 text-xs font-mono">{timelockOps.length} operations</span>
         </div>
         <div className="space-y-3">
           {timelockOps.map((op, i) => {
@@ -463,14 +464,14 @@ function OverviewTab() {
               >
                 <div className="flex items-center justify-between mb-2">
                   <div className="flex items-center gap-2">
-                    <span className="text-white/80 text-sm font-medium">{op.target!.name}</span>
+                    <span className="text-white/80 text-sm font-medium">{op.target.name}</span>
                     <StatusBadge status={op.status} />
                   </div>
-                  <span className="text-white/20 text-[10px] font-mono">{op.id.slice(0, 14)}...</span>
+                  <span className="text-white/55 text-[10px] font-mono">{op.id.slice(0, 14)}...</span>
                 </div>
                 <p className="text-white/50 text-xs font-mono mb-2">{op.description}</p>
                 <div className="flex flex-wrap gap-x-6 gap-y-1 text-[11px] font-mono">
-                  <span className="text-white/30">
+                  <span className="text-white/60">
                     Scheduled: <span className="text-white/50">{new Date(op.scheduledTimestamp * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
                   </span>
                   {op.status === "Pending" && (
@@ -486,7 +487,7 @@ function OverviewTab() {
                       Executed: {new Date(op.readyTimestamp * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                     </span>
                   )}
-                  <span className="text-white/30">
+                  <span className="text-white/60">
                     Predecessor: <span className="text-white/40">{op.predecessor}</span>
                   </span>
                 </div>
@@ -508,7 +509,7 @@ function OverviewTab() {
                 className="flex items-center justify-between py-2.5 border-b border-white/[0.04] last:border-0"
               >
                 <div className="flex items-center gap-3">
-                  <span className="text-white/30 text-xs font-mono w-6">#{i + 1}</span>
+                  <span className="text-white/60 text-xs font-mono w-6">#{i + 1}</span>
                   <a
                     href={explorerUrl}
                     target="_blank"
@@ -519,7 +520,7 @@ function OverviewTab() {
                   </a>
                   <CopyButton text={signer} />
                 </div>
-                <span className="text-white/30 text-xs font-mono">
+                <span className="text-white/60 text-xs font-mono">
                   {i === 0 ? "Deployer" : `Signer ${i + 1}`}
                 </span>
               </div>
@@ -560,7 +561,7 @@ function OverviewTab() {
       </GlassCard>
 
       {isLoading && (
-        <p className="text-center text-white/30 text-xs font-mono py-4">
+        <p className="text-center text-white/60 text-xs font-mono py-4">
           Loading on-chain governance data...
         </p>
       )}
@@ -700,7 +701,7 @@ function SecurityTab() {
                 return (
                   <div key={level} className="flex-1 flex flex-col items-center gap-1">
                     <div className={`h-8 w-full rounded ${colorClass} transition-colors`} />
-                    <span className="text-white/30 text-[10px] font-mono">{level}</span>
+                    <span className="text-white/60 text-[10px] font-mono">{level}</span>
                   </div>
                 );
               })}
@@ -725,7 +726,7 @@ function SecurityTab() {
         </div>
 
         {statusLoading && (
-          <p className="text-white/30 text-xs font-mono">Loading circuit breaker status...</p>
+          <p className="text-white/60 text-xs font-mono">Loading circuit breaker status...</p>
         )}
       </GlassCard>
 
@@ -753,7 +754,7 @@ function SecurityTab() {
                         {hasAccess ? (
                           <span className="inline-block h-4 w-4 rounded bg-emerald-500/20 text-emerald-400 leading-4 text-[10px]">Y</span>
                         ) : (
-                          <span className="inline-block h-4 w-4 rounded bg-white/5 text-white/20 leading-4 text-[10px]">-</span>
+                          <span className="inline-block h-4 w-4 rounded bg-white/5 text-white/55 leading-4 text-[10px]">-</span>
                         )}
                       </td>
                     );
@@ -763,13 +764,13 @@ function SecurityTab() {
             </tbody>
           </table>
         </div>
-        <p className="text-white/20 text-[10px] font-mono mt-3">CC=CarbonCredit, MKT=Marketplace, VER=Verification, AC=AccessControl, CB=CircuitBreaker, TL=Timelock</p>
+        <p className="text-white/55 text-[10px] font-mono mt-3">CC=CarbonCredit, MKT=Marketplace, VER=Verification, AC=AccessControl, CB=CircuitBreaker, TL=Timelock</p>
       </GlassCard>
 
       {/* Monitored Contracts */}
       <GlassCard className="p-6">
         <h3 className="text-white/80 font-semibold mb-4">
-          Monitored Contracts <span className="text-white/30 font-normal">({monitoredCount})</span>
+          Monitored Contracts <span className="text-white/60 font-normal">({monitoredCount})</span>
         </h3>
         <div className="space-y-1.5">
           {monitoredContracts.map((contract) => (
@@ -814,14 +815,14 @@ function SecurityTab() {
                 </div>
                 <p className="text-white/35 text-xs mt-0.5">{role.description}</p>
               </div>
-              <span className="text-white/20 text-[10px] font-mono max-w-[120px] truncate ml-3" title={ROLES[role.key]}>
+              <span className="text-white/55 text-[10px] font-mono max-w-[120px] truncate ml-3" title={ROLES[role.key]}>
                 {ROLES[role.key].slice(0, 10)}...
               </span>
             </div>
           ))}
         </div>
         {!address && (
-          <p className="text-white/30 text-xs font-mono mt-4 text-center">
+          <p className="text-white/60 text-xs font-mono mt-4 text-center">
             Connect wallet to check your roles
           </p>
         )}
@@ -871,8 +872,8 @@ function SecurityTab() {
                     <span className="text-white/40 text-[10px] font-mono">{evt.target}</span>
                   </div>
                   <div className="flex items-center gap-3 mt-0.5">
-                    <span className="text-white/30 text-[10px] font-mono">Actor: {shortenAddress(evt.actor)}</span>
-                    <span className="text-white/20 text-[10px] font-mono">
+                    <span className="text-white/60 text-[10px] font-mono">Actor: {shortenAddress(evt.actor)}</span>
+                    <span className="text-white/55 text-[10px] font-mono">
                       {new Date(evt.timestamp * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                     </span>
                   </div>
@@ -895,7 +896,7 @@ function SecurityTab() {
                 className="flex items-center gap-3 text-xs font-mono text-white/50 py-1.5 border-b border-white/[0.04] last:border-0"
               >
                 <span className="text-red-400">EMERGENCY</span>
-                <span className="text-white/30 truncate">Block #{evt.blockNumber.toString()}</span>
+                <span className="text-white/60 truncate">Block #{evt.blockNumber.toString()}</span>
               </div>
             ))}
           </div>
@@ -903,7 +904,7 @@ function SecurityTab() {
           <div className="text-center py-6">
             <span className="h-2 w-2 rounded-full bg-emerald-500 inline-block mr-2" />
             <span className="text-white/40 text-sm">No emergency events detected</span>
-            <p className="text-white/20 text-xs mt-2 font-mono">
+            <p className="text-white/55 text-xs mt-2 font-mono">
               Monitoring: GlobalPauseActivated
             </p>
           </div>
@@ -922,7 +923,7 @@ function RoadmapTab() {
       status: "Active" as const,
       timeline: "Live",
       description:
-        "Zhyra Holdings operates a multi-signature wallet for all protocol upgrades, parameter changes, and treasury operations.",
+        "TerraQura operates a multi-signature wallet for all protocol upgrades, parameter changes, and treasury operations.",
       details: [
         "2-of-3 signer threshold with on-chain enforcement",
         "1-hour timelock delay on all governance actions",
@@ -1012,13 +1013,14 @@ function RoadmapTab() {
     },
   ];
 
+  const defaultStatusColors = {
+    border: "border-emerald-500/30",
+    bg: "bg-emerald-500/5",
+    text: "text-emerald-400",
+    glow: "shadow-emerald-500/5",
+  };
   const statusColors: Record<string, { border: string; bg: string; text: string; glow: string }> = {
-    Active: {
-      border: "border-emerald-500/30",
-      bg: "bg-emerald-500/5",
-      text: "text-emerald-400",
-      glow: "shadow-emerald-500/5",
-    },
+    Active: defaultStatusColors,
     Upcoming: {
       border: "border-cyan-500/30",
       bg: "bg-cyan-500/5",
@@ -1045,7 +1047,7 @@ function RoadmapTab() {
 
       <div className="space-y-4">
         {phases.map((phase) => {
-          const colors = statusColors[phase.status]!;
+          const colors = statusColors[phase.status] ?? defaultStatusColors;
           return (
             <GlassCard
               key={phase.phase}
@@ -1064,7 +1066,7 @@ function RoadmapTab() {
                 <div className="flex items-center gap-3">
                   <div className="text-right hidden sm:block">
                     <p className={`text-sm font-bold ${colors.text}`}>{phase.completionPct}%</p>
-                    <p className="text-white/30 text-[10px] font-mono">complete</p>
+                    <p className="text-white/60 text-[10px] font-mono">complete</p>
                   </div>
                   <StatusBadge status={phase.status} />
                 </div>
@@ -1100,7 +1102,7 @@ function RoadmapTab() {
                   {phase.milestones.map((m, mi) => (
                     <div key={mi} className="flex items-center gap-2">
                       <span className={`flex-shrink-0 h-4 w-4 rounded-sm flex items-center justify-center text-[10px] font-bold ${
-                        m.done ? "bg-emerald-500/20 text-emerald-400" : "bg-white/5 text-white/20"
+                        m.done ? "bg-emerald-500/20 text-emerald-400" : "bg-white/5 text-white/55"
                       }`}>
                         {m.done ? "Y" : "-"}
                       </span>
@@ -1116,7 +1118,7 @@ function RoadmapTab() {
                 <div className="space-y-1">
                   {phase.keyMetrics.map((metric, ki) => (
                     <div key={ki} className="flex items-start gap-2">
-                      <span className="text-white/20 text-xs mt-0.5">--</span>
+                      <span className="text-white/55 text-xs mt-0.5">--</span>
                       <span className="text-white/40 text-xs">{metric}</span>
                     </div>
                   ))}
@@ -1129,15 +1131,15 @@ function RoadmapTab() {
                   <p className="text-cyan-400/80 text-xs font-mono uppercase tracking-wider mb-3">Governance Token Launch</p>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     <div>
-                      <p className="text-white/30 text-[10px] font-mono mb-1">TGE Date</p>
+                      <p className="text-white/60 text-[10px] font-mono mb-1">TGE Date</p>
                       <p className="text-cyan-400 text-sm font-medium">{phase.tokenTimeline.tge}</p>
                     </div>
                     <div>
-                      <p className="text-white/30 text-[10px] font-mono mb-1">Initial Supply</p>
+                      <p className="text-white/60 text-[10px] font-mono mb-1">Initial Supply</p>
                       <p className="text-cyan-400 text-sm font-medium">{phase.tokenTimeline.initialSupply}</p>
                     </div>
                     <div className="sm:col-span-1">
-                      <p className="text-white/30 text-[10px] font-mono mb-1">Distribution</p>
+                      <p className="text-white/60 text-[10px] font-mono mb-1">Distribution</p>
                       <p className="text-white/50 text-xs leading-relaxed">{phase.tokenTimeline.distribution}</p>
                     </div>
                   </div>
@@ -1154,19 +1156,19 @@ function RoadmapTab() {
           <div className="text-center">
             <div className="h-3 w-3 rounded-full bg-emerald-500 mx-auto mb-1" />
             <span className="text-emerald-400">Phase 1</span>
-            <p className="text-white/30 mt-0.5">Now</p>
+            <p className="text-white/60 mt-0.5">Now</p>
           </div>
           <div className="flex-1 h-px bg-gradient-to-r from-emerald-500/40 via-cyan-500/40 to-transparent mx-3" />
           <div className="text-center">
             <div className="h-3 w-3 rounded-full bg-cyan-500/50 mx-auto mb-1 border border-cyan-500/30" />
             <span className="text-cyan-400/70">Phase 2</span>
-            <p className="text-white/30 mt-0.5">Q4 2026</p>
+            <p className="text-white/60 mt-0.5">Q4 2026</p>
           </div>
           <div className="flex-1 h-px bg-gradient-to-r from-cyan-500/20 via-purple-500/20 to-transparent mx-3" />
           <div className="text-center">
             <div className="h-3 w-3 rounded-full bg-purple-500/30 mx-auto mb-1 border border-purple-500/20" />
             <span className="text-purple-400/50">Phase 3</span>
-            <p className="text-white/30 mt-0.5">2027</p>
+            <p className="text-white/60 mt-0.5">2027</p>
           </div>
         </div>
       </GlassCard>
@@ -1271,19 +1273,19 @@ function TransactionsTab() {
                 >
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-3">
-                      <span className="text-white/30 text-xs font-mono">TX-{String(tx.id).padStart(3, "0")}</span>
+                      <span className="text-white/60 text-xs font-mono">TX-{String(tx.id).padStart(3, "0")}</span>
                       <span className="text-white/80 text-sm font-medium">{tx.targetContract}</span>
                       <StatusBadge status={tx.status} />
                     </div>
-                    <span className="text-white/30 text-xs">{isExpanded ? "[-]" : "[+]"}</span>
+                    <span className="text-white/60 text-xs">{isExpanded ? "[-]" : "[+]"}</span>
                   </div>
                   <p className="text-white/50 text-xs font-mono mb-2">{tx.functionCall}</p>
                   <div className="flex items-center gap-4 flex-wrap">
-                    <span className="text-white/30 text-[11px] font-mono">
+                    <span className="text-white/60 text-[11px] font-mono">
                       By: {shortenAddress(tx.submittedBy)}
                     </span>
                     {tx.ethValue > 0 && (
-                      <span className="text-cyan-400/70 text-[11px] font-mono">{tx.ethValue} AETH</span>
+                      <span className="text-cyan-400/70 text-[11px] font-mono">{tx.ethValue} AETHEL</span>
                     )}
                     <div className="flex items-center gap-2">
                       <ProgressBar
@@ -1331,7 +1333,7 @@ function TransactionsTab() {
                             ))}
                           </div>
                         ) : (
-                          <p className="text-white/30 text-xs font-mono">No confirmations</p>
+                          <p className="text-white/60 text-xs font-mono">No confirmations</p>
                         )}
                       </div>
                       <div>
@@ -1446,7 +1448,7 @@ function ProposalsTab() {
         title: "Approve Jubail Expansion",
         proposer: seededAddress(2050),
         status: "Executed" as const,
-        description: "Authorize the onboarding of the Jubail Industrial City DAC expansion, adding 8 new high-capacity devices to the existing facility. Includes allocation of 50 AETH from treasury for integration costs and oracle node provisioning.",
+        description: "Authorize the onboarding of the Jubail Industrial City DAC expansion, adding 8 new high-capacity devices to the existing facility. Includes allocation of 50 AETHEL from treasury for integration costs and oracle node provisioning.",
         forPct: 92,
         againstPct: 8,
         quorumReached: true,
@@ -1508,13 +1510,13 @@ function ProposalsTab() {
             >
               <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                 <div className="flex items-center gap-3">
-                  <span className="text-white/30 text-xs font-mono">{proposal.id}</span>
+                  <span className="text-white/60 text-xs font-mono">{proposal.id}</span>
                   <h4 className="text-white/90 text-base font-semibold">{proposal.title}</h4>
                 </div>
                 <StatusBadge status={proposal.status} />
               </div>
 
-              <p className="text-white/30 text-[11px] font-mono mb-3">Proposed by {shortenAddress(proposal.proposer)}</p>
+              <p className="text-white/60 text-[11px] font-mono mb-3">Proposed by {shortenAddress(proposal.proposer)}</p>
               <p className="text-white/50 text-sm leading-relaxed mb-4">{proposal.description}</p>
 
               {/* Vote Bars */}
@@ -1563,7 +1565,7 @@ function ProposalsTab() {
                   <button disabled className="px-4 py-2 rounded-lg bg-red-500/10 text-red-400/50 text-xs font-mono border border-red-500/20 cursor-not-allowed">
                     Vote Against
                   </button>
-                  <button disabled className="px-4 py-2 rounded-lg bg-white/5 text-white/30 text-xs font-mono border border-white/10 cursor-not-allowed">
+                  <button disabled className="px-4 py-2 rounded-lg bg-white/5 text-white/60 text-xs font-mono border border-white/10 cursor-not-allowed">
                     Abstain
                   </button>
                 </div>
@@ -1621,10 +1623,10 @@ function TreasuryTab() {
     <div className="space-y-6">
       {/* Treasury Overview */}
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-        <MetricCard label="Total Balance" value={formatAeth(totalBalance)} unit="AETH" colorClass="text-emerald-400" />
-        <MetricCard label="Marketplace Fees" value={formatAeth(marketplaceFees)} unit="AETH" colorClass="text-cyan-400" />
-        <MetricCard label="Verification Fees" value={formatAeth(verificationFees)} unit="AETH" colorClass="text-purple-400" />
-        <MetricCard label="Total Fees (Period)" value={formatAeth(totalFees)} unit="AETH" colorClass="text-white/80" />
+        <MetricCard label="Total Balance" value={formatAeth(totalBalance)} unit="AETHEL" colorClass="text-emerald-400" />
+        <MetricCard label="Marketplace Fees" value={formatAeth(marketplaceFees)} unit="AETHEL" colorClass="text-cyan-400" />
+        <MetricCard label="Verification Fees" value={formatAeth(verificationFees)} unit="AETHEL" colorClass="text-purple-400" />
+        <MetricCard label="Total Fees (Period)" value={formatAeth(totalFees)} unit="AETHEL" colorClass="text-white/80" />
       </div>
 
       {/* Allocation Breakdown */}
@@ -1646,7 +1648,7 @@ function TreasuryTab() {
                 <span className="text-white/60 text-xs">{a.name}</span>
               </div>
               <p className={`text-lg font-bold ${a.textColor}`}>{a.pct}%</p>
-              <p className="text-white/30 text-[10px] font-mono">{formatAeth(a.amount)} AETH</p>
+              <p className="text-white/60 text-[10px] font-mono">{formatAeth(a.amount)} AETHEL</p>
             </div>
           ))}
         </div>
@@ -1667,7 +1669,7 @@ function TreasuryTab() {
                     style={{ height: `${heightPct}%`, minHeight: "4px" }}
                   />
                 </div>
-                <span className="text-white/30 text-[10px] font-mono">{m.month}</span>
+                <span className="text-white/60 text-[10px] font-mono">{m.month}</span>
               </div>
             );
           })}
@@ -1691,13 +1693,13 @@ function TreasuryTab() {
                 </span>
                 <div className="min-w-0">
                   <p className="text-white/70 text-xs font-medium truncate">{tx.source}</p>
-                  <p className="text-white/30 text-[10px] font-mono">
+                  <p className="text-white/60 text-[10px] font-mono">
                     {new Date(tx.timestamp * 1000).toLocaleString("en-US", { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" })}
                   </p>
                 </div>
               </div>
               <span className={`text-sm font-mono font-medium flex-shrink-0 ml-2 ${tx.isInflow ? "text-emerald-400" : "text-red-400"}`}>
-                {tx.isInflow ? "+" : "-"}{formatAeth(tx.amount)} AETH
+                {tx.isInflow ? "+" : "-"}{formatAeth(tx.amount)} AETHEL
               </span>
             </div>
           ))}
@@ -1710,7 +1712,7 @@ function TreasuryTab() {
         <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
           <div>
             <p className="text-white/40 text-xs font-mono uppercase tracking-wider mb-1">Total Burned</p>
-            <p className="text-amber-400 text-xl font-bold">{formatAeth(totalBurned)} <span className="text-sm text-white/40 font-normal">AETH</span></p>
+            <p className="text-amber-400 text-xl font-bold">{formatAeth(totalBurned)} <span className="text-sm text-white/40 font-normal">AETHEL</span></p>
           </div>
           <div>
             <p className="text-white/40 text-xs font-mono uppercase tracking-wider mb-1">Burn Rate</p>
@@ -1731,7 +1733,7 @@ function DelegatesTab() {
 
   const delegates = useMemo(() => {
     const names = [
-      "Zhyra Core", "NEOM Validator", "Carbon Council", "Jubail DAO",
+      "TerraQura Core", "NEOM Validator", "Carbon Council", "Jubail DAO",
       "Green Ledger", "Aethelred Foundation", "DAC Alliance", "Gulf Carbon Trust",
     ];
     return names.map((name, i) => ({
@@ -1763,10 +1765,14 @@ function DelegatesTab() {
 
   const delegationHistory = useMemo(() => {
     if (!address) return [];
+    const fallbackDelegate = { name: "Unknown", address: "0x0" };
+    const d0 = delegates[0] ?? fallbackDelegate;
+    const d2 = delegates[2] ?? fallbackDelegate;
+    const d5 = delegates[5] ?? fallbackDelegate;
     return [
-      { to: delegates[0]!.name, toAddr: delegates[0]!.address, amount: seededInt(4500, 100, 800), timestamp: 1742000000 },
-      { to: delegates[2]!.name, toAddr: delegates[2]!.address, amount: seededInt(4501, 50, 300), timestamp: 1741500000 },
-      { to: delegates[5]!.name, toAddr: delegates[5]!.address, amount: seededInt(4502, 200, 1200), timestamp: 1740800000 },
+      { to: d0.name, toAddr: d0.address, amount: seededInt(4500, 100, 800), timestamp: 1742000000 },
+      { to: d2.name, toAddr: d2.address, amount: seededInt(4501, 50, 300), timestamp: 1741500000 },
+      { to: d5.name, toAddr: d5.address, amount: seededInt(4502, 200, 1200), timestamp: 1740800000 },
     ];
   }, [address, delegates]);
 
@@ -1798,7 +1804,7 @@ function DelegatesTab() {
             <input
               disabled
               placeholder="0x... or select from directory below"
-              className="w-full px-3 py-2 rounded-lg bg-white/[0.03] border border-white/[0.08] text-white/30 text-sm font-mono placeholder:text-white/20 cursor-not-allowed"
+              className="w-full px-3 py-2 rounded-lg bg-white/[0.03] border border-white/[0.08] text-white/60 text-sm font-mono placeholder:text-white/55 cursor-not-allowed"
             />
           </div>
           <button
@@ -1808,7 +1814,7 @@ function DelegatesTab() {
             Delegate Votes
           </button>
         </div>
-        <p className="text-white/20 text-[10px] font-mono mt-2">Available in Phase 2 -- Q4 2026</p>
+        <p className="text-white/55 text-[10px] font-mono mt-2">Available in Phase 2 -- Q4 2026</p>
       </GlassCard>
 
       {/* Top Delegates Leaderboard */}
@@ -1823,17 +1829,17 @@ function DelegatesTab() {
               <div className="flex items-center justify-between mb-2">
                 <div className="flex items-center gap-3">
                   <span className={`text-xs font-bold w-6 text-center ${
-                    i === 0 ? "text-amber-400" : i === 1 ? "text-white/50" : i === 2 ? "text-amber-600" : "text-white/30"
+                    i === 0 ? "text-amber-400" : i === 1 ? "text-white/50" : i === 2 ? "text-amber-600" : "text-white/60"
                   }`}>
                     #{i + 1}
                   </span>
                   <div>
                     <span className="text-white/80 text-sm font-medium">{delegate.name}</span>
-                    <p className="text-white/30 text-[10px] font-mono">{shortenAddress(delegate.address)}</p>
+                    <p className="text-white/60 text-[10px] font-mono">{shortenAddress(delegate.address)}</p>
                   </div>
                 </div>
                 <div className="text-right">
-                  <p className="text-emerald-400 text-sm font-bold">{delegate.votingPower.toLocaleString()} <span className="text-white/30 text-[10px] font-normal">TQR</span></p>
+                  <p className="text-emerald-400 text-sm font-bold">{delegate.votingPower.toLocaleString()} <span className="text-white/60 text-[10px] font-normal">TQR</span></p>
                 </div>
               </div>
 
@@ -1852,7 +1858,7 @@ function DelegatesTab() {
                 <span className="text-white/40">Participation: <span className={`${delegate.participationRate >= 80 ? "text-emerald-400/70" : delegate.participationRate >= 60 ? "text-amber-400/70" : "text-red-400/70"}`}>{delegate.participationRate}%</span></span>
                 <span className="text-white/40">Proposals Voted: <span className="text-white/60">{delegate.proposalsVoted}</span></span>
               </div>
-              <p className="text-white/30 text-xs mt-2 italic">{delegate.statement}</p>
+              <p className="text-white/60 text-xs mt-2 italic">{delegate.statement}</p>
             </div>
           ))}
         </div>
@@ -1872,7 +1878,7 @@ function DelegatesTab() {
                   <span className="flex-shrink-0 h-6 w-6 rounded bg-cyan-500/10 text-cyan-400 flex items-center justify-center text-[10px] font-bold">D</span>
                   <div>
                     <p className="text-white/70 text-xs">Delegated to <span className="text-cyan-400/80 font-medium">{entry.to}</span></p>
-                    <p className="text-white/30 text-[10px] font-mono">
+                    <p className="text-white/60 text-[10px] font-mono">
                       {shortenAddress(entry.toAddr)} -- {new Date(entry.timestamp * 1000).toLocaleString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                     </p>
                   </div>

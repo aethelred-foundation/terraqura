@@ -119,7 +119,7 @@ function generateMockActivities(): MockActivity[] {
         description = `Token #${tokenId} minted to ${addr}... (${amount} kg CO2)`;
         break;
       case "sale":
-        description = `${amount} credits sold for ${(seededRandom(seed + 4) * 5 + 0.1).toFixed(3)} AETH`;
+        description = `${amount} credits sold for ${(seededRandom(seed + 4) * 5 + 0.1).toFixed(3)} AETHEL`;
         break;
       case "verification":
         description = `DAC-${String(seededInt(seed + 5, 1, 50)).padStart(3, "0")} passed Proof-of-Physics`;
@@ -396,7 +396,7 @@ function CO2ImpactHero() {
             </span>
             <span className="text-xl sm:text-2xl text-emerald-400 font-medium">tonnes</span>
           </div>
-          <p className="text-sm text-white/30 mt-3">
+          <p className="text-sm text-white/60 mt-3">
             Verified carbon removal via DAC (Direct Air Capture)
           </p>
         </div>
@@ -475,13 +475,13 @@ function ProtocolHealthHeatmap() {
 
             {/* Legend */}
             <div className="flex items-center justify-end gap-2 mt-3 pt-3 border-t border-white/[0.04]">
-              <span className="text-[10px] text-white/30">Low</span>
+              <span className="text-[10px] text-white/60">Low</span>
               <div className="flex gap-0.5">
                 {["bg-emerald-900/40", "bg-emerald-800/50", "bg-emerald-700/50", "bg-emerald-600/60", "bg-emerald-500/70"].map((color, i) => (
                   <div key={i} className={`w-4 h-3 rounded-sm ${color}`} />
                 ))}
               </div>
-              <span className="text-[10px] text-white/30">High</span>
+              <span className="text-[10px] text-white/60">High</span>
             </div>
           </div>
         </div>
@@ -516,24 +516,24 @@ function TreasuryRevenue() {
             </div>
             <div>
               <h4 className="font-medium text-white text-sm">Treasury Balance</h4>
-              <p className="text-[11px] text-white/30">Accumulated platform fees</p>
+              <p className="text-[11px] text-white/60">Accumulated platform fees</p>
             </div>
           </div>
 
           <div className="mb-5">
             <div className="flex items-baseline gap-2">
               <span className="text-3xl font-bold text-white tabular-nums">{treasuryBalance}</span>
-              <span className="text-sm text-emerald-400 font-medium">AETH</span>
+              <span className="text-sm text-emerald-400 font-medium">AETHEL</span>
             </div>
           </div>
 
           <div className="space-y-3">
             <div className="flex items-center justify-between py-2 border-b border-white/[0.04]">
-              <span className="text-xs text-white/30">Fee Rate</span>
+              <span className="text-xs text-white/60">Fee Rate</span>
               <span className="text-xs font-medium text-white/70">{feeRate} platform fee</span>
             </div>
             <div className="flex items-center justify-between py-2 border-b border-white/[0.04]">
-              <span className="text-xs text-white/30">Fee Recipient</span>
+              <span className="text-xs text-white/60">Fee Recipient</span>
               <a
                 href={getExplorerAddressUrl(feeRecipient)}
                 target="_blank"
@@ -545,7 +545,7 @@ function TreasuryRevenue() {
               </a>
             </div>
             <div className="flex items-center justify-between py-2">
-              <span className="text-xs text-white/30">Collection</span>
+              <span className="text-xs text-white/60">Collection</span>
               <span className="text-xs font-medium text-white/70">Automatic on trade</span>
             </div>
           </div>
@@ -559,7 +559,7 @@ function TreasuryRevenue() {
             </div>
             <div>
               <h4 className="font-medium text-white text-sm">Weekly Revenue</h4>
-              <p className="text-[11px] text-white/30">Fee collection per day (AETH)</p>
+              <p className="text-[11px] text-white/60">Fee collection per day (AETHEL)</p>
             </div>
           </div>
 
@@ -584,7 +584,7 @@ function TreasuryRevenue() {
           {/* Day labels */}
           <div className="flex gap-2">
             {weekDayLabels.map((day, idx) => (
-              <div key={idx} className="flex-1 text-center text-[10px] text-white/30">
+              <div key={idx} className="flex-1 text-center text-[10px] text-white/60">
                 {day}
               </div>
             ))}
@@ -592,9 +592,9 @@ function TreasuryRevenue() {
 
           {/* Weekly Total */}
           <div className="mt-4 pt-3 border-t border-white/[0.04] flex items-center justify-between">
-            <span className="text-xs text-white/30">Weekly Total</span>
+            <span className="text-xs text-white/60">Weekly Total</span>
             <span className="text-sm font-bold text-white tabular-nums">
-              {WEEKLY_REVENUE.reduce((a, b) => a + b, 0).toFixed(2)} AETH
+              {WEEKLY_REVENUE.reduce((a, b) => a + b, 0).toFixed(2)} AETHEL
             </span>
           </div>
         </GlassCard>
@@ -606,8 +606,13 @@ function TreasuryRevenue() {
 // ─── D. Network Topology ───────────────────────────────────
 
 function NetworkTopology() {
+  const coreColors = {
+    border: "border-emerald-500/20",
+    badge: "bg-emerald-500/10 text-emerald-400",
+    dot: "bg-emerald-500",
+  };
   const typeColors: Record<string, { border: string; badge: string; dot: string }> = {
-    core: { border: "border-emerald-500/20", badge: "bg-emerald-500/10 text-emerald-400", dot: "bg-emerald-500" },
+    core: coreColors,
     governance: { border: "border-purple-500/20", badge: "bg-purple-500/10 text-purple-400", dot: "bg-purple-500" },
     security: { border: "border-amber-500/20", badge: "bg-amber-500/10 text-amber-400", dot: "bg-amber-500" },
   };
@@ -628,15 +633,15 @@ function NetworkTopology() {
 
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-3">
         {TOPOLOGY_NODES.map((node) => {
-          const colors = typeColors[node.type] ?? typeColors.core!;
+          const colors = typeColors[node.type] ?? coreColors;
           return (
-            <GlassCard key={node.key} className={`p-4 ${colors!.border} hover:border-white/[0.12] transition-all`}>
+            <GlassCard key={node.key} className={`p-4 ${colors.border} hover:border-white/[0.12] transition-all`}>
               <div className="flex items-center justify-between mb-3">
                 <div className="flex items-center gap-2">
-                  <div className={`w-2.5 h-2.5 rounded-full ${colors!.dot}`} />
+                  <div className={`w-2.5 h-2.5 rounded-full ${colors.dot}`} />
                   <h4 className="font-medium text-white text-sm">{node.name}</h4>
                 </div>
-                <span className={`text-[10px] px-2 py-0.5 rounded-full ${colors!.badge} font-medium capitalize`}>
+                <span className={`text-[10px] px-2 py-0.5 rounded-full ${colors.badge} font-medium capitalize`}>
                   {node.type}
                 </span>
               </div>
@@ -646,19 +651,19 @@ function NetworkTopology() {
                 <p className="text-[10px] text-white/25 uppercase tracking-wider">Connections</p>
                 {node.connections.map((conn, cIdx) => {
                   const targetNode = TOPOLOGY_NODES.find(n => n.key === conn.target);
-                  const targetColors = (typeColors[targetNode?.type ?? "core"] ?? typeColors.core)!;
+                  const targetColors = typeColors[targetNode?.type ?? "core"] ?? coreColors;
                   return (
                     <div key={cIdx} className="flex items-center gap-1.5 text-xs text-white/50">
-                      <span className="text-[10px] font-mono text-white/30 w-6 text-center">
+                      <span className="text-[10px] font-mono text-white/60 w-6 text-center">
                         {directionSymbols[conn.direction]}
                       </span>
-                      <span className={`w-1.5 h-1.5 rounded-full ${targetColors!.dot}`} />
+                      <span className={`w-1.5 h-1.5 rounded-full ${targetColors.dot}`} />
                       <span>{targetNode?.name ?? conn.target}</span>
                     </div>
                   );
                 })}
                 {node.connections.length === 0 && (
-                  <p className="text-xs text-white/20 italic">No direct connections</p>
+                  <p className="text-xs text-white/55 italic">No direct connections</p>
                 )}
               </div>
             </GlassCard>
@@ -696,7 +701,7 @@ function CrossChainReadiness() {
                 </div>
                 <div>
                   <h4 className="font-medium text-white text-sm">{chain.name}</h4>
-                  <p className="text-[11px] text-white/30">Bridge</p>
+                  <p className="text-[11px] text-white/60">Bridge</p>
                 </div>
               </div>
               <StatusBadge status={chain.status} />
@@ -839,7 +844,7 @@ function ActivityFeed() {
               <div className="flex-1 min-w-0">
                 <div className="flex items-start justify-between gap-2">
                   <p className="text-sm font-medium text-white">{item.title}</p>
-                  <span className="text-[11px] text-white/30 whitespace-nowrap shrink-0">{item.timeAgo}</span>
+                  <span className="text-[11px] text-white/60 whitespace-nowrap shrink-0">{item.timeAgo}</span>
                 </div>
                 <p className="text-xs text-white/40 mt-0.5 truncate">{item.description}</p>
               </div>
@@ -978,7 +983,7 @@ function ProtocolContracts() {
 
             <div className="space-y-1.5">
               <div className="flex items-center justify-between text-xs">
-                <span className="text-white/30">Proxy</span>
+                <span className="text-white/60">Proxy</span>
                 <a
                   href={getExplorerAddressUrl(contract.address)}
                   target="_blank"
@@ -992,7 +997,7 @@ function ProtocolContracts() {
 
               {contract.verifiedUrl && (
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-white/30">Source</span>
+                  <span className="text-white/60">Source</span>
                   <a
                     href={contract.verifiedUrl}
                     target="_blank"
@@ -1060,7 +1065,7 @@ function GovernanceSummary() {
               </div>
               <div>
                 <h4 className="font-medium text-white text-sm">Multisig Wallet</h4>
-                <p className="text-[11px] text-white/30">
+                <p className="text-[11px] text-white/60">
                   {stats.multisigThreshold.toString()}-of-{stats.multisigSigners.length} required
                 </p>
               </div>
@@ -1089,7 +1094,7 @@ function GovernanceSummary() {
             ))}
           </div>
 
-          <div className="mt-4 pt-3 border-t border-white/[0.04] text-xs text-white/30">
+          <div className="mt-4 pt-3 border-t border-white/[0.04] text-xs text-white/60">
             Pending Transactions: {stats.pendingTransactions.toString()}
           </div>
         </GlassCard>
@@ -1103,7 +1108,7 @@ function GovernanceSummary() {
               </div>
               <div>
                 <h4 className="font-medium text-white text-sm">Timelock Controller</h4>
-                <p className="text-[11px] text-white/30">Delay-protected execution</p>
+                <p className="text-[11px] text-white/60">Delay-protected execution</p>
               </div>
             </div>
             <span className="text-2xl font-bold text-blue-400 tabular-nums">
@@ -1113,22 +1118,22 @@ function GovernanceSummary() {
 
           <div className="space-y-3">
             <div className="flex items-center justify-between py-2 border-b border-white/[0.04]">
-              <span className="text-xs text-white/30">Minimum Delay</span>
+              <span className="text-xs text-white/60">Minimum Delay</span>
               <span className="text-xs font-medium text-white/70">
                 {formatDuration(Number(stats.timelockDelay))} ({stats.timelockDelay.toString()}s)
               </span>
             </div>
             <div className="flex items-center justify-between py-2 border-b border-white/[0.04]">
-              <span className="text-xs text-white/30">Proposer</span>
+              <span className="text-xs text-white/60">Proposer</span>
               <span className="text-xs font-medium text-white/70">Multisig Only</span>
             </div>
             <div className="flex items-center justify-between py-2">
-              <span className="text-xs text-white/30">Executor</span>
+              <span className="text-xs text-white/60">Executor</span>
               <span className="text-xs font-medium text-white/70">Anyone (after delay)</span>
             </div>
           </div>
 
-          <div className="mt-4 pt-3 border-t border-white/[0.04] flex items-center gap-1.5 text-xs text-white/30">
+          <div className="mt-4 pt-3 border-t border-white/[0.04] flex items-center gap-1.5 text-xs text-white/60">
             <Shield className="w-3 h-3 text-blue-400" />
             All admin operations require {formatDuration(Number(stats.timelockDelay))} delay
           </div>
@@ -1270,12 +1275,12 @@ export function DashboardContent() {
                       <div className="p-2 bg-emerald-500/10 rounded-xl group-hover:bg-emerald-500/15 transition">
                         <Icon className="w-4 h-4 text-emerald-400" />
                       </div>
-                      <ExternalLink className="w-3.5 h-3.5 text-white/20 group-hover:text-emerald-400 transition" />
+                      <ExternalLink className="w-3.5 h-3.5 text-white/55 group-hover:text-emerald-400 transition" />
                     </div>
                     <h4 className="font-medium text-white text-sm mb-1 group-hover:text-emerald-300 transition">
                       {mod.label}
                     </h4>
-                    <p className="text-xs text-white/30 leading-relaxed">{mod.desc}</p>
+                    <p className="text-xs text-white/60 leading-relaxed">{mod.desc}</p>
                   </GlassCard>
                 </Link>
               );

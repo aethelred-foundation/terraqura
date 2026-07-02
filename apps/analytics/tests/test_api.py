@@ -14,7 +14,12 @@ from .conftest import make_price_data, make_sensor_readings
 
 
 @pytest.fixture()
-def client():
+def client(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.delenv("TERRAQURA_NETWORK", raising=False)
+    monkeypatch.delenv("TERRAQURA_DEPLOYMENT", raising=False)
+    monkeypatch.delenv("TERRAQURA_CHAIN_ID", raising=False)
+    monkeypatch.delenv("CHAIN_ID", raising=False)
+    monkeypatch.setenv("TQ_ALLOW_SYNTHETIC_DATA", "true")
     app = create_app()
     return TestClient(app)
 
@@ -30,6 +35,9 @@ class TestHealthEndpoint:
         assert data["status"] == "ok"
         assert "version" in data
         assert "timestamp" in data
+        assert data["network_key"] == "aethelred"
+        assert data["deployment_key"] == "aethelredMainnetPending"
+        assert data["chain_id"] == 7331
 
 
 class TestPredictPrice:

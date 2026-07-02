@@ -2,7 +2,7 @@
  * TerraQura Mock Data Generation
  *
  * Deterministic, seeded random data generators for development and testing.
- * NO Math.random() or Date.now() at module level — all functions are pure.
+ * NO Math.random() or Date.now() at module level - all functions are pure.
  */
 
 // ─── Seeded Random Utilities ────────────────
@@ -20,8 +20,11 @@ export function seededFloat(seed: number, min: number, max: number): number {
   return seededRandom(seed) * (max - min) + min;
 }
 
-export function seededPick<T>(seed: number, arr: T[]): T {
-  return arr[seededInt(seed, 0, arr.length - 1)]!;
+export function seededPick<T>(seed: number, arr: readonly T[]): T {
+  if (arr.length === 0) {
+    throw new Error('seededPick: empty array');
+  }
+  return arr[seededInt(seed, 0, arr.length - 1)] as T;
 }
 
 export function seededAddress(seed: number): string {

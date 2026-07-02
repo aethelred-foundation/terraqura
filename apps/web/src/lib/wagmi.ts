@@ -17,9 +17,11 @@
 
 "use client";
 
+import { NETWORKS } from "@terraqura/network-manifest";
 import { getDefaultConfig } from "@rainbow-me/rainbowkit";
 import { defineChain } from "viem";
 import { http, fallback, type Transport } from "wagmi";
+import { reportClientError } from "./errors";
 
 // ============================================
 // Environment Configuration
@@ -27,6 +29,8 @@ import { http, fallback, type Transport } from "wagmi";
 
 const isDevelopment = process.env.NODE_ENV === "development";
 const isTestnet = process.env.NEXT_PUBLIC_USE_TESTNET === "true" || isDevelopment;
+const aethelredNetwork = NETWORKS.aethelred;
+const aethelredTestnetNetwork = NETWORKS.aethelredTestnet;
 
 // ============================================
 // Aethelred Sovereign Network Definition
@@ -34,22 +38,25 @@ const isTestnet = process.env.NEXT_PUBLIC_USE_TESTNET === "true" || isDevelopmen
 // ============================================
 
 export const aethelred = defineChain({
-  id: parseInt(process.env.NEXT_PUBLIC_AETHELRED_CHAIN_ID || "123456"),
-  name: "Aethelred Mainnet",
+  id: parseInt(
+    process.env.NEXT_PUBLIC_AETHELRED_CHAIN_ID || String(aethelredNetwork.chainId),
+    10,
+  ),
+  name: aethelredNetwork.displayName,
   nativeCurrency: {
-    decimals: 18,
-    name: "Aethelred",
-    symbol: "AETH",
+    decimals: aethelredNetwork.nativeCurrency.decimals,
+    name: aethelredNetwork.nativeCurrency.name,
+    symbol: aethelredNetwork.nativeCurrency.symbol,
   },
   rpcUrls: {
     default: {
-      http: [process.env.NEXT_PUBLIC_AETHELRED_RPC_URL || "https://rpc.aethelred.network"],
+      http: [process.env.NEXT_PUBLIC_AETHELRED_RPC_URL || aethelredNetwork.rpcUrls[0]],
     },
   },
   blockExplorers: {
     default: {
       name: "Aethelred Explorer",
-      url: process.env.NEXT_PUBLIC_AETHELRED_EXPLORER_URL || "https://explorer.aethelred.network",
+      url: process.env.NEXT_PUBLIC_AETHELRED_EXPLORER_URL || aethelredNetwork.explorerUrl,
     },
   },
   contracts: {
@@ -59,22 +66,31 @@ export const aethelred = defineChain({
 });
 
 export const aethelredTestnet = defineChain({
-  id: parseInt(process.env.NEXT_PUBLIC_AETHELRED_TESTNET_CHAIN_ID || "123457"),
-  name: "Aethelred Testnet",
+  id: parseInt(
+    process.env.NEXT_PUBLIC_AETHELRED_TESTNET_CHAIN_ID ||
+      String(aethelredTestnetNetwork.chainId),
+    10,
+  ),
+  name: aethelredTestnetNetwork.displayName,
   nativeCurrency: {
-    decimals: 18,
-    name: "Test Aethelred",
-    symbol: "tAETH",
+    decimals: aethelredTestnetNetwork.nativeCurrency.decimals,
+    name: aethelredTestnetNetwork.nativeCurrency.name,
+    symbol: aethelredTestnetNetwork.nativeCurrency.symbol,
   },
   rpcUrls: {
     default: {
-      http: [process.env.NEXT_PUBLIC_AETHELRED_TESTNET_RPC_URL || "https://testnet-rpc.aethelred.network"],
+      http: [
+        process.env.NEXT_PUBLIC_AETHELRED_TESTNET_RPC_URL ||
+          aethelredTestnetNetwork.rpcUrls[0],
+      ],
     },
   },
   blockExplorers: {
     default: {
       name: "Aethelred Testnet Explorer",
-      url: process.env.NEXT_PUBLIC_AETHELRED_TESTNET_EXPLORER_URL || "https://testnet-explorer.aethelred.network",
+      url:
+        process.env.NEXT_PUBLIC_AETHELRED_TESTNET_EXPLORER_URL ||
+        aethelredTestnetNetwork.explorerUrl,
     },
   },
   testnet: true,
@@ -186,7 +202,7 @@ const AETHELRED_RPC_CONFIG: RPCEndpoint[] = [
 
   // Tier 2: Default public RPC
   {
-    url: "https://rpc.aethelred.network",
+    url: aethelredNetwork.rpcUrls[0],
     priority: 2,
     provider: "Aethelred Public",
     rateLimit: 100,
@@ -196,7 +212,9 @@ const AETHELRED_RPC_CONFIG: RPCEndpoint[] = [
 
 const AETHELRED_TESTNET_RPC_CONFIG: RPCEndpoint[] = [
   {
-    url: process.env.NEXT_PUBLIC_AETHELRED_TESTNET_RPC_URL || "https://testnet-rpc.aethelred.network",
+    url:
+      process.env.NEXT_PUBLIC_AETHELRED_TESTNET_RPC_URL ||
+      aethelredTestnetNetwork.rpcUrls[0],
     priority: 1,
     provider: "Aethelred Testnet",
     rateLimit: 100,
@@ -232,26 +250,51 @@ function buildTransports(): Record<number, Transport> {
 // Wrap config creation in try-catch so a wallet factory error
 // (e.g. "originalFactory.call") doesn't crash the entire app.
 // If it fails, the marketing site renders without Web3 providers.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let _config: any = null;
+type WagmiConfig = ReturnType<typeof getDefaultConfig>;
+
+let _config: WagmiConfig | null = null;
 let _configError: Error | null = null;
 
-try {
-  _config = getDefaultConfig({
-    appName: "TerraQura",
-    projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "YOUR_PROJECT_ID",
-    chains: activeChains,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    transports: buildTransports() as any,
-    ssr: true,
-  });
-} catch (err) {
-  _configError = err instanceof Error ? err : new Error(String(err));
-  console.warn("[TerraQura] Wagmi config creation failed:", _configError.message);
+const projectId = process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID;
+
+if (!projectId) {
+  const message =
+    "NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID is not set. WalletConnect features will be disabled.";
+  if (process.env.NODE_ENV === "production") {
+    _configError = new Error(message);
+    void reportClientError(_configError, {
+      source: "wagmi-config",
+      missing: "NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID",
+      production: true,
+    });
+  } else {
+    void reportClientError(new Error(message), {
+      source: "wagmi-config",
+      missing: "NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID",
+      production: false,
+    });
+  }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const config: any = _config;
+if (projectId) {
+  try {
+    _config = getDefaultConfig({
+      appName: "TerraQura",
+      projectId,
+      chains: activeChains,
+      transports: buildTransports() as Record<number, Transport>,
+      ssr: true,
+    });
+  } catch (err) {
+    _configError = err instanceof Error ? err : new Error(String(err));
+    void reportClientError(_configError, {
+      source: "wagmi-config",
+      action: "create-config",
+    });
+  }
+}
+
+export const config: WagmiConfig | null = _config;
 export const configError: Error | null = _configError;
 
 // ============================================

@@ -3,6 +3,8 @@
 
 import { Redis, type RedisOptions } from "ioredis";
 
+import { getQueueLogger, serializeError } from "./logger.js";
+
 export interface RedisConfig {
   host: string;
   port: number;
@@ -23,7 +25,10 @@ const defaultConfig: RedisConfig = {
   retryStrategy: (times: number) => {
     // Exponential backoff with max 30 seconds
     const delay = Math.min(times * 100, 30000);
-    console.log(`Redis reconnecting in ${delay}ms (attempt ${times})`);
+    getQueueLogger().debug(
+      { delayMs: delay, attempt: times },
+      "Redis reconnect scheduled"
+    );
     return delay;
   },
 };
@@ -41,15 +46,24 @@ export function getPublisherConnection(config?: Partial<RedisConfig>): Redis {
     publisherConnection = new Redis(finalConfig);
 
     publisherConnection.on("error", (err: Error) => {
-      console.error("Redis Publisher Error:", err.message);
+      getQueueLogger().error(
+        { connectionRole: "publisher", err: serializeError(err) },
+        "Redis connection error"
+      );
     });
 
     publisherConnection.on("connect", () => {
-      console.log("Redis Publisher connected");
+      getQueueLogger().info(
+        { connectionRole: "publisher" },
+        "Redis connection established"
+      );
     });
 
     publisherConnection.on("ready", () => {
-      console.log("Redis Publisher ready");
+      getQueueLogger().info(
+        { connectionRole: "publisher" },
+        "Redis connection ready"
+      );
     });
   }
 
@@ -65,15 +79,24 @@ export function getSubscriberConnection(config?: Partial<RedisConfig>): Redis {
     subscriberConnection = new Redis(finalConfig);
 
     subscriberConnection.on("error", (err: Error) => {
-      console.error("Redis Subscriber Error:", err.message);
+      getQueueLogger().error(
+        { connectionRole: "subscriber", err: serializeError(err) },
+        "Redis connection error"
+      );
     });
 
     subscriberConnection.on("connect", () => {
-      console.log("Redis Subscriber connected");
+      getQueueLogger().info(
+        { connectionRole: "subscriber" },
+        "Redis connection established"
+      );
     });
 
     subscriberConnection.on("ready", () => {
-      console.log("Redis Subscriber ready");
+      getQueueLogger().info(
+        { connectionRole: "subscriber" },
+        "Redis connection ready"
+      );
     });
   }
 

@@ -7,6 +7,7 @@ import { InsuranceModule } from "./insurance.js";
 import type { InternalConfig } from "../types.js";
 import type { ITelemetry } from "../telemetry.js";
 import type { CreatePolicyInput } from "./insurance.js";
+import type { HealthScoreResult } from "./risk.js";
 
 // ============================================
 // Helpers
@@ -31,6 +32,7 @@ function makeConfig(): InternalConfig {
       carbonMarketplace: "0x0000000000000000000000000000000000000004",
       gaslessMarketplace: "0x0000000000000000000000000000000000000005",
       circuitBreaker: "0x0000000000000000000000000000000000000006",
+      riskOracle: "0x0000000000000000000000000000000000000007",
     },
     subgraphUrl: "",
     gas: { multiplier: 1.2, maxGasPrice: 100n, maxPriorityFee: 30n, cacheTtlMs: 15000, gasLimits: {} },
@@ -41,6 +43,22 @@ function makeConfig(): InternalConfig {
 
 const VALID_ADDRESS = "0x1234567890abcdef1234567890abcdef12345678";
 
+const DEFAULT_LOCAL_HEALTH_SCORE: HealthScoreResult = {
+  healthScore: 85,
+  failureProbabilityBps: 100,
+  riskTier: "low",
+  isInsurable: true,
+  factors: {
+    uptimeScore: 98,
+    stabilityScore: 90,
+    integrityScore: 85,
+    maintenanceAgePenalty: 0,
+    hardwareGenerationBonus: 2,
+    seasonalDriftPenalty: 0,
+  },
+  confidence: 0.9,
+};
+
 function validPolicyInput(overrides: Partial<CreatePolicyInput> = {}): CreatePolicyInput {
   return {
     tokenId: "42",
@@ -48,6 +66,7 @@ function validPolicyInput(overrides: Partial<CreatePolicyInput> = {}): CreatePol
     purchasePriceWei: 10_000_000_000_000_000_000n, // 10 ETH
     dacUnitId: "dac-unit-001",
     buyerAddress: VALID_ADDRESS,
+    localHealthScore: DEFAULT_LOCAL_HEALTH_SCORE,
     ...overrides,
   };
 }
@@ -135,12 +154,45 @@ describe("InsuranceModule", () => {
         insurance.createPolicySync(validPolicyInput({ premiumOverrideBps: -1 })),
       ).toThrow(ValidationError);
     });
+
+    it("requires an explicit premium source for synchronous creation", () => {
+      expect(() =>
+        insurance.createPolicySync(validPolicyInput({ localHealthScore: undefined })),
+      ).toThrow("createPolicySync requires premiumOverrideBps or localHealthScore");
+    });
   });
 
   // -----------------------------------------------
   // createPolicySync — happy path
   // -----------------------------------------------
   describe("createPolicySync — policy creation", () => {
+    it("creates a policy using RiskOracle-backed premium resolution in async mode", async () => {
+      vi.spyOn(riskModule, "calculateInsurancePremium").mockResolvedValue({
+        dacUnitId: "dac-unit-001",
+        premiumBps: 250,
+        premiumWei: 250_000_000_000_000_000n,
+        subtotalWei: 10_000_000_000_000_000_000n,
+        isInsurable: true,
+        breakdown: {
+          baseFee: 100,
+          riskComponent: 125,
+          catastropheReserve: 25,
+        },
+      });
+
+      const policy = await insurance.createPolicy(
+        validPolicyInput({ localHealthScore: undefined }),
+      );
+
+      expect(riskModule.calculateInsurancePremium).toHaveBeenCalledWith(
+        "dac-unit-001",
+        10_000_000_000_000_000_000n,
+      );
+      expect(policy.premiumBps).toBe(250);
+      expect(policy.premiumWei).toBe(250_000_000_000_000_000n);
+      expect(policy.premiumBreakdown.breakdown.riskComponent).toBe(125);
+    });
+
     it("creates a valid policy with default duration", () => {
       // Add sufficient buffer pool to get full-replacement coverage
       insurance.addToBufferPool("buffer-full", 10, 95);
@@ -195,9 +247,9 @@ describe("InsuranceModule", () => {
   // Premium splitting math
   // -----------------------------------------------
   describe("premium calculation", () => {
-    it("default premium includes base + risk + catastrophe reserve", () => {
+    it("local health score premium includes base + risk + catastrophe reserve", () => {
       const policy = insurance.createPolicySync(validPolicyInput());
-      // Default score: healthScore=85, failProb=100
+      // Explicit local score: healthScore=85, failProb=100
       // totalBps = 100(base) + 100(risk) + 25(catastrophe) = 225
       expect(policy.premiumBreakdown.breakdown.baseFee).toBe(100);
       expect(policy.premiumBreakdown.breakdown.catastropheReserve).toBe(25);

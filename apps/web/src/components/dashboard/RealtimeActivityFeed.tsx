@@ -16,6 +16,8 @@ import {
   useWatchMarketplaceSales,
   useWatchEmergencyEvents,
 } from "@/hooks/useContractData";
+import { createClientId } from "@/lib/clientIds";
+import { isPreviewDataMode } from "@/lib/dataMode";
 import { getExplorerTxUrl, ACTIVE_NETWORK } from "@/lib/wagmi";
 import { useState, useCallback, useRef, useEffect } from "react";
 import { formatEther } from "viem";
@@ -43,6 +45,7 @@ export function RealtimeActivityFeed({
   const [activities, setActivities] = useState<ActivityItem[]>([]);
   const [isPaused, setIsPaused] = useState(false);
   const feedRef = useRef<HTMLDivElement>(null);
+  const previewDataMode = isPreviewDataMode();
 
   const addActivity = useCallback(
     (activity: Omit<ActivityItem, "id" | "timestamp">) => {
@@ -51,7 +54,7 @@ export function RealtimeActivityFeed({
       setActivities((prev) => {
         const newActivity: ActivityItem = {
           ...activity,
-          id: `${Date.now()}-${Math.random().toString(36).slice(2)}`,
+          id: createClientId("activity"),
           timestamp: new Date(),
         };
         const updated = [newActivity, ...prev].slice(0, maxItems);
@@ -101,7 +104,7 @@ export function RealtimeActivityFeed({
       title: "Marketplace Sale",
       description: `${args.amount?.toString() || "?"} credits sold for ${
         args.totalPrice ? formatEther(args.totalPrice) : "?"
-      } POL`,
+      } ${ACTIVE_NETWORK.nativeCurrency.symbol}`,
       txHash: log.transactionHash,
       status: "success",
       metadata: {
@@ -131,8 +134,12 @@ export function RealtimeActivityFeed({
     });
   });
 
-  // Add demo activities on mount (for presentation purposes)
+  // Add preview activities only when the dashboard is explicitly in preview mode.
   useEffect(() => {
+    if (!previewDataMode) {
+      return;
+    }
+
     const demoActivities: Omit<ActivityItem, "id" | "timestamp">[] = [
       {
         type: "mint",
@@ -140,6 +147,7 @@ export function RealtimeActivityFeed({
         description: "Token #1 minted to 0x7F6A...9ABc",
         status: "success",
         metadata: {
+          source: "preview",
           tokenId: "1",
           co2Amount: "100 kg",
           efficiency: "95",
@@ -151,6 +159,7 @@ export function RealtimeActivityFeed({
         description: "Proof-of-Physics validation complete",
         status: "info",
         metadata: {
+          source: "preview",
           dacId: "DAC-001",
           location: "Dubai, UAE",
         },
@@ -163,14 +172,14 @@ export function RealtimeActivityFeed({
         if (prev.length === 0) {
           return demoActivities.map((a, i) => ({
             ...a,
-            id: `demo-${i}`,
+            id: createClientId("preview-activity"),
             timestamp: new Date(Date.now() - i * 60000),
           }));
         }
         return prev;
       });
     }, 2000);
-  }, []);
+  }, [previewDataMode]);
 
   const getActivityIcon = (type: ActivityItem["type"]) => {
     const icons = {
@@ -245,7 +254,9 @@ export function RealtimeActivityFeed({
             <div className="w-2 h-2 rounded-full bg-green-500" />
             <div className="absolute inset-0 w-2 h-2 rounded-full bg-green-500 animate-ping" />
           </div>
-          <h2 className="text-lg font-semibold text-white">Live Activity</h2>
+          <h2 className="text-lg font-semibold text-white">
+            {previewDataMode ? "Preview Activity" : "Live Activity"}
+          </h2>
         </div>
         <div className="flex items-center gap-2">
           <button
@@ -290,7 +301,9 @@ export function RealtimeActivityFeed({
             </svg>
             <p className="text-sm">Waiting for blockchain events...</p>
             <p className="text-xs text-gray-600">
-              Activities will appear here in real-time
+              {previewDataMode
+                ? "Preview events appear here until live chain events arrive"
+                : "Activities will appear here in real-time"}
             </p>
           </div>
         ) : (

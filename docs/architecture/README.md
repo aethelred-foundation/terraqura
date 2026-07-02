@@ -216,8 +216,8 @@ DEFAULT_ADMIN_ROLE (multisig)
 
 | Network | Chain ID | RPC |
 |---------|----------|-----|
-| Aethelred Mainnet | 123456 | `https://rpc.aethelred.network` |
-| Aethelred Testnet | 78432 | `https://rpc-testnet.aethelred.network` |
+| Aethelred Mainnet | 7331 | `https://rpc.aethelred.network` |
+| Aethelred Testnet | 7332 | `https://rpc-testnet.aethelred.network` |
 | Hardhat (local) | 31337 | `http://127.0.0.1:8545` |
 
 ---

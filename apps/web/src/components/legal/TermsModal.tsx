@@ -5,6 +5,8 @@
 
 import { useState, useEffect } from "react";
 import { useAccount, useSignMessage } from "wagmi";
+import { keccak256, toBytes } from "viem";
+import { reportClientError } from "@/lib/errors";
 
 interface TermsModalProps {
   isOpen: boolean;
@@ -13,7 +15,48 @@ interface TermsModalProps {
 }
 
 const TERMS_VERSION = "1.0.0";
-const TERMS_HASH = "0x..."; // Hash of terms document
+
+// Canonical Terms body. Any edit changes TERMS_HASH automatically, so a stored
+// signature for an older version will no longer validate against the new hash.
+const TERMS_BODY = `TerraQura Terms of Service v${TERMS_VERSION}
+
+1. INTRODUCTION
+These Terms of Service ("Terms") govern your access to and use of the TerraQura platform ("Platform"), operated by TerraQura Limited, a company registered in the Abu Dhabi Global Market ("ADGM").
+
+2. ELIGIBILITY
+To use the Platform, you must: (a) be at least 18 years of age; (b) have the legal capacity to enter into binding contracts; (c) not be located in any jurisdiction where use of the Platform is prohibited; (d) successfully complete our Know Your Customer ("KYC") verification process.
+
+3. CARBON CREDIT TOKENS
+Carbon Credit Tokens ("CCTs") represent verified carbon dioxide removal or reduction. Each CCT corresponds to one metric tonne of CO2 equivalent that has been verified through our Proof-of-Physics verification system. CCTs are ERC-1155 tokens on the TerraQura blockchain infrastructure.
+
+4. VERIFICATION PROCESS
+All carbon credits undergo a three-phase verification process: (a) Source Check - validates data authenticity from IoT sensors; (b) Logic Check - ensures efficiency metrics fall within acceptable parameters (200-600 kWh per tonne of CO2); (c) Mint Check - final validation before token minting. We use our sovereign NativeIoT Oracle for 1st-party verification with satellite imagery cross-referencing.
+
+5. MARKETPLACE
+The Platform provides a peer-to-peer marketplace for trading CCTs. All transactions are executed through smart contracts on the TerraQura blockchain infrastructure. A platform fee of 2.5% applies to all marketplace transactions. Prices are denominated in USDC.
+
+6. KYC/AML COMPLIANCE
+In compliance with ADGM regulations and international anti-money laundering standards, all users must complete identity verification before participating in the marketplace. We conduct ongoing sanctions screening and reserve the right to suspend accounts that fail compliance checks.
+
+7. DATA PRIVACY
+Personal data is processed in accordance with ADGM Data Protection Regulations and GDPR where applicable. Sensitive data is stored off-chain with cryptographic hashes recorded on-chain for verification purposes. You have the right to request data deletion (Right to Erasure).
+
+8. INTELLECTUAL PROPERTY
+All intellectual property rights in the Platform, including smart contracts, verification algorithms, and user interface, are owned by TerraQura Limited. Users retain ownership of their CCTs.
+
+9. LIMITATION OF LIABILITY
+To the maximum extent permitted by law, TerraQura shall not be liable for any indirect, incidental, special, consequential, or punitive damages arising from your use of the Platform. Our total liability shall not exceed the fees paid by you in the 12 months preceding the claim.
+
+10. GOVERNING LAW
+These Terms are governed by the laws of the Abu Dhabi Global Market. Any disputes shall be resolved through arbitration in accordance with the ADGM Arbitration Regulations.
+
+11. AMENDMENTS
+We may update these Terms from time to time. Material changes will be communicated via email and Platform notification. Continued use after changes constitutes acceptance of the updated Terms.
+
+12. CONTACT
+For questions about these Terms, please contact: legal@terraqura.com`;
+
+const TERMS_HASH = keccak256(toBytes(TERMS_BODY));
 
 export function TermsModal({ isOpen, onAccept, onDecline }: TermsModalProps) {
   const { address } = useAccount();
@@ -44,7 +87,8 @@ export function TermsModal({ isOpen, onAccept, onDecline }: TermsModalProps) {
       // Sign the message
       const signature = await signMessageAsync({ message });
 
-      // Store acceptance (would be sent to backend)
+      // Store a local receipt before LegalGate forwards the signed acceptance
+      // to the backend.
       localStorage.setItem(
         `terraqura_terms_accepted_${address}`,
         JSON.stringify({
@@ -56,7 +100,12 @@ export function TermsModal({ isOpen, onAccept, onDecline }: TermsModalProps) {
 
       onAccept(signature);
     } catch (error) {
-      console.error("Failed to sign terms:", error);
+      void reportClientError(error, {
+        source: "terms-modal",
+        action: "sign-terms",
+        hasWalletAddress: Boolean(address),
+        termsVersion: TERMS_VERSION,
+      });
     } finally {
       setIsSigning(false);
     }

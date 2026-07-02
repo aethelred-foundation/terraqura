@@ -38,7 +38,9 @@ Edit `.env.local` and configure:
 
 ```bash
 # Required
-POLYGON_RPC_URL=https://polygon-amoy.g.alchemy.com/v2/YOUR_KEY
+TERRAQURA_NETWORK=aethelredTestnet
+TERRAQURA_DEPLOYMENT=aethelredTestnetPending
+AETHELRED_TESTNET_RPC_URL=https://rpc-testnet.aethelred.network
 DATABASE_URL=postgresql://terraqura:password@localhost:5432/terraqura
 REDIS_PASSWORD=terraqura_dev
 
@@ -87,6 +89,7 @@ terraqura/
 │   └── docs/         # Docusaurus documentation
 ├── packages/
 │   ├── types/        # Shared TypeScript types
+│   ├── network-manifest # Canonical network/deployment source of truth
 │   ├── database/     # Prisma + TimescaleDB
 │   ├── queue/        # BullMQ job definitions
 │   ├── subgraph/     # The Graph indexer
@@ -129,8 +132,8 @@ pnpm test
 # Deploy to local network
 pnpm deploy:local
 
-# Deploy to Polygon Amoy testnet
-pnpm deploy:amoy
+# Deploy to Aethelred testnet
+pnpm deploy:testnet
 ```
 
 ## Next Steps

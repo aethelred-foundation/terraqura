@@ -4,12 +4,13 @@ import { Footer } from "@/components/layout/Footer";
 import { AboutContent } from "./content";
 
 export const metadata: Metadata = {
-  title: "About | Mission, Team & Roadmap",
+  title: "Company | TerraQura",
   description:
-    "TerraQura is decarbonizing the planet through engineered truth. Learn about our Abu Dhabi roots, global vision, founding team, and roadmap from testnet to institutional adoption.",
+    "Meet TerraQura's trust layer for climate markets: independent governance, deep technical expertise, and a globally distributed team.",
   openGraph: {
-    title: "About TerraQura | Engineered Carbon Truth",
-    description: "Abu Dhabi roots, global vision. From testnet to institutional carbon infrastructure.",
+    title: "Company | TerraQura",
+    description:
+      "Meet TerraQura's trust layer for climate markets: independent governance, deep technical expertise, and a globally distributed team.",
   },
 };
 

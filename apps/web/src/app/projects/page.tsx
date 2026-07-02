@@ -4,13 +4,13 @@ import { Footer } from "@/components/layout/Footer";
 import { ProjectsContent } from "./content";
 
 export const metadata: Metadata = {
-  title: "Projects | DAC Project Development Pipeline | TerraQura",
+  title: "Projects | TerraQura",
   description:
-    "Explore TerraQura's Direct Air Capture project development pipeline. Partner with us to build, instrument, and verify carbon removal facilities worldwide.",
+    "Explore high-integrity carbon projects verified at scale across countries, project types, and evidence-backed portfolios.",
   openGraph: {
-    title: "Projects | DAC Project Development Pipeline | TerraQura",
+    title: "Projects | TerraQura",
     description:
-      "Explore TerraQura's Direct Air Capture project development pipeline. Partner with us to build, instrument, and verify carbon removal facilities worldwide.",
+      "Explore high-integrity carbon projects verified at scale across countries, project types, and evidence-backed portfolios.",
   },
 };
 

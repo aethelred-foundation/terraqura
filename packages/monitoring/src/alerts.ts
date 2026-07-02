@@ -1,8 +1,31 @@
 // TerraQura Alerting System
 // Enterprise-grade alerting with multiple channels
 
+import { randomUUID } from "node:crypto";
+
 export type AlertSeverity = "critical" | "high" | "medium" | "low";
 export type AlertChannel = "slack" | "pagerduty" | "email" | "webhook";
+
+export interface AlertEmailTransport {
+  send(alert: Alert, config: NonNullable<AlertConfig["email"]>): Promise<void>;
+}
+
+export interface AlertDeliveryResult {
+  channel: AlertChannel;
+  status: "sent" | "skipped" | "failed";
+  target?: string;
+  reason?: string;
+  error?: string;
+}
+
+export interface AlertDeliveryReport {
+  alert: Alert;
+  rateLimited: boolean;
+  results: AlertDeliveryResult[];
+  sentCount: number;
+  failedCount: number;
+  skippedCount: number;
+}
 
 export interface AlertConfig {
   slack?: {
@@ -21,6 +44,7 @@ export interface AlertConfig {
     from: string;
     recipients: Record<string, string[]>; // group -> emails
   };
+  emailTransport?: AlertEmailTransport;
   webhooks?: Record<string, string>; // name -> url
 }
 
@@ -33,6 +57,50 @@ export interface Alert {
   channels: AlertChannel[];
   metadata?: Record<string, unknown>;
   timestamp: Date;
+}
+
+function createAlertId(now: number): string {
+  return `alert-${now}-${randomUUID()}`;
+}
+
+function serializeAlertError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
+async function postJson(
+  url: string,
+  body: unknown,
+  target: string,
+): Promise<AlertDeliveryResult> {
+  try {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body),
+    });
+
+    if (!response.ok) {
+      return {
+        channel: "webhook",
+        status: "failed",
+        target,
+        reason: `HTTP ${response.status} ${response.statusText}`,
+      };
+    }
+
+    return {
+      channel: "webhook",
+      status: "sent",
+      target,
+    };
+  } catch (error) {
+    return {
+      channel: "webhook",
+      status: "failed",
+      target,
+      error: serializeAlertError(error),
+    };
+  }
 }
 
 export class AlertingService {
@@ -54,29 +122,34 @@ export class AlertingService {
     source: string,
     channels: AlertChannel[],
     metadata?: Record<string, unknown>
-  ): Promise<void> {
+  ): Promise<AlertDeliveryReport> {
     // Rate limiting - max 1 alert per source per minute
     const rateLimitKey = `${source}:${title}`;
     const lastAlert = this.rateLimits.get(rateLimitKey);
     const now = Date.now();
 
-    if (lastAlert && now - lastAlert < 60000) {
-      console.log(`Alert rate limited: ${rateLimitKey}`);
-      return;
-    }
-
-    this.rateLimits.set(rateLimitKey, now);
-
     const alert: Alert = {
-      id: `alert-${now}-${Math.random().toString(36).substr(2, 9)}`,
+      id: createAlertId(now),
       title,
       message,
       severity,
       source,
       channels,
       metadata,
-      timestamp: new Date(),
+      timestamp: new Date(now),
     };
+
+    if (lastAlert && now - lastAlert < 60000) {
+      return this.createDeliveryReport(alert, true, [
+        {
+          channel: "webhook",
+          status: "skipped",
+          reason: `Alert rate limited: ${rateLimitKey}`,
+        },
+      ]);
+    }
+
+    this.rateLimits.set(rateLimitKey, now);
 
     // Store in history
     this.alertHistory.push(alert);
@@ -85,7 +158,7 @@ export class AlertingService {
     }
 
     // Send to channels
-    const promises: Promise<void>[] = [];
+    const promises: Array<Promise<AlertDeliveryResult | AlertDeliveryResult[]>> = [];
 
     for (const channel of channels) {
       switch (channel) {
@@ -104,16 +177,32 @@ export class AlertingService {
       }
     }
 
-    await Promise.allSettled(promises);
+    const settled = await Promise.allSettled(promises);
+    const results = settled.flatMap((result, index) => {
+      if (result.status === "fulfilled") {
+        return Array.isArray(result.value) ? result.value : [result.value];
+      }
+
+      return [{
+        channel: channels[index] ?? "webhook",
+        status: "failed",
+        error: serializeAlertError(result.reason),
+      } satisfies AlertDeliveryResult];
+    });
+
+    return this.createDeliveryReport(alert, false, results);
   }
 
   /**
    * Send Slack alert
    */
-  private async sendSlackAlert(alert: Alert): Promise<void> {
+  private async sendSlackAlert(alert: Alert): Promise<AlertDeliveryResult> {
     if (!this.config.slack) {
-      console.warn("Slack not configured for alerting");
-      return;
+      return {
+        channel: "slack",
+        status: "skipped",
+        reason: "Slack not configured for alerting",
+      };
     }
 
     const color = this.getSeverityColor(alert.severity);
@@ -165,29 +254,29 @@ export class AlertingService {
       ],
     };
 
-    try {
-      await fetch(this.config.slack.webhookUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-    } catch (error) {
-      console.error("Failed to send Slack alert:", error);
-    }
+    const result = await postJson(this.config.slack.webhookUrl, payload, "slack");
+    return { ...result, channel: "slack" };
   }
 
   /**
    * Send PagerDuty alert
    */
-  private async sendPagerDutyAlert(alert: Alert): Promise<void> {
+  private async sendPagerDutyAlert(alert: Alert): Promise<AlertDeliveryResult> {
     if (!this.config.pagerduty) {
-      console.warn("PagerDuty not configured for alerting");
-      return;
+      return {
+        channel: "pagerduty",
+        status: "skipped",
+        reason: "PagerDuty not configured for alerting",
+      };
     }
 
     // Only send critical/high to PagerDuty
     if (alert.severity !== "critical" && alert.severity !== "high") {
-      return;
+      return {
+        channel: "pagerduty",
+        status: "skipped",
+        reason: "PagerDuty only receives critical/high alerts",
+      };
     }
 
     const payload = {
@@ -206,56 +295,92 @@ export class AlertingService {
       },
     };
 
-    try {
-      await fetch("https://events.pagerduty.com/v2/enqueue", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(payload),
-      });
-    } catch (error) {
-      console.error("Failed to send PagerDuty alert:", error);
-    }
+    const result = await postJson(
+      "https://events.pagerduty.com/v2/enqueue",
+      payload,
+      this.config.pagerduty.serviceId || "pagerduty",
+    );
+    return { ...result, channel: "pagerduty" };
   }
 
   /**
    * Send email alert
    */
-  private async sendEmailAlert(alert: Alert): Promise<void> {
+  private async sendEmailAlert(alert: Alert): Promise<AlertDeliveryResult> {
     if (!this.config.email) {
-      console.warn("Email not configured for alerting");
-      return;
+      return {
+        channel: "email",
+        status: "skipped",
+        reason: "Email not configured for alerting",
+      };
     }
 
-    // In production, use nodemailer or similar
-    console.log("Email alert would be sent:", {
-      to: this.config.email.recipients,
-      subject: `[TerraQura ${alert.severity.toUpperCase()}] ${alert.title}`,
-      body: alert.message,
-    });
+    if (!this.config.emailTransport) {
+      return {
+        channel: "email",
+        status: "failed",
+        target: this.config.email.smtpHost,
+        reason: "Email transport not configured; provide AlertConfig.emailTransport",
+      };
+    }
+
+    try {
+      await this.config.emailTransport.send(alert, this.config.email);
+      return {
+        channel: "email",
+        status: "sent",
+        target: this.config.email.smtpHost,
+      };
+    } catch (error) {
+      return {
+        channel: "email",
+        status: "failed",
+        target: this.config.email.smtpHost,
+        error: serializeAlertError(error),
+      };
+    }
   }
 
   /**
    * Send webhook alert
    */
-  private async sendWebhookAlert(alert: Alert): Promise<void> {
+  private async sendWebhookAlert(alert: Alert): Promise<AlertDeliveryResult[]> {
     if (!this.config.webhooks) {
-      return;
+      return [{
+        channel: "webhook",
+        status: "skipped",
+        reason: "Webhooks not configured for alerting",
+      }];
     }
 
-    for (const [name, url] of Object.entries(this.config.webhooks)) {
-      try {
-        await fetch(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
+    return Promise.all(
+      Object.entries(this.config.webhooks).map(async ([name, url]) => {
+        const result = await postJson(
+          url,
+          {
             ...alert,
             webhookName: name,
-          }),
-        });
-      } catch (error) {
-        console.error(`Failed to send webhook alert to ${name}:`, error);
-      }
-    }
+          },
+          name,
+        );
+        return { ...result, channel: "webhook" };
+      }),
+    );
+  }
+
+  private createDeliveryReport(
+    alert: Alert,
+    rateLimited: boolean,
+    results: AlertDeliveryResult[],
+  ): AlertDeliveryReport {
+    return {
+      alert,
+      rateLimited,
+      results,
+      sentCount: results.filter((result) => result.status === "sent").length,
+      failedCount: results.filter((result) => result.status === "failed").length,
+      skippedCount: results.filter((result) => result.status === "skipped").length,
+    };
   }
 
   /**

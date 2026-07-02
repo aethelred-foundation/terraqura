@@ -29,7 +29,8 @@ groups:
         labels:
           severity: critical
           category: security
-          runbook: https://docs.terraqura.io/runbooks/circuit-breaker
+          owner: security-response
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#circuit-breaker-activated
         annotations:
           summary: "CRITICAL: Circuit Breaker Activated"
           description: "Global circuit breaker has been activated. All operations are paused. Immediate investigation required."
@@ -42,6 +43,8 @@ groups:
         labels:
           severity: critical
           category: security
+          owner: security-response
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#unusual-transaction-volume
         annotations:
           summary: "Unusual transaction volume detected"
           description: "Transaction rate is {{ $value | humanize }} which is 10x higher than 24h average. Possible attack or bug."
@@ -53,6 +56,8 @@ groups:
         labels:
           severity: critical
           category: security
+          owner: security-response
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#large-value-transfer
         annotations:
           summary: "Large value transfer detected"
           description: "Transfer of {{ $value | humanize }} ETH/MATIC detected. Verify this is authorized."
@@ -64,6 +69,8 @@ groups:
         labels:
           severity: critical
           category: security
+          owner: security-response
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#multisig-threshold-changed
         annotations:
           summary: "Multisig threshold changed"
           description: "Multisig threshold was modified. Current threshold: {{ $value }}. Verify this was authorized."
@@ -75,6 +82,8 @@ groups:
         labels:
           severity: critical
           category: security
+          owner: security-response
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#emergency-recovery-initiated
         annotations:
           summary: "Emergency recovery process initiated"
           description: "Emergency recovery has been initiated. This will execute in 7 days if not cancelled."
@@ -86,6 +95,8 @@ groups:
         labels:
           severity: warning
           category: security
+          owner: verification-risk
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#high-verification-failure-rate
         annotations:
           summary: "High verification failure rate"
           description: "{{ $value | humanizePercentage }} of verifications are failing. Check for potential fraud attempts."
@@ -103,6 +114,8 @@ groups:
         labels:
           severity: critical
           category: api
+          owner: platform-api
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#api-high-error-rate
         annotations:
           summary: "API error rate above 5%"
           description: "{{ $value | humanizePercentage }} of API requests are returning 5xx errors."
@@ -114,6 +127,8 @@ groups:
         labels:
           severity: warning
           category: api
+          owner: platform-api
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#api-high-latency
         annotations:
           summary: "API latency above 2 seconds (P95)"
           description: "95th percentile latency is {{ $value | humanizeDuration }}."
@@ -125,6 +140,8 @@ groups:
         labels:
           severity: critical
           category: api
+          owner: platform-api
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#api-down
         annotations:
           summary: "API server is down"
           description: "API server {{ $labels.pod }} is not responding."
@@ -136,6 +153,8 @@ groups:
         labels:
           severity: warning
           category: worker
+          owner: platform-workers
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#worker-queue-backlog
         annotations:
           summary: "Worker queue backlog growing"
           description: "{{ $value }} jobs in queue. Workers may be unable to keep up."
@@ -147,6 +166,8 @@ groups:
         labels:
           severity: warning
           category: worker
+          owner: platform-workers
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#worker-job-failures
         annotations:
           summary: "Worker job failure rate high"
           description: "{{ $value | humanize }} job failures per second."
@@ -164,6 +185,8 @@ groups:
         labels:
           severity: warning
           category: database
+          owner: data-platform
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#database-connection-saturation
         annotations:
           summary: "Database connections above 80%"
           description: "{{ $value | humanizePercentage }} of database connections in use."
@@ -175,6 +198,8 @@ groups:
         labels:
           severity: warning
           category: database
+          owner: data-platform
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#database-high-cpu
         annotations:
           summary: "Database CPU above 80%"
           description: "RDS CPU utilization is {{ $value }}%."
@@ -186,6 +211,8 @@ groups:
         labels:
           severity: warning
           category: database
+          owner: data-platform
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#database-replication-lag
         annotations:
           summary: "Database replication lag above 30 seconds"
           description: "Replication lag is {{ $value | humanizeDuration }}."
@@ -197,6 +224,8 @@ groups:
         labels:
           severity: warning
           category: database
+          owner: data-platform
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#slow-queries
         annotations:
           summary: "Slow queries detected"
           description: "Queries running longer than 30 seconds."
@@ -214,6 +243,8 @@ groups:
         labels:
           severity: warning
           category: redis
+          owner: platform-cache
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#redis-high-memory
         annotations:
           summary: "Redis memory usage above 90%"
           description: "Redis is using {{ $value | humanizePercentage }} of available memory."
@@ -225,6 +256,8 @@ groups:
         labels:
           severity: warning
           category: redis
+          owner: platform-cache
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#redis-connection-limit
         annotations:
           summary: "Redis connections above 1000"
           description: "{{ $value }} clients connected to Redis."
@@ -236,6 +269,8 @@ groups:
         labels:
           severity: critical
           category: redis
+          owner: platform-cache
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#redis-replication-broken
         annotations:
           summary: "Redis replication broken"
           description: "Redis primary has no connected replicas."
@@ -248,33 +283,39 @@ groups:
     rules:
       # RPC Node Down
       - alert: RPCNodeDown
-        expr: polygon_rpc_healthy == 0
+        expr: terraqura_rpc_healthy == 0
         for: 2m
         labels:
           severity: critical
           category: blockchain
+          owner: blockchain-platform
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#rpc-node-down
         annotations:
-          summary: "Polygon RPC node is down"
+          summary: "Primary chain RPC node is down"
           description: "Primary RPC node is not responding. Failover should be active."
 
       # Block Lag
       - alert: BlockLag
-        expr: polygon_latest_block - terraqura_indexed_block > 100
+        expr: terraqura_latest_block - terraqura_indexed_block > 100
         for: 10m
         labels:
           severity: warning
           category: blockchain
+          owner: blockchain-indexer
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#block-lag
         annotations:
           summary: "Block indexing is lagging"
           description: "Indexer is {{ $value }} blocks behind the chain."
 
       # Gas Price Spike
       - alert: GasPriceSpike
-        expr: polygon_gas_price_gwei > 500
+        expr: terraqura_gas_price_gwei > 500
         for: 5m
         labels:
           severity: warning
           category: blockchain
+          owner: blockchain-platform
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#gas-price-spike
         annotations:
           summary: "Gas price spike detected"
           description: "Gas price is {{ $value }} gwei. Consider delaying non-urgent transactions."
@@ -286,6 +327,8 @@ groups:
         labels:
           severity: warning
           category: blockchain
+          owner: blockchain-indexer
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#graph-node-unhealthy
         annotations:
           summary: "The Graph node is lagging"
           description: "Graph node chain head update is taking {{ $value | humanizeDuration }}."
@@ -303,6 +346,8 @@ groups:
         labels:
           severity: info
           category: business
+          owner: product-operations
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#low-credit-minting-rate
         annotations:
           summary: "Low credit minting activity"
           description: "Only {{ $value }} credits minted in the last 24 hours."
@@ -314,6 +359,8 @@ groups:
         labels:
           severity: info
           category: business
+          owner: product-operations
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#no-trading-activity
         annotations:
           summary: "No trading activity"
           description: "No trades executed in the last 6 hours."
@@ -325,6 +372,8 @@ groups:
         labels:
           severity: info
           category: business
+          owner: product-operations
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#high-retirement-rate
         annotations:
           summary: "High credit retirement rate"
           description: "{{ $value | humanizePercentage }} of minted credits are being retired."
@@ -341,6 +390,8 @@ groups:
         labels:
           severity: warning
           category: infrastructure
+          owner: platform-infrastructure
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#ssl-certificate-expiring-soon
         annotations:
           summary: "SSL certificate expiring within 30 days"
           description: "Certificate for {{ $labels.instance }} expires in {{ $value | humanizeDuration }}."
@@ -351,6 +402,8 @@ groups:
         labels:
           severity: critical
           category: infrastructure
+          owner: platform-infrastructure
+          runbook: https://docs.terraqura.io/operations/alert-runbooks#ssl-certificate-expiry-critical
         annotations:
           summary: "SSL certificate expiring within 7 days"
           description: "Certificate for {{ $labels.instance }} expires in {{ $value | humanizeDuration }}. Immediate renewal required."

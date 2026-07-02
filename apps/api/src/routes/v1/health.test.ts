@@ -26,7 +26,7 @@ vi.stubGlobal(
     return {
       ok: true,
       json: async () => ({
-        result: "0x" + (78432).toString(16),
+        result: "0x" + (7332).toString(16),
       }),
     };
   }),
@@ -41,6 +41,9 @@ describe("GET /v1/health", () => {
 
   afterEach(() => {
     resetStateStore();
+    delete process.env.CHAIN_ID;
+    delete process.env.TERRAQURA_NETWORK;
+    delete process.env.TERRAQURA_DEPLOYMENT;
   });
 
   afterAll(async () => {
@@ -59,6 +62,23 @@ describe("GET /v1/health", () => {
     expect(body.version).toBe("1.0.0");
     expect(body).toHaveProperty("timestamp");
     expect(body).toHaveProperty("uptime");
+  });
+
+  it("includes the active TerraQura network identity", async () => {
+    const response = await server.inject({
+      method: "GET",
+      url: "/v1/health",
+    });
+
+    const body = response.json();
+    expect(body.network).toMatchObject({
+      key: "aethelredTestnet",
+      deploymentKey: "aethelredTestnetPending",
+      deploymentStatus: "pending-deployment",
+      chainId: 7332,
+      configuredChainId: null,
+      chainIdMatchesManifest: true,
+    });
   });
 
   it("returns a valid ISO 8601 timestamp", async () => {
@@ -102,6 +122,11 @@ describe("GET /v1/health/ready", () => {
     resetStateStore();
     databaseCheckResult = true;
     blockchainCheckResult = true;
+    delete process.env.CHAIN_ID;
+    delete process.env.TERRAQURA_NETWORK;
+    delete process.env.TERRAQURA_DEPLOYMENT;
+    delete process.env.TERRAQURA_RPC_URL;
+    delete process.env.AETHELRED_RPC_URL;
   });
 
   afterAll(async () => {
@@ -122,6 +147,13 @@ describe("GET /v1/health/ready", () => {
     expect(body.ready).toBe(true);
     expect(body.checks.database).toBe(true);
     expect(body.checks.blockchain).toBe(true);
+    expect(body.network).toMatchObject({
+      key: "aethelredTestnet",
+      deploymentKey: "aethelredTestnetPending",
+      chainId: 7332,
+      chainIdMatchesManifest: true,
+      rpcConfigured: true,
+    });
   });
 
   it("returns 503 when blockchain check fails", async () => {
@@ -152,6 +184,28 @@ describe("GET /v1/health/ready", () => {
 
     const body = response.json();
     expect(body.checks.blockchain).toBe(false);
+    expect(body.network.rpcConfigured).toBe(false);
+  });
+
+  it("returns 503 when configured CHAIN_ID drifts from the manifest", async () => {
+    process.env.AETHELRED_RPC_URL = "http://localhost:8545";
+    process.env.CHAIN_ID = "123456";
+
+    const response = await server.inject({
+      method: "GET",
+      url: "/v1/health/ready",
+    });
+
+    const body = response.json();
+    expect(response.statusCode).toBe(503);
+    expect(body.ready).toBe(false);
+    expect(body.checks.blockchain).toBe(false);
+    expect(body.network).toMatchObject({
+      key: "aethelredTestnet",
+      chainId: 7332,
+      configuredChainId: 123456,
+      chainIdMatchesManifest: false,
+    });
   });
 
   it("includes both database and blockchain check fields", async () => {

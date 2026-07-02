@@ -68,7 +68,10 @@ export { MRVModule } from "./modules/mrv.js";
 // ============================================
 
 export { ConnectModule } from "./modules/connect.js";
-export { CheckoutModule } from "./modules/checkout.js";
+export {
+  CheckoutModule,
+  InMemoryCheckoutSessionBackend,
+} from "./modules/checkout.js";
 export { BadgeModule } from "./modules/badge.js";
 export { ComplianceModule } from "./modules/compliance.js";
 
@@ -184,6 +187,8 @@ export type {
   CheckoutSession,
   CheckoutSessionResult,
   CheckoutSessionFilter,
+  CheckoutSessionStoreRecord,
+  CheckoutSessionBackend,
 } from "./modules/checkout.js";
 
 // ============================================
@@ -347,6 +352,7 @@ export {
 export type {
   IIdempotencyBackend,
   IdempotencyEntry,
+  ISessionBackend,
 } from "./utils.js";
 
 // ============================================

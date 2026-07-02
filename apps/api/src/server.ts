@@ -7,6 +7,7 @@ import swaggerUi from "@fastify/swagger-ui";
 import Fastify, { FastifyError } from "fastify";
 
 import { getApiRuntimeEnv } from "./lib/runtime-env.js";
+import { closeStateStore } from "./lib/state-store.js";
 import { activityRoutes } from "./routes/v1/activity.js";
 import { analyticsRoutes } from "./routes/v1/analytics.js";
 import { apiKeysRoutes } from "./routes/v1/api-keys.js";
@@ -165,6 +166,10 @@ async function buildServer() {
   await fastify.register(analyticsRoutes, { prefix: "/v1/analytics" });
   await fastify.register(apiKeysRoutes, { prefix: "/v1/api-keys" });
 
+  fastify.addHook("onClose", async () => {
+    await closeStateStore();
+  });
+
   // Global error handler
   fastify.setErrorHandler((error: FastifyError, _request, reply) => {
     fastify.log.error(error);
@@ -205,10 +210,16 @@ async function start() {
     `);
 }
 
-void start().catch((err) => {
-  const message = err instanceof Error ? err.stack ?? err.message : String(err);
-  process.stderr.write(`Failed to start server: ${message}\n`);
-  process.exitCode = 1;
-});
+function shouldAutoStart(): boolean {
+  return process.env.NODE_ENV !== "test" && process.env.VITEST !== "true";
+}
+
+if (shouldAutoStart()) {
+  void start().catch((err) => {
+    const message = err instanceof Error ? err.stack ?? err.message : String(err);
+    process.stderr.write(`Failed to start server: ${message}\n`);
+    process.exitCode = 1;
+  });
+}
 
 export { buildServer };

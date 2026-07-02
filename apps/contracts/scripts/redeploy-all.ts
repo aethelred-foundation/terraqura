@@ -14,7 +14,7 @@ async function main() {
   console.log("Account:", deployer.address);
 
   const balance = await ethers.provider.getBalance(deployer.address);
-  console.log("Balance:", ethers.formatEther(balance), "AETH\n");
+  console.log("Balance:", ethers.formatEther(balance), "AETHEL\n");
 
   // ============================================
   // 1. Deploy TerraQuraAccessControl (UUPS)
@@ -194,8 +194,8 @@ async function main() {
   console.log("  GaslessMarketplace Proxy:", gaslessMarketplaceAddr);
   console.log("  GaslessMarketplace Impl:", gaslessMarketplaceImpl);
   console.log("\nTEST DAC ID:", testDacId);
-  console.log("\nGas used:", ethers.formatEther(balance - finalBalance), "AETH");
-  console.log("Final balance:", ethers.formatEther(finalBalance), "AETH");
+  console.log("\nGas used:", ethers.formatEther(balance - finalBalance), "AETHEL");
+  console.log("Final balance:", ethers.formatEther(finalBalance), "AETHEL");
 
   // Output JSON for verification script
   console.log("\n// Update verify-all-contracts.ts with these addresses:");

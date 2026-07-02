@@ -7,6 +7,7 @@
   "types": "./dist/index.d.ts",
   "exports": {
     ".": "./src/index.ts",
+    "./domain": "./src/domain/index.ts",
     "./timescale": "./src/timescale/index.ts",
     "./prisma": "./src/prisma/index.ts"
   },
@@ -15,7 +16,9 @@
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
+    "db:domain:apply": "tsx src/domain/apply.ts",
     "db:seed": "tsx src/seed.ts",
+    "test:domain": "node --import tsx/esm tests/domain-audit-export.test.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

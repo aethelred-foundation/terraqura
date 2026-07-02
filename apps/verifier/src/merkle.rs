@@ -72,9 +72,7 @@ impl MerkleTree {
 /// Build a Merkle tree from raw leaf byte slices.
 pub fn build_tree(leaves: &[Vec<u8>]) -> MerkleTree {
     if leaves.is_empty() {
-        return MerkleTree {
-            layers: Vec::new(),
-        };
+        return MerkleTree { layers: Vec::new() };
     }
 
     let leaf_hashes: Vec<[u8; 32]> = leaves.iter().map(|l| keccak256(l)).collect();
@@ -168,11 +166,7 @@ mod tests {
 
     #[test]
     fn odd_number_of_leaves() {
-        let leaves = vec![
-            b"a".to_vec(),
-            b"b".to_vec(),
-            b"c".to_vec(),
-        ];
+        let leaves = vec![b"a".to_vec(), b"b".to_vec(), b"c".to_vec()];
         let tree = MerkleTree::build(&leaves);
         for i in 0..3 {
             let proof = tree.get_proof(i).unwrap();

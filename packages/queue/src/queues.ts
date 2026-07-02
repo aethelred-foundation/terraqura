@@ -1,6 +1,8 @@
 // TerraQura Job Queues
 // Enterprise-grade async job processing with BullMQ
 
+import { createHash, randomUUID } from "node:crypto";
+
 import { Queue, QueueEvents, JobsOptions } from "bullmq";
 import { getPublisherConnection } from "./connection.js";
 
@@ -58,6 +60,30 @@ export interface VerificationJobData {
   periodStart: string; // ISO date
   periodEnd: string; // ISO date
   phase: "source" | "logic" | "mint";
+  sourceValidation?: {
+    registeredSensors?: number;
+    activeSensors?: number;
+    dataPointsReceived?: number;
+    expectedDataPoints?: number;
+    signatureValid?: boolean;
+    timestampSequenceValid?: boolean;
+    noGapsDetected?: boolean;
+  };
+  telemetrySnapshot?: {
+    totalCO2CapturedTonnes: number;
+    totalEnergyKwh: number;
+    dataPointCount: number;
+    anomalyCount?: number;
+    avgQualityScore?: number;
+  };
+  mintValidation?: {
+    previouslyMinted?: boolean;
+    lastMintTime?: string | null;
+    overlappingBatches?: string[];
+    operatorKycStatus?: "VERIFIED" | "PENDING" | "REJECTED" | "EXPIRED";
+    operatorKycExpiresAt?: string | null;
+    sanctionsCleared?: boolean;
+  };
 }
 
 export interface RetirementJobData {
@@ -102,6 +128,12 @@ export interface NotificationJobData {
   recipient: string;
   template: string;
   data: Record<string, unknown>;
+  /**
+   * Optional producer-provided dedupe key. When set, BullMQ jobId is derived
+   * from this key so retries or duplicate publishes coalesce safely.
+   */
+  idempotencyKey?: string;
+  correlationId?: string;
 }
 
 export interface IpfsUploadJobData {
@@ -109,6 +141,12 @@ export interface IpfsUploadJobData {
   content: string | Buffer;
   metadata: Record<string, unknown>;
   pin: boolean;
+  /**
+   * Optional producer-provided dedupe key. Use the source-data hash, metadata
+   * CID, or business object id when the upload must be idempotent.
+   */
+  idempotencyKey?: string;
+  correlationId?: string;
 }
 
 // ============================================
@@ -210,6 +248,15 @@ function getDefaultJobOptions(name: QueueName): JobsOptions {
   }
 }
 
+function createQueueJobId(prefix: string, idempotencyKey?: string): string {
+  if (idempotencyKey && idempotencyKey.trim().length > 0) {
+    const hash = createHash("sha256").update(idempotencyKey).digest("hex").slice(0, 32);
+    return `${prefix}-${hash}`;
+  }
+
+  return `${prefix}-${randomUUID()}`;
+}
+
 // ============================================
 // QUEUE HELPERS
 // ============================================
@@ -260,7 +307,11 @@ export async function addKycCheckJob(data: KycCheckJobData, options?: JobsOption
  */
 export async function addNotificationJob(data: NotificationJobData, options?: JobsOptions) {
   const queue = getQueue<NotificationJobData>(QUEUE_NAMES.NOTIFICATIONS);
-  return queue.add(`notify-${Date.now()}`, data, options);
+  const jobId = options?.jobId ?? createQueueJobId("notify", data.idempotencyKey);
+  return queue.add(jobId, data, {
+    ...options,
+    jobId,
+  });
 }
 
 /**
@@ -268,7 +319,11 @@ export async function addNotificationJob(data: NotificationJobData, options?: Jo
  */
 export async function addIpfsUploadJob(data: IpfsUploadJobData, options?: JobsOptions) {
   const queue = getQueue<IpfsUploadJobData>(QUEUE_NAMES.IPFS_UPLOAD);
-  return queue.add(`ipfs-${Date.now()}`, data, options);
+  const jobId = options?.jobId ?? createQueueJobId("ipfs", data.idempotencyKey);
+  return queue.add(jobId, data, {
+    ...options,
+    jobId,
+  });
 }
 
 // ============================================

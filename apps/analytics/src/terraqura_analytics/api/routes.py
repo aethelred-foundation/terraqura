@@ -7,6 +7,7 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Query
 
 from terraqura_analytics import __version__
+from terraqura_analytics.config import Settings, get_settings
 from terraqura_analytics.models.anomaly_detection import SensorAnomalyDetector
 from terraqura_analytics.models.carbon_price import CarbonPricePredictor
 from terraqura_analytics.models.impact import ImpactCalculator
@@ -29,18 +30,26 @@ from terraqura_analytics.schemas import (
     ValueAtRisk,
     VaRRequest,
 )
-from terraqura_analytics.services.analytics_service import AnalyticsService
+from terraqura_analytics.services.analytics_service import (
+    AnalyticsDataUnavailable,
+    AnalyticsService,
+)
 from terraqura_analytics.services.risk_service import RiskAssessor
 
 
-def create_router() -> APIRouter:
+def create_router(settings: Settings | None = None) -> APIRouter:
     """Build and return the API router with fresh service instances."""
+    settings = settings or get_settings()
     router = APIRouter()
 
     price_predictor = CarbonPricePredictor()
     anomaly_detector = SensorAnomalyDetector()
     impact_calculator = ImpactCalculator()
-    analytics_service = AnalyticsService()
+    analytics_service = AnalyticsService(
+        api_url=settings.api_url,
+        allow_synthetic_data=settings.allow_synthetic_data,
+        timeout_seconds=settings.api_timeout_seconds,
+    )
     risk_assessor = RiskAssessor()
 
     @router.get("/health", response_model=HealthResponse)
@@ -50,6 +59,9 @@ def create_router() -> APIRouter:
             status="ok",
             version=__version__,
             timestamp=datetime.now(timezone.utc),
+            network_key=settings.network_key,
+            deployment_key=settings.deployment_key or "",
+            chain_id=settings.chain_id or 0,
         )
 
     @router.post("/predict/price", response_model=PricePrediction)
@@ -96,7 +108,10 @@ def create_router() -> APIRouter:
     @router.get("/stats/protocol", response_model=ProtocolStats)
     async def protocol_stats() -> ProtocolStats:
         """Get protocol-level aggregate statistics."""
-        return await analytics_service.get_protocol_stats()
+        try:
+            return await analytics_service.get_protocol_stats()
+        except AnalyticsDataUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @router.get("/stats/leaderboard", response_model=list[LeaderboardEntry])
     async def leaderboard(
@@ -104,7 +119,10 @@ def create_router() -> APIRouter:
         limit: int = Query(default=10, ge=1, le=100),
     ) -> list[LeaderboardEntry]:
         """Get ranked leaderboard for a given metric."""
-        return await analytics_service.get_leaderboard(metric=metric, limit=limit)
+        try:
+            return await analytics_service.get_leaderboard(metric=metric, limit=limit)
+        except AnalyticsDataUnavailable as exc:
+            raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     @router.post("/risk/assess", response_model=RiskAssessment)
     async def assess_risk(req: RiskAssessRequest) -> RiskAssessment:

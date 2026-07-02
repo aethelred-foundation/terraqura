@@ -5,6 +5,8 @@ import { Job, Processor } from "bullmq";
 import { ethers } from "ethers";
 import type { MintingJobData } from "@terraqura/queue";
 
+import { createScopedLogger, serializeError } from "../lib/logger.js";
+
 // Contract ABI (minimal for minting)
 const CARBON_CREDIT_ABI = [
   "function mintFromVerification(address to, uint256 co2Amount, uint256 energyUsed, bytes32 dataHash, string calldata ipfsCid) external returns (uint256)",
@@ -56,21 +58,25 @@ type CarbonCreditContract = ethers.Contract & {
 export const mintingProcessor: Processor<MintingJobData, MintingResult> = async (
   job: Job<MintingJobData>
 ) => {
-  const logger = console; // Replace with proper logger in production
-    const {
-      verificationBatchId,
-      dacUnitId,
+  const {
+    verificationBatchId,
+    dacUnitId,
     operatorAddress,
     co2Captured,
     efficiencyFactor,
     dataHash,
-      merkleRoot,
-      ipfsCid,
-    } = job.data;
+    merkleRoot,
+    ipfsCid,
+  } = job.data;
+  const logger = createScopedLogger("minting.processor", {
+    jobId: job.id,
+    verificationBatchId,
+    dacUnitId,
+  });
 
-  logger.log(
-    `[Minting] Starting job ${job.id} for batch ${verificationBatchId} (unit=${dacUnitId}, merkleRoot=${merkleRoot || "n/a"})`
-  );
+  logger.info("Starting minting job", {
+    merkleRoot: merkleRoot ?? null,
+  });
 
   try {
     // Initialize provider and wallet
@@ -99,7 +105,7 @@ export const mintingProcessor: Processor<MintingJobData, MintingResult> = async 
 
     // Progress: Check verification status
     await job.updateProgress(10);
-    logger.log(`[Minting] Checking verification status for batch ${verificationBatchId}`);
+    logger.info("Checking verification status");
 
     // Convert batch ID to bytes32
     const batchIdBytes = ethers.id(verificationBatchId);
@@ -112,7 +118,9 @@ export const mintingProcessor: Processor<MintingJobData, MintingResult> = async 
     }
 
     await job.updateProgress(30);
-    logger.log(`[Minting] Verification passed, preparing mint transaction`);
+    logger.info("Verification passed, preparing mint transaction", {
+      verificationStatus: status.toString(),
+    });
 
     // Convert data hash to bytes32
     const dataHashBytes = ethers.id(dataHash);
@@ -126,7 +134,7 @@ export const mintingProcessor: Processor<MintingJobData, MintingResult> = async 
 
     // Estimate gas
     await job.updateProgress(50);
-    logger.log(`[Minting] Estimating gas for mint transaction`);
+    logger.info("Estimating gas for mint transaction");
 
     const gasEstimate = await carbonCredit.mintFromVerification.estimateGas(
       operatorAddress,
@@ -146,7 +154,9 @@ export const mintingProcessor: Processor<MintingJobData, MintingResult> = async 
       feeData.maxPriorityFeePerGas || ethers.parseUnits("2", "gwei");
 
     await job.updateProgress(70);
-    logger.log(`[Minting] Sending mint transaction with gas limit: ${gasLimit}`);
+    logger.info("Sending mint transaction", {
+      gasLimit: gasLimit.toString(),
+    });
 
     // Send mint transaction
     const tx = await carbonCredit.mintFromVerification(
@@ -163,7 +173,9 @@ export const mintingProcessor: Processor<MintingJobData, MintingResult> = async 
     );
 
     await job.updateProgress(85);
-    logger.log(`[Minting] Transaction sent: ${tx.hash}, waiting for confirmation`);
+    logger.info("Mint transaction sent, waiting for confirmation", {
+      txHash: tx.hash,
+    });
 
     // Wait for confirmation (2 blocks for Aethelred)
     const receipt = await tx.wait(2);
@@ -186,9 +198,11 @@ export const mintingProcessor: Processor<MintingJobData, MintingResult> = async 
     const tokenId = mintEvent?.args?.[0]?.toString() || "unknown";
 
     await job.updateProgress(100);
-    logger.log(
-      `[Minting] Successfully minted token ${tokenId} in tx ${tx.hash}`
-    );
+    logger.info("Successfully minted token", {
+      tokenId,
+      txHash: tx.hash,
+      gasUsed: receipt.gasUsed.toString(),
+    });
 
     return {
       success: true,
@@ -198,7 +212,6 @@ export const mintingProcessor: Processor<MintingJobData, MintingResult> = async 
     };
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    logger.error(`[Minting] Job ${job.id} failed: ${errorMessage}`);
 
     // Determine if error is retryable
     const isRetryable =
@@ -206,6 +219,11 @@ export const mintingProcessor: Processor<MintingJobData, MintingResult> = async 
       errorMessage.includes("timeout") ||
       errorMessage.includes("network") ||
       errorMessage.includes("rate limit");
+
+    logger.error("Minting job failed", {
+      err: serializeError(error),
+      retryable: isRetryable,
+    });
 
     if (!isRetryable) {
       // Don't retry for non-recoverable errors

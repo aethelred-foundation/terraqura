@@ -2,173 +2,193 @@
 
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { AnimatedSection, StaggerContainer, StaggerItem } from "@/components/shared/AnimatedSection";
-import { articles, categoryColors } from "./articles";
+import { OptimizedImage } from "@/components/shared/OptimizedImage";
+import type { ImageKey } from "@/lib/image-manifest";
+import { articles } from "./articles";
+
+const ARTICLE_IMAGES: Record<string, ImageKey> = {
+  "what-is-proof-of-physics": "proof-of-physics",
+  "understanding-direct-air-capture": "carbon-removal",
+  "why-blockchain-matters-for-carbon-credits": "onchain-carbon-transparency",
+  "voluntary-carbon-market-2026": "high-intensity-carbon-market",
+  "aethelred-sovereign-blockchain": "sovereign-carbon-ledger",
+  "iot-sensor-networks-carbon-monitoring": "sensor-field-network",
+  "enterprise-carbon-procurement-guide": "regulator-ready-audit-trail",
+  "economics-of-carbon-removal": "institutional-climate-finance",
+  "smart-contract-architecture-carbon-tokenization": "proof-cahin",
+  "abu-dhabi-climate-tech-vision": "uae-climate",
+};
+
+const filters = ["AI", "Research", "Product", "Market", "Policy"];
 
 export function BlogContent() {
+  const featured = articles[0];
+
+  if (!featured) {
+    return null;
+  }
+
+  const featuredImage = ARTICLE_IMAGES[featured.slug] ?? "mrv-data-river";
+
   return (
-    <>
-      {/* Hero */}
-      <section className="relative py-16 sm:py-20 lg:py-24" aria-labelledby="blog-heading">
-        <div className="container mx-auto px-6 sm:px-8 lg:px-10">
-          <AnimatedSection className="max-w-4xl mx-auto text-center">
+    <div className="bg-[#020509] px-3 pb-4 text-white sm:px-5">
+      <div className="mx-auto max-w-[1680px] overflow-hidden rounded-lg border border-white/10 bg-[#03070b]">
+        <section
+          className="relative grid min-h-[460px] gap-8 overflow-hidden border-b border-white/10 px-5 py-12 sm:px-8 lg:grid-cols-[0.72fr_1fr] lg:items-center lg:px-10"
+          aria-labelledby="blog-heading"
+        >
+          <div className="absolute inset-0" aria-hidden>
+            <OptimizedImage
+              src="mrv-data-river"
+              alt=""
+              fill
+              priority
+              sizes="100vw"
+              className="object-cover opacity-[0.42]"
+            />
+            <div className="absolute inset-0 bg-gradient-to-r from-[#020509] via-[#020509]/[0.86] to-[#020509]/[0.48]" />
+          </div>
+
+          <div className="relative z-10 max-w-xl">
             <h1
               id="blog-heading"
-              className="text-display-lg lg:text-display-xl text-white mb-6"
+              className="font-display text-4xl leading-tight tracking-normal text-white sm:text-5xl"
             >
-              Insights &{" "}
-              <span className="text-gradient-emerald">Research</span>
+              Insights
             </h1>
-            <p className="text-lg text-white/70 max-w-3xl mx-auto font-body leading-relaxed mb-10">
-              Technical deep dives, industry analysis, and original research from the
-              TerraQura team on carbon verification methodology, Proof-of-Physics engineering,
-              sovereign blockchain infrastructure, Direct Air Capture technology, and the
-              rapidly evolving landscape of voluntary and compliance carbon markets.
+            <p className="mt-5 text-base leading-relaxed text-white/[0.72]">
+              Data, research, and market perspectives.
             </p>
-            <div className="flex flex-col sm:flex-row gap-4 justify-center">
-              <Link
-                href="#articles"
-                className="inline-flex items-center justify-center gap-2 px-8 py-4 text-base font-semibold text-white bg-emerald-600 hover:bg-emerald-500 rounded-xl transition-all shadow-lg shadow-emerald-600/20"
-              >
-                Read Latest Articles
-                <ArrowRight className="w-4 h-4" />
-              </Link>
-              <Link
-                href="/technology"
-                className="inline-flex items-center justify-center gap-2 px-8 py-4 text-base font-semibold text-white/80 border border-white/10 hover:border-white/20 rounded-xl transition-all"
-              >
-                Explore the Protocol
-              </Link>
-            </div>
-          </AnimatedSection>
-        </div>
-      </section>
-
-      {/* Category filters */}
-      <section className="pb-8">
-        <div className="container mx-auto px-6 sm:px-8 lg:px-10">
-          <div className="flex flex-wrap gap-3 justify-center">
-            {(["All", "Technology", "Research", "Industry"] as const).map((cat) => (
-              <span
-                key={cat}
-                className={`px-4 py-1.5 rounded-full text-sm font-medium border cursor-default ${
-                  cat === "All"
-                    ? "bg-white/[0.06] text-white border-white/[0.1]"
-                    : cat === "Technology"
-                      ? "bg-emerald-500/10 text-emerald-400 border-emerald-500/20"
-                      : cat === "Research"
-                        ? "bg-cyan-500/10 text-cyan-400 border-cyan-500/20"
-                        : "bg-amber-500/10 text-amber-400 border-amber-500/20"
-                }`}
-              >
-                {cat}
-              </span>
-            ))}
+            <Link
+              href="#articles"
+              className="mt-8 inline-flex min-h-11 items-center justify-center gap-2 rounded-md bg-emerald-400 px-5 py-3 text-[13px] font-semibold text-[#03120d] transition-colors hover:bg-emerald-300"
+            >
+              View all insights
+              <ArrowRight className="h-4 w-4" />
+            </Link>
           </div>
-        </div>
-      </section>
 
-      {/* Article Grid */}
-      <section className="relative py-8 sm:py-12 lg:py-16" aria-label="Blog articles">
-        <div className="container mx-auto px-6 sm:px-8 lg:px-10">
-          <StaggerContainer
-            className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 max-w-7xl mx-auto"
-            staggerDelay={0.08}
+          <Link
+            href={`/blog/${featured.slug}`}
+            className="group relative z-10 overflow-hidden rounded-lg border border-white/10 bg-[#061017] transition-colors hover:border-emerald-300/[0.32]"
           >
-            {articles.map((article) => (
-              <StaggerItem key={article.slug}>
+            <div className="relative h-64 border-b border-white/10 sm:h-80">
+              <OptimizedImage
+                src={featuredImage}
+                alt=""
+                fill
+                sizes="(min-width: 1024px) 50vw, 100vw"
+                className="object-cover opacity-90 transition-transform duration-700 group-hover:scale-105"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-[#061017] to-transparent" />
+            </div>
+            <div className="p-5 sm:p-6">
+              <div className="mb-4 flex flex-wrap items-center gap-3 text-[11px] font-semibold uppercase tracking-[0.14em] text-emerald-200/80">
+                <span>{featured.category}</span>
+                <span className="h-1 w-1 rounded-full bg-white/[0.35]" />
+                <span>{featured.readingTime}</span>
+              </div>
+              <h2 className="font-display text-2xl leading-tight text-white">
+                {featured.title}
+              </h2>
+              <p className="mt-3 line-clamp-3 text-sm leading-relaxed text-white/[0.62]">
+                {featured.excerpt}
+              </p>
+            </div>
+          </Link>
+        </section>
+
+        <div className="flex overflow-x-auto border-b border-white/10 bg-[#03070b]">
+          {filters.map((filter, index) => (
+            <button
+              key={filter}
+              type="button"
+              className={
+                index === 0
+                  ? "min-w-fit border-r border-white/10 bg-emerald-400/[0.12] px-7 py-3.5 text-[12px] font-semibold text-emerald-200"
+                  : "min-w-fit border-r border-white/10 px-7 py-3.5 text-[12px] font-medium text-white/[0.52] transition-colors hover:bg-white/[0.025] hover:text-white"
+              }
+            >
+              {filter}
+            </button>
+          ))}
+        </div>
+
+        <section id="articles" className="px-5 py-10 sm:px-8 lg:px-10 lg:py-12">
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            {articles.map((article) => {
+              const image = ARTICLE_IMAGES[article.slug] ?? "mrv-data-river";
+
+              return (
                 <Link
+                  key={article.slug}
                   href={`/blog/${article.slug}`}
-                  className="group block h-full"
+                  className="group overflow-hidden rounded-lg border border-white/10 bg-[#061017] transition-colors hover:border-emerald-300/[0.32]"
                 >
-                  <article className="h-full p-6 rounded-xl bg-white/[0.02] border border-white/[0.06] hover:border-emerald-500/20 transition-all duration-300 hover:bg-white/[0.04] flex flex-col">
-                    {/* Category & Meta */}
-                    <div className="flex items-center gap-3 mb-4">
-                      <span
-                        className={`px-2.5 py-0.5 rounded-full text-xs font-medium border ${
-                          categoryColors[article.category]
-                        }`}
-                      >
-                        {article.category}
-                      </span>
-                      <span className="text-xs text-white/40 font-body">
-                        {article.readingTime}
-                      </span>
+                  <article className="flex h-full flex-col">
+                    <div className="relative h-44 border-b border-white/10">
+                      <OptimizedImage
+                        src={image}
+                        alt=""
+                        fill
+                        sizes="(min-width: 1280px) 25vw, (min-width: 768px) 50vw, 100vw"
+                        className="object-cover opacity-[0.88] transition-transform duration-500 group-hover:scale-105"
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-[#061017] to-transparent" />
                     </div>
-
-                    {/* Title */}
-                    <h2 className="text-lg font-bold text-white mb-3 group-hover:text-emerald-400 transition-colors leading-snug">
-                      {article.title}
-                    </h2>
-
-                    {/* Excerpt */}
-                    <p className="text-sm text-white/60 font-body leading-relaxed mb-4 flex-1">
-                      {article.excerpt}
-                    </p>
-
-                    {/* Tags */}
-                    <div className="flex flex-wrap gap-1.5 mb-5">
-                      {article.tags.slice(0, 4).map((tag) => (
-                        <span
-                          key={tag}
-                          className="px-2 py-0.5 rounded text-[11px] font-data text-white/45 bg-white/[0.04] border border-white/[0.06]"
-                        >
-                          {tag}
+                    <div className="flex flex-1 flex-col p-5">
+                      <div className="mb-4 flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-[0.14em] text-white/[0.42]">
+                        <span className="text-emerald-200/80">
+                          {article.category}
                         </span>
-                      ))}
-                      {article.tags.length > 4 && (
-                        <span className="px-2 py-0.5 rounded text-[11px] font-data text-white/30">
-                          +{article.tags.length - 4}
+                        <span>{article.date}</span>
+                      </div>
+                      <h2 className="font-display text-lg leading-tight text-white transition-colors group-hover:text-emerald-200">
+                        {article.title}
+                      </h2>
+                      <p className="mt-3 line-clamp-3 flex-1 text-[13px] leading-relaxed text-white/[0.58]">
+                        {article.excerpt}
+                      </p>
+                      <div className="mt-5 flex items-center justify-between border-t border-white/10 pt-4 text-[12px] text-white/[0.46]">
+                        <span>{article.readingTime}</span>
+                        <span className="inline-flex items-center gap-1 text-emerald-200">
+                          Read
+                          <ArrowRight className="h-3.5 w-3.5" />
                         </span>
-                      )}
-                    </div>
-
-                    {/* Footer */}
-                    <div className="flex items-center justify-between pt-4 border-t border-white/[0.06]">
-                      <span className="text-xs text-white/40 font-body">
-                        {article.date}
-                      </span>
-                      <span className="text-sm text-emerald-400 group-hover:text-emerald-300 transition-colors font-medium">
-                        Read more &rarr;
-                      </span>
+                      </div>
                     </div>
                   </article>
                 </Link>
-              </StaggerItem>
-            ))}
-          </StaggerContainer>
-        </div>
-      </section>
+              );
+            })}
+          </div>
+        </section>
 
-      {/* Newsletter CTA */}
-      <section className="relative py-16 sm:py-20 lg:py-24 bg-midnight-900/30">
-        <div className="container mx-auto px-6 sm:px-8 lg:px-10">
-          <AnimatedSection className="max-w-2xl mx-auto text-center">
-            <h2 className="text-display text-white mb-4">Stay Informed</h2>
-            <p className="text-white/70 font-body leading-relaxed mb-8">
-              Carbon markets move fast. Get our latest research, technical
-              analyses, and industry insights delivered directly to your inbox.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-3 max-w-md mx-auto">
-              <input
-                type="email"
-                placeholder="your@email.com"
-                className="flex-1 px-4 py-3 rounded-lg bg-white/[0.04] border border-white/[0.08] text-white placeholder:text-white/30 font-body text-sm focus:outline-none focus:border-emerald-500/40 transition-colors"
-                aria-label="Email address for newsletter"
-              />
-              <button
-                type="button"
-                className="px-6 py-3 rounded-lg bg-emerald-500 hover:bg-emerald-400 text-midnight-950 font-semibold text-sm transition-colors"
-              >
-                Subscribe
-              </button>
-            </div>
-            <p className="text-xs text-white/30 mt-3 font-body">
-              No spam. Unsubscribe anytime.
-            </p>
-          </AnimatedSection>
-        </div>
-      </section>
-    </>
+        <section className="relative min-h-[210px] overflow-hidden border-t border-white/10 px-5 py-10 sm:px-8 lg:px-10">
+          <div className="absolute inset-0" aria-hidden>
+            <OptimizedImage
+              src="verified-restoration"
+              alt=""
+              fill
+              sizes="100vw"
+              className="object-cover opacity-[0.64]"
+            />
+            <div className="absolute inset-0 bg-gradient-to-r from-[#020509] via-[#020509]/[0.82] to-[#020509]/[0.34]" />
+          </div>
+          <div className="relative z-10 flex flex-col gap-5 sm:flex-row sm:items-center sm:justify-between">
+            <h2 className="max-w-xl font-display text-2xl leading-tight text-white sm:text-3xl">
+              Infrastructure for a credible carbon economy.
+            </h2>
+            <Link
+              href="/solutions/enterprise"
+              className="inline-flex min-h-11 items-center justify-center gap-2 rounded-md border border-emerald-400/[0.45] bg-emerald-400/[0.08] px-5 py-3 text-sm font-semibold text-emerald-100 transition-all hover:border-emerald-300 hover:bg-emerald-400/[0.14] hover:text-white"
+            >
+              Request access
+              <ArrowRight className="h-4 w-4" />
+            </Link>
+          </div>
+        </section>
+      </div>
+    </div>
   );
 }

@@ -89,7 +89,7 @@ const GENESIS_CONFIG = {
     {
       creditIndex: 0, // First credit batch
       amount: 50,
-      pricePerTonne: "25", // AETH
+      pricePerTonne: "25", // AETHEL
       minPurchase: 5,
       durationDays: 30,
     },
@@ -137,7 +137,7 @@ async function seedGenesis() {
   console.log(
     "💰 Balance:",
     formatEther(await ethers.provider.getBalance(deployer.address)),
-    "AETH"
+    "AETHEL"
   );
   console.log("");
 
@@ -381,7 +381,7 @@ async function seedGenesis() {
     console.log(`   📋 Listing #${i + 1}`);
     console.log(`      Token ID: ${tokenId}`);
     console.log(`      Amount: ${listing.amount} credits`);
-    console.log(`      Price: ${listing.pricePerTonne} AETH/credit`);
+    console.log(`      Price: ${listing.pricePerTonne} AETHEL/credit`);
     console.log(`      Min Purchase: ${listing.minPurchase} credits`);
     console.log(`      Duration: ${listing.durationDays} days`);
 

@@ -15,6 +15,7 @@ import { mintingProcessor } from "./processors/minting.processor.js";
 import { verificationProcessor } from "./processors/verification.processor.js";
 import { kycProcessor } from "./processors/kyc.processor.js";
 import { getWorkerRuntimeEnv } from "./lib/runtime-env.js";
+import { serializeError, workerLogger } from "./lib/logger.js";
 
 // Worker configuration
 const CONCURRENCY = parseInt(process.env.WORKER_CONCURRENCY || "5", 10);
@@ -41,43 +42,50 @@ async function createWorker<T, R>(
   });
 
   // Event handlers
-  worker.on("completed", (job, result) => {
-    console.log(`[${queueName}] Job ${job.id} completed:`, result);
+  worker.on("completed", (job, _result) => {
+    workerLogger.info({ queueName, jobId: job.id }, "Job completed");
   });
 
   worker.on("failed", (job, error) => {
-    console.error(`[${queueName}] Job ${job?.id} failed:`, error.message);
+    workerLogger.error(
+      { queueName, jobId: job?.id, err: serializeError(error) },
+      "Job failed"
+    );
   });
 
   worker.on("error", (error) => {
-    console.error(`[${queueName}] Worker error:`, error.message);
+    workerLogger.error(
+      { queueName, err: serializeError(error) },
+      "Worker error"
+    );
   });
 
   worker.on("stalled", (jobId) => {
-    console.warn(`[${queueName}] Job ${jobId} stalled`);
+    workerLogger.warn({ queueName, jobId }, "Job stalled");
   });
 
   workers.push(worker);
-  console.log(`[Worker] Started worker for queue: ${queueName}`);
+  workerLogger.info({ queueName }, "Started worker for queue");
 
   return worker;
 }
 
 async function startWorkers(): Promise<void> {
-  console.log(`
-  ╔════════════════════════════════════════════════════════╗
-  ║                                                        ║
-  ║   TerraQura Worker Service                             ║
-  ║   Enterprise-Grade Job Processing                      ║
-  ║                                                        ║
-  ╠════════════════════════════════════════════════════════╣
-  ║                                                        ║
-  ║   Starting workers with concurrency: ${CONCURRENCY}                 ║
-  ║   KYC provider: ${workerEnv.KYC_PROVIDER}                                        ║
-  ║   Environment: ${process.env.NODE_ENV || "development"}                             ║
-  ║                                                        ║
-  ╚════════════════════════════════════════════════════════╝
-  `);
+  const networkLabel = workerEnv.ACTIVE_NETWORK
+    ? `${workerEnv.ACTIVE_NETWORK.displayName} (${workerEnv.ACTIVE_NETWORK.chainId})`
+    : "not resolved";
+  const deploymentLabel = workerEnv.TERRAQURA_DEPLOYMENT ?? "not resolved";
+
+  workerLogger.info(
+    {
+      concurrency: CONCURRENCY,
+      kycProvider: workerEnv.KYC_PROVIDER,
+      network: networkLabel,
+      deployment: deploymentLabel,
+      environment: process.env.NODE_ENV || "development",
+    },
+    "Starting TerraQura worker service"
+  );
 
   try {
     // Start Minting Worker
@@ -110,29 +118,34 @@ async function startWorkers(): Promise<void> {
         }
       );
     } else {
-      console.log("[Worker] KYC worker disabled via KYC_PROVIDER=disabled");
+      workerLogger.warn(
+        { kycProvider: workerEnv.KYC_PROVIDER },
+        "KYC worker disabled by runtime configuration"
+      );
     }
 
-    console.log(`[Worker] All workers started successfully`);
-    console.log(`[Worker] Processing queues:`);
-    console.log(`  - ${QUEUE_NAMES.MINTING}`);
-    console.log(`  - ${QUEUE_NAMES.VERIFICATION}`);
-    if (workerEnv.KYC_PROVIDER !== "disabled") {
-      console.log(`  - ${QUEUE_NAMES.KYC_CHECK}`);
-    }
+    workerLogger.info(
+      {
+        queues: workers.map((worker) => worker.name),
+      },
+      "All workers started successfully"
+    );
   } catch (error) {
-    console.error("[Worker] Failed to start workers:", error);
+    workerLogger.error(
+      { err: serializeError(error) },
+      "Failed to start workers"
+    );
     throw error;
   }
 }
 
 async function gracefulShutdown(signal: string): Promise<void> {
-  console.log(`[Worker] Received ${signal}, shutting down gracefully...`);
+  workerLogger.info({ signal }, "Received shutdown signal");
 
   // Close all workers
   const closePromises = workers.map(async (worker) => {
     await worker.close();
-    console.log(`[Worker] Closed worker for ${worker.name}`);
+    workerLogger.info({ queueName: worker.name }, "Closed worker");
   });
 
   await Promise.all(closePromises);
@@ -140,7 +153,7 @@ async function gracefulShutdown(signal: string): Promise<void> {
   // Close Redis connections
   await closeConnections();
 
-  console.log("[Worker] Shutdown complete");
+  workerLogger.info("Shutdown complete");
   process.exit(0);
 }
 
@@ -150,16 +163,22 @@ process.on("SIGINT", () => gracefulShutdown("SIGINT"));
 
 // Handle uncaught errors
 process.on("uncaughtException", (error) => {
-  console.error("[Worker] Uncaught exception:", error);
-  gracefulShutdown("uncaughtException");
+  workerLogger.fatal(
+    { err: serializeError(error) },
+    "Uncaught exception"
+  );
+  void gracefulShutdown("uncaughtException");
 });
 
-process.on("unhandledRejection", (reason, promise) => {
-  console.error("[Worker] Unhandled rejection at:", promise, "reason:", reason);
+process.on("unhandledRejection", (reason, _promise) => {
+  workerLogger.error(
+    { err: serializeError(reason) },
+    "Unhandled promise rejection"
+  );
 });
 
 // Start the workers
 startWorkers().catch((error) => {
-  console.error("[Worker] Fatal error:", error);
+  workerLogger.fatal({ err: serializeError(error) }, "Fatal worker startup error");
   process.exit(1);
 });

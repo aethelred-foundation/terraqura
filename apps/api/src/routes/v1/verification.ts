@@ -4,6 +4,7 @@ import { VerificationStatus, calculateEfficiencyFactor } from "@terraqura/types"
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
+import { generateId } from "../../lib/ids.js";
 import { mutateState, readState } from "../../lib/state-store.js";
 
 const VerificationRequestSchema = z.object({
@@ -236,7 +237,7 @@ export async function verificationRoutes(
               .map((entry) => entry.sourceDataHash)
           );
 
-          const id = `ver_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          const id = generateId("ver");
           const requestedAt = new Date().toISOString();
           const result = computeVerificationResult({
             dacUnitId: body.dacUnitId,

@@ -7,7 +7,7 @@ import { CarbonFutures, TerraQuraAccessControl, MockERC1155 } from "../typechain
 describe("CarbonFutures", function () {
   const CREDIT_ID = 1;
   const AMOUNT = 100n;
-  const PRICE_PER_UNIT = ethers.parseEther("0.1"); // 0.1 AETH per credit
+  const PRICE_PER_UNIT = ethers.parseEther("0.1"); // 0.1 AETHEL per credit
   const COLLATERAL_BPS = 2000n; // 20%
   const SEVEN_DAYS = 7 * 24 * 3600;
 

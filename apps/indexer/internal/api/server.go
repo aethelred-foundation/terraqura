@@ -19,11 +19,17 @@ type Server struct {
 	logger    *zap.Logger
 	store     store.Store
 	startTime time.Time
+	runtime   RuntimeInfo
 }
 
 // NewServer creates a configured API server.
-func NewServer(st store.Store, port int, logger *zap.Logger) *Server {
+func NewServer(st store.Store, port int, logger *zap.Logger, runtimeInfo ...RuntimeInfo) *Server {
 	gin.SetMode(gin.ReleaseMode)
+
+	runtime := RuntimeInfo{}
+	if len(runtimeInfo) > 0 {
+		runtime = runtimeInfo[0]
+	}
 
 	s := &Server{
 		router:    gin.New(),
@@ -31,6 +37,7 @@ func NewServer(st store.Store, port int, logger *zap.Logger) *Server {
 		logger:    logger,
 		store:     st,
 		startTime: time.Now(),
+		runtime:   runtime,
 	}
 
 	s.setupMiddleware()
@@ -47,7 +54,7 @@ func (s *Server) setupMiddleware() {
 }
 
 func (s *Server) setupRoutes() {
-	h := NewHandlers(s.store, s.startTime)
+	h := NewHandlers(s.store, s.startTime, s.runtime)
 
 	s.router.GET("/health", h.Health)
 

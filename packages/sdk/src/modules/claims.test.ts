@@ -7,6 +7,7 @@ import { ClaimsModule } from "./claims.js";
 
 import type { InternalConfig } from "../types.js";
 import type { ITelemetry } from "../telemetry.js";
+import type { HealthScoreResult } from "./risk.js";
 
 // ============================================
 // Helpers
@@ -31,6 +32,7 @@ function makeConfig(): InternalConfig {
       carbonMarketplace: "0x0000000000000000000000000000000000000004",
       gaslessMarketplace: "0x0000000000000000000000000000000000000005",
       circuitBreaker: "0x0000000000000000000000000000000000000006",
+      riskOracle: "0x0000000000000000000000000000000000000007",
     },
     subgraphUrl: "",
     gas: { multiplier: 1.2, maxGasPrice: 100n, maxPriorityFee: 30n, cacheTtlMs: 15000, gasLimits: {} },
@@ -40,6 +42,22 @@ function makeConfig(): InternalConfig {
 }
 
 const VALID_ADDRESS = "0x1234567890abcdef1234567890abcdef12345678";
+
+const LOCAL_HEALTH_SCORE: HealthScoreResult = {
+  healthScore: 85,
+  failureProbabilityBps: 100,
+  riskTier: "low",
+  isInsurable: true,
+  factors: {
+    uptimeScore: 98,
+    stabilityScore: 90,
+    integrityScore: 85,
+    maintenanceAgePenalty: 0,
+    hardwareGenerationBonus: 2,
+    seasonalDriftPenalty: 0,
+  },
+  confidence: 0.9,
+};
 
 function setupModules() {
   const telemetry = makeTelemetry();
@@ -62,6 +80,7 @@ function createActivePolicy(
     purchasePriceWei: 10_000_000_000_000_000_000n,
     dacUnitId,
     buyerAddress: VALID_ADDRESS,
+    localHealthScore: LOCAL_HEALTH_SCORE,
   });
 }
 

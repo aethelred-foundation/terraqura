@@ -354,7 +354,7 @@ async function emergencyWithdraw(addresses: ContractAddresses, recipientAddress:
   const marketplaceAddress = await marketplace.getAddress();
   const balance = await ethers.provider.getBalance(marketplaceAddress);
 
-  console.log(`  Marketplace Balance: ${formatEther(balance)} AETH`);
+  console.log(`  Marketplace Balance: ${formatEther(balance)} AETHEL`);
 
   if (balance === 0n) {
     logWarning("No funds to withdraw");
@@ -362,7 +362,7 @@ async function emergencyWithdraw(addresses: ContractAddresses, recipientAddress:
   }
 
   const confirmed = await confirmAction(
-    `This will withdraw ${formatEther(balance)} AETH to ${recipientAddress}. This action is IRREVERSIBLE.`
+    `This will withdraw ${formatEther(balance)} AETHEL to ${recipientAddress}. This action is IRREVERSIBLE.`
   );
 
   if (!confirmed) {
@@ -382,7 +382,7 @@ async function emergencyWithdraw(addresses: ContractAddresses, recipientAddress:
 
     logSuccess(`Withdrawal complete`);
     logSuccess(`TX: ${receipt.hash}`);
-    logSuccess(`Amount: ${formatEther(balance)} AETH`);
+    logSuccess(`Amount: ${formatEther(balance)} AETHEL`);
     logSuccess(`Recipient: ${recipientAddress}`);
 
     return { success: true, incidentId, amount: formatEther(balance), txHash: receipt.hash };
@@ -480,13 +480,13 @@ async function healthCheck(addresses: ContractAddresses) {
     checks.push({
       name: "Marketplace",
       status: paused ? "WARN" : "OK",
-      details: `Paused: ${paused}, Balance: ${formatEther(balance)} AETH`,
+      details: `Paused: ${paused}, Balance: ${formatEther(balance)} AETHEL`,
     });
 
     if (paused) {
       logWarning("Marketplace is PAUSED");
     } else {
-      logSuccess(`Marketplace is operational (Balance: ${formatEther(balance)} AETH)`);
+      logSuccess(`Marketplace is operational (Balance: ${formatEther(balance)} AETHEL)`);
     }
   } catch (error: any) {
     checks.push({ name: "Marketplace", status: "FAIL", details: error.message });
@@ -503,7 +503,7 @@ async function healthCheck(addresses: ContractAddresses) {
     checks.push({
       name: "Network",
       status: "OK",
-      details: `Chain: ${network.chainId}, Block: ${block}, Gas: ${formatEther(gasPrice.gasPrice || 0n)} AETH`,
+      details: `Chain: ${network.chainId}, Block: ${block}, Gas: ${formatEther(gasPrice.gasPrice || 0n)} AETHEL`,
     });
 
     logSuccess(`Network OK (Chain ID: ${network.chainId}, Block: ${block})`);

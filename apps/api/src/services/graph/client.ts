@@ -1,10 +1,33 @@
 // TerraQura Graph Client
 // Fast blockchain data queries via The Graph
 
+import { createScopedLogger, serializeError } from "../../lib/logger.js";
+
 export interface GraphConfig {
   subgraphUrl: string;
   fallbackUrls?: string[];
   timeout?: number;
+}
+
+const DEFAULT_GRAPH_TIMEOUT_MS = 10000;
+const graphLogger = createScopedLogger("graph.client");
+
+function normalizeGraphUrls(urls: Array<string | undefined>): string[] {
+  return Array.from(
+    new Set(
+      urls
+        .map((url) => url?.trim())
+        .filter((url): url is string => Boolean(url)),
+    ),
+  );
+}
+
+function safeEndpointHost(url: string): string {
+  try {
+    return new URL(url).host;
+  } catch {
+    return "invalid-url";
+  }
 }
 
 export interface CarbonCredit {
@@ -91,9 +114,21 @@ export class GraphClient {
   private timeout: number;
 
   constructor(config: GraphConfig) {
-    this.subgraphUrl = config.subgraphUrl;
-    this.fallbackUrls = config.fallbackUrls || [];
-    this.timeout = config.timeout || 10000;
+    const [subgraphUrl, ...fallbackUrls] = normalizeGraphUrls([
+      config.subgraphUrl,
+      ...(config.fallbackUrls || []),
+    ]);
+
+    if (!subgraphUrl) {
+      throw new Error("GraphClient requires a non-empty subgraph URL");
+    }
+
+    this.subgraphUrl = subgraphUrl;
+    this.fallbackUrls = fallbackUrls;
+    this.timeout =
+      Number.isFinite(config.timeout) && config.timeout && config.timeout > 0
+        ? config.timeout
+        : DEFAULT_GRAPH_TIMEOUT_MS;
   }
 
   /**
@@ -106,10 +141,11 @@ export class GraphClient {
     const urls = [this.subgraphUrl, ...this.fallbackUrls];
     let lastError: Error | null = null;
 
-    for (const url of urls) {
+    for (const [endpointIndex, url] of urls.entries()) {
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
       try {
         const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), this.timeout);
+        timeoutId = setTimeout(() => controller.abort(), this.timeout);
 
         const response = await fetch(url, {
           method: "POST",
@@ -117,8 +153,6 @@ export class GraphClient {
           body: JSON.stringify({ query, variables }),
           signal: controller.signal,
         });
-
-        clearTimeout(timeoutId);
 
         if (!response.ok) {
           throw new Error(`HTTP ${response.status}: ${response.statusText}`);
@@ -136,7 +170,19 @@ export class GraphClient {
         return result.data as T;
       } catch (error) {
         lastError = error instanceof Error ? error : new Error(String(error));
-        console.warn(`Graph query failed for ${url}:`, lastError.message);
+        graphLogger.warn(
+          {
+            endpointIndex,
+            endpointCount: urls.length,
+            endpointHost: safeEndpointHost(url),
+            err: serializeError(lastError),
+          },
+          "Graph query failed for endpoint"
+        );
+      } finally {
+        if (timeoutId) {
+          clearTimeout(timeoutId);
+        }
       }
     }
 

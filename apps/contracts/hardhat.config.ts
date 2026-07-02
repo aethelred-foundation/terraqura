@@ -3,6 +3,7 @@ import "@openzeppelin/hardhat-upgrades";
 import "solidity-docgen";
 import * as dotenv from "dotenv";
 import { HardhatUserConfig } from "hardhat/config";
+import { NETWORKS } from "@terraqura/network-manifest";
 
 dotenv.config({ path: "../../.env.local" });
 
@@ -14,14 +15,21 @@ if (!PRIVATE_KEY && process.env.NODE_ENV === "production") {
 const REMOTE_ACCOUNTS = PRIVATE_KEY ? [PRIVATE_KEY] : [];
 
 // Aethelred Network Configuration (Sovereign EVM Chain)
-const AETHELRED_RPC_URL = process.env.AETHELRED_RPC_URL || "https://rpc.aethelred.network";
-const AETHELRED_TESTNET_RPC_URL = process.env.AETHELRED_TESTNET_RPC_URL || "https://rpc-testnet.aethelred.network";
-const AETHELRED_CHAIN_ID = parseInt(process.env.AETHELRED_CHAIN_ID || "123456");
-const AETHELRED_TESTNET_CHAIN_ID = 78432;
-const AETHELRED_EXPLORER_API = process.env.AETHELRED_EXPLORER_API || "https://explorer.aethelred.network/api";
-const AETHELRED_EXPLORER_URL = process.env.AETHELRED_EXPLORER_URL || "https://explorer.aethelred.network";
-const AETHELRED_TESTNET_EXPLORER_API = process.env.AETHELRED_TESTNET_EXPLORER_API || "https://explorer-testnet.aethelred.network/api";
-const AETHELRED_TESTNET_EXPLORER_URL = process.env.AETHELRED_TESTNET_EXPLORER_URL || "https://explorer-testnet.aethelred.network";
+const AETHELRED = NETWORKS.aethelred;
+const AETHELRED_TESTNET = NETWORKS.aethelredTestnet;
+const AETHELRED_RPC_URL = process.env.AETHELRED_RPC_URL || AETHELRED.rpcUrls[0];
+const AETHELRED_TESTNET_RPC_URL = process.env.AETHELRED_TESTNET_RPC_URL || AETHELRED_TESTNET.rpcUrls[0];
+const AETHELRED_CHAIN_ID = parseInt(process.env.AETHELRED_CHAIN_ID || String(AETHELRED.chainId), 10);
+const AETHELRED_TESTNET_CHAIN_ID = parseInt(
+  process.env.AETHELRED_TESTNET_CHAIN_ID || String(AETHELRED_TESTNET.chainId),
+  10,
+);
+const AETHELRED_EXPLORER_API = process.env.AETHELRED_EXPLORER_API || `${AETHELRED.explorerUrl}/api`;
+const AETHELRED_EXPLORER_URL = process.env.AETHELRED_EXPLORER_URL || AETHELRED.explorerUrl;
+const AETHELRED_TESTNET_EXPLORER_API =
+  process.env.AETHELRED_TESTNET_EXPLORER_API || `${AETHELRED_TESTNET.explorerUrl}/api`;
+const AETHELRED_TESTNET_EXPLORER_URL =
+  process.env.AETHELRED_TESTNET_EXPLORER_URL || AETHELRED_TESTNET.explorerUrl;
 const AETHELRED_API_KEY = process.env.AETHELRED_API_KEY || "any-string-blockscout";
 
 const config: HardhatUserConfig = {

@@ -87,9 +87,9 @@ export async function withRetry<T>(
         throw error;
       }
 
-      // Exponential backoff with jitter
+      // Exponential backoff with crypto-backed jitter
       const baseDelay = resolved.baseDelayMs * Math.pow(2, attempt);
-      const jitter = Math.random() * resolved.baseDelayMs;
+      const jitter = cryptoRandomUnitInterval() * resolved.baseDelayMs;
       const delay = Math.min(baseDelay + jitter, resolved.maxDelayMs);
 
       await sleep(delay);
@@ -97,6 +97,16 @@ export async function withRetry<T>(
   }
 
   throw lastError;
+}
+
+function cryptoRandomUnitInterval(): number {
+  const bytes = ethers.randomBytes(4);
+  const value = new DataView(
+    bytes.buffer,
+    bytes.byteOffset,
+    bytes.byteLength,
+  ).getUint32(0, false);
+  return value / 0x100000000;
 }
 
 // ============================================
@@ -196,6 +206,43 @@ export interface IIdempotencyBackend {
   delete(key: string): Promise<void> | void;
   /** Optional: cleanup resources (disconnect connections, clear timers). */
   destroy?(): Promise<void> | void;
+}
+
+// ============================================
+// Durable Session Store — Pluggable Backend
+// ============================================
+
+type MaybePromise<T> = T | Promise<T>;
+
+/**
+ * Generic durable session backend.
+ *
+ * Checkout, hosted payment, and partner-session flows should use this style of
+ * backend when running on multiple API instances or serverless workers. The
+ * `update` method is intentionally part of the contract so Redis/DynamoDB/Postgres
+ * adapters can implement atomic compare-and-set or transactional updates.
+ */
+export interface ISessionBackend<TSession> {
+  /** Get a session by id. Return undefined if it is absent. */
+  get(id: string): MaybePromise<TSession | undefined>;
+  /** Store or replace a session record. */
+  put(id: string, session: TSession): MaybePromise<void>;
+  /**
+   * Atomically update a session.
+   *
+   * Backends should avoid persisting changes if the updater throws.
+   * Return undefined when no session exists for the id.
+   */
+  update(
+    id: string,
+    updater: (session: TSession) => MaybePromise<TSession>,
+  ): MaybePromise<TSession | undefined>;
+  /** List sessions for analytics and admin views. */
+  list(): MaybePromise<TSession[]>;
+  /** Delete a session by id. */
+  delete(id: string): MaybePromise<void>;
+  /** Optional: cleanup resources or clear local state. */
+  destroy?(): MaybePromise<void>;
 }
 
 /**

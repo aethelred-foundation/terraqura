@@ -49,8 +49,8 @@ L4: Full Executive Team + Legal → 1 hour response
 | Service | Contact | Purpose |
 |---------|---------|---------|
 | AWS Support | Enterprise Support Portal | Infrastructure issues |
-| Polygon Team | security@polygon.technology | Chain-level issues |
-| Alchemy Support | support@alchemy.com | RPC issues |
+| Aethelred Network Operations | [REDACTED] | Chain-level issues |
+| RPC Provider Support | [REDACTED] | RPC issues |
 | Immunefi | [Bug Bounty Dashboard] | Vulnerability reports |
 | Legal Firm | [REDACTED] | Legal guidance |
 | PR Agency | [REDACTED] | Crisis communications |
@@ -368,7 +368,7 @@ Contact: security@terraqura.io
 
 #### Smart Contract Issues
 
-- [ ] Check recent transactions on PolygonScan
+- [ ] Check recent transactions on the active network explorer
 - [ ] Review The Graph indexer for anomalies
 - [ ] Check contract balances vs expected
 - [ ] Review recent multisig transactions

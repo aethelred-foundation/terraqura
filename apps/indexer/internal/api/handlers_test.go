@@ -88,6 +88,37 @@ func TestHealthEndpoint(t *testing.T) {
 	assert.Equal(t, "ok", resp["status"])
 }
 
+func TestHealthEndpointIncludesRuntimeInfo(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	st := store.NewInMemoryStore()
+	logger := zap.NewNop()
+	srv := NewServer(st, 8080, logger, RuntimeInfo{
+		NetworkKey:          "aethelredTestnet",
+		DeploymentKey:       "aethelredTestnetPending",
+		ChainID:             7332,
+		ManifestPath:        "packages/network-manifest/manifest.json",
+		StoreBackend:        "postgres",
+		IndexerEnabled:      true,
+		ContractFilterCount: 3,
+		Confirmations:       6,
+	})
+
+	w := httptest.NewRecorder()
+	req, _ := http.NewRequest("GET", "/health", nil)
+	srv.Router().ServeHTTP(w, req)
+
+	assert.Equal(t, http.StatusOK, w.Code)
+
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &resp))
+	assert.Equal(t, "aethelredTestnet", resp["network_key"])
+	assert.Equal(t, "aethelredTestnetPending", resp["deployment_key"])
+	assert.Equal(t, float64(7332), resp["chain_id"])
+	assert.Equal(t, "postgres", resp["store_backend"])
+	assert.Equal(t, true, resp["indexer_enabled"])
+	assert.Equal(t, float64(3), resp["contract_filter_count"])
+}
+
 func TestGetEvents_All(t *testing.T) {
 	router, st := setupTestRouter()
 	seedStore(t, st)

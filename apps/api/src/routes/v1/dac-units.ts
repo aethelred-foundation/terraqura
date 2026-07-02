@@ -1,9 +1,8 @@
-import { randomBytes } from "crypto";
-
 import { DACStatus } from "@terraqura/types";
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
+import { generateBytes32, generateId, generateTxHash } from "../../lib/ids.js";
 import { mutateState, readState } from "../../lib/state-store.js";
 
 const CreateDACUnitSchema = z.object({
@@ -53,10 +52,6 @@ const DAC_UNITS_STORE_KEY = "dac-units:v1";
 const DEFAULT_DAC_UNITS_STATE: DacUnitsState = {
   units: {},
 };
-
-function generateTxHash(): string {
-  return `0x${randomBytes(32).toString("hex")}`;
-}
 
 export async function dacUnitsRoutes(
   fastify: FastifyInstance,
@@ -229,8 +224,8 @@ export async function dacUnitsRoutes(
         DAC_UNITS_STORE_KEY,
         DEFAULT_DAC_UNITS_STATE,
         async (state) => {
-          const id = `dac_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-          const unitId = `0x${Buffer.from(id).toString("hex").padEnd(64, "0")}`;
+          const id = generateId("dac");
+          const unitId = generateBytes32();
           const createdAt = new Date().toISOString();
 
           const createdUnit: StoredDacUnit = {

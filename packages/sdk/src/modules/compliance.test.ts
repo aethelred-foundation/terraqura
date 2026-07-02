@@ -412,7 +412,7 @@ describe("ComplianceModule", () => {
         network: "aethelred", // mainnet has no contracts deployed yet
       });
       // Override addresses to avoid constructor validation issues
-      configNoSubgraph.addresses.carbonCredit = "0x29B58064fD95b175e5824767d3B18bACFafaF959";
+      configNoSubgraph.addresses.carbonCredit = TEST_ADDRESSES.carbonCredit;
       const complianceNoSub = new ComplianceModule(
         configNoSubgraph,
         telemetry,

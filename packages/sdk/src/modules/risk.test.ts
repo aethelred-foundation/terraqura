@@ -1,4 +1,5 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
+import { ethers } from "ethers";
 
 import { ValidationError } from "../errors.js";
 import { RiskModule } from "./risk.js";
@@ -6,6 +7,54 @@ import { RiskModule } from "./risk.js";
 import type { HealthScoreInput, HealthScoreResult } from "./risk.js";
 import type { InternalConfig } from "../types.js";
 import type { ITelemetry } from "../telemetry.js";
+
+// ============================================
+// Mock ethers.Contract
+// ============================================
+
+vi.mock("ethers", async () => {
+  const actual = await vi.importActual<typeof import("ethers")>("ethers");
+
+  const contractFunctions: Record<string, ReturnType<typeof vi.fn>> = {};
+  const contractAddresses: string[] = [];
+
+  class MockContract {
+    constructor(address: string) {
+      contractAddresses.push(address);
+    }
+
+    getFunction(name: string) {
+      if (!contractFunctions[name]) {
+        contractFunctions[name] = vi.fn();
+      }
+      return contractFunctions[name];
+    }
+  }
+
+  return {
+    ...actual,
+    ethers: {
+      ...actual.ethers,
+      Contract: MockContract,
+      __contractFunctions: contractFunctions,
+      __contractAddresses: contractAddresses,
+    },
+  };
+});
+
+function getContractFn(name: string): ReturnType<typeof vi.fn> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const fns = (ethers as any).__contractFunctions as Record<string, ReturnType<typeof vi.fn>>;
+  if (!fns[name]) {
+    fns[name] = vi.fn();
+  }
+  return fns[name];
+}
+
+function getContractAddresses(): string[] {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  return (ethers as any).__contractAddresses as string[];
+}
 
 // ============================================
 // Helpers
@@ -30,6 +79,7 @@ function makeConfig(overrides: Partial<InternalConfig> = {}): InternalConfig {
       carbonMarketplace: "0x0000000000000000000000000000000000000004",
       gaslessMarketplace: "0x0000000000000000000000000000000000000005",
       circuitBreaker: "0x0000000000000000000000000000000000000006",
+      riskOracle: "0x0000000000000000000000000000000000000007",
     },
     subgraphUrl: "",
     gas: {
@@ -68,7 +118,55 @@ describe("RiskModule", () => {
   let risk: RiskModule;
 
   beforeEach(() => {
+    vi.clearAllMocks();
+    getContractAddresses().length = 0;
     risk = new RiskModule(makeConfig(), makeTelemetry());
+  });
+
+  // -----------------------------------------------
+  // On-chain RiskOracle configuration
+  // -----------------------------------------------
+  describe("RiskOracle configuration", () => {
+    it("fails closed before contract calls when RiskOracle is not configured", async () => {
+      const baseConfig = makeConfig();
+      const unconfigured = new RiskModule(
+        makeConfig({
+          addresses: {
+            ...baseConfig.addresses,
+            riskOracle: ethers.ZeroAddress,
+          },
+        }),
+        makeTelemetry(),
+      );
+
+      await expect(unconfigured.getRiskProfile("dac-001")).rejects.toThrow(ValidationError);
+      expect(getContractAddresses()).toEqual([]);
+    });
+
+    it("uses the dedicated RiskOracle address for on-chain reads", async () => {
+      const updatedAt = Math.floor(Date.now() / 1000) - 12;
+      getContractFn("dacRiskProfiles").mockResolvedValue([
+        92n,
+        80n,
+        BigInt(updatedAt),
+        true,
+      ]);
+
+      const result = await risk.getRiskProfile("dac-001");
+
+      expect(getContractAddresses()).toEqual([
+        "0x0000000000000000000000000000000000000007",
+      ]);
+      expect(result).toMatchObject({
+        dacUnitId: "dac-001",
+        healthScore: 92,
+        failureProbabilityBps: 80,
+        lastUpdated: updatedAt,
+        isInsured: true,
+        riskTier: "minimal",
+      });
+      expect(result.staleness).toBeGreaterThanOrEqual(12);
+    });
   });
 
   // -----------------------------------------------

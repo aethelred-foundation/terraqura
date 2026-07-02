@@ -72,7 +72,7 @@ const USER_FRIENDLY_MESSAGES = {
   // Wallet errors
   'user rejected': 'Transaction was cancelled. No action was taken.',
   'user denied': 'Transaction was cancelled. No action was taken.',
-  'insufficient funds': 'Insufficient funds in your wallet. Please add more AETH.',
+  'insufficient funds': 'Insufficient funds in your wallet. Please add more AETHEL.',
   'insufficient balance': 'Insufficient balance for this transaction.',
 
   // Network errors
@@ -145,7 +145,7 @@ export function classifyError(error: unknown): ClassifiedError {
       technicalMessage: getErrorMessage(error),
       code: 'INSUFFICIENT_FUNDS',
       recoverable: true,
-      suggestedAction: 'Add more AETH to your wallet',
+      suggestedAction: 'Add more AETHEL to your wallet',
     };
   }
 
@@ -316,6 +316,50 @@ export interface ErrorReport {
   url?: string;
 }
 
+export interface ErrorReportResult {
+  status: 'sent' | 'skipped' | 'failed';
+  endpoint?: string;
+  httpStatus?: number;
+  reason?: string;
+}
+
+export function getSafeCurrentUrl(): string | undefined {
+  if (typeof window === 'undefined') {
+    return undefined;
+  }
+
+  const { origin, pathname } = window.location;
+  return `${origin}${pathname}`;
+}
+
+function resolveErrorReportingEndpoint(): ErrorReportResult | { endpoint: string } {
+  const endpoint = process.env.NEXT_PUBLIC_ERROR_REPORTING_URL;
+  if (!endpoint) {
+    return {
+      status: 'skipped',
+      reason: 'NEXT_PUBLIC_ERROR_REPORTING_URL is not configured',
+    };
+  }
+
+  try {
+    const parsed = new URL(endpoint);
+    if (parsed.protocol !== 'https:') {
+      return {
+        status: 'failed',
+        endpoint,
+        reason: 'NEXT_PUBLIC_ERROR_REPORTING_URL must use HTTPS',
+      };
+    }
+    return { endpoint: parsed.toString() };
+  } catch {
+    return {
+      status: 'failed',
+      endpoint,
+      reason: 'NEXT_PUBLIC_ERROR_REPORTING_URL is not a valid URL',
+    };
+  }
+}
+
 /**
  * Creates an error report for logging/monitoring
  */
@@ -337,39 +381,70 @@ export function createErrorReport(
       ...additionalContext,
     },
     userAgent: typeof window !== 'undefined' ? window.navigator.userAgent : undefined,
-    url: typeof window !== 'undefined' ? window.location.href : undefined,
+    url: getSafeCurrentUrl(),
   };
 }
 
 /**
- * Reports error to monitoring service (placeholder for integration)
- * In production, integrate with Sentry, DataDog, or similar
+ * Reports error to a configured monitoring intake endpoint.
  */
-export async function reportError(report: ErrorReport): Promise<void> {
+export async function reportError(report: ErrorReport): Promise<ErrorReportResult> {
   // Only report errors and critical severity
   if (report.severity === ErrorSeverity.INFO) {
-    return;
+    return { status: 'skipped', reason: 'info severity' };
   }
 
   // Log to console in development
   if (process.env.NODE_ENV === 'development') {
-    console.error('[TerraQura Error Report]', report);
-    return;
+    const developmentSink = globalThis.console;
+    developmentSink.error('[TerraQura Error Report]', report);
+    return { status: 'skipped', reason: 'development console logging' };
   }
 
-  // In production, send to monitoring service
-  // TODO: Integrate with Sentry or DataDog
-  try {
-    // Example: Send to analytics endpoint
-    // await fetch('/api/errors', {
-    //   method: 'POST',
-    //   headers: { 'Content-Type': 'application/json' },
-    //   body: JSON.stringify(report),
-    // });
-    console.error('[TerraQura Error]', report.code, report.message);
-  } catch {
-    // Fail silently - don't want error reporting to cause more errors
+  const endpointResult = resolveErrorReportingEndpoint();
+  if ('status' in endpointResult) {
+    return endpointResult;
   }
+  const { endpoint } = endpointResult;
+
+  try {
+    const response = await fetch(endpoint, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(report),
+      keepalive: true,
+    });
+
+    if (!response.ok) {
+      return {
+        status: 'failed',
+        endpoint,
+        httpStatus: response.status,
+        reason: response.statusText || 'error reporting endpoint rejected the event',
+      };
+    }
+
+    return { status: 'sent', endpoint, httpStatus: response.status };
+  } catch (error) {
+    return {
+      status: 'failed',
+      endpoint,
+      reason: error instanceof Error ? error.message : 'error reporting request failed',
+    };
+  }
+}
+
+/**
+ * Classify and report a client-side runtime error without forcing callers to
+ * duplicate report construction.
+ */
+export async function reportClientError(
+  error: unknown,
+  context?: Record<string, unknown>
+): Promise<ErrorReportResult> {
+  const classified = classifyError(error);
+  const report = createErrorReport(classified, context);
+  return reportError(report);
 }
 
 // ============================================

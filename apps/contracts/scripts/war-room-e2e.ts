@@ -62,7 +62,7 @@ const WAR_ROOM_CONFIG = {
   // Credit parameters
   credit: {
     co2Tonnes: 10, // Demo credit size
-    pricePerTonne: "25", // AETH
+    pricePerTonne: "25", // AETHEL
   },
 
   // Test timing (ms)
@@ -465,7 +465,7 @@ async function phase4MarketplaceTrading(
   const duration = 30 * 24 * 60 * 60; // 30 days
 
   log("Phase4", `Creating listing for ${sellAmount} credits...`);
-  log("Phase4", `Price: ${formatEther(pricePerUnit)} AETH per credit`);
+  log("Phase4", `Price: ${formatEther(pricePerUnit)} AETHEL per credit`);
 
   const listingTx = await marketplace.createListing(
     tokenId,
@@ -488,7 +488,7 @@ async function phase4MarketplaceTrading(
   log("Phase4", `Buyer purchasing ${purchaseAmount} credits...`);
 
   const totalCost = pricePerUnit * BigInt(purchaseAmount);
-  log("Phase4", `Total cost: ${formatEther(totalCost)} AETH`);
+  log("Phase4", `Total cost: ${formatEther(totalCost)} AETHEL`);
 
   const purchaseTx = await marketplace.connect(buyer).purchase(listingId, purchaseAmount, {
     value: totalCost,
@@ -592,11 +592,11 @@ async function runWarRoomSimulation() {
   console.log(`🔑 Deployer (Seller): ${deployer.address}`);
   console.log(`🔑 Buyer: ${buyer?.address || "Not available"}`);
   console.log(
-    `💰 Deployer Balance: ${formatEther(await ethers.provider.getBalance(deployer.address))} AETH`
+    `💰 Deployer Balance: ${formatEther(await ethers.provider.getBalance(deployer.address))} AETHEL`
   );
   if (buyer) {
     console.log(
-      `💰 Buyer Balance: ${formatEther(await ethers.provider.getBalance(buyer.address))} AETH`
+      `💰 Buyer Balance: ${formatEther(await ethers.provider.getBalance(buyer.address))} AETHEL`
     );
   }
   console.log("");

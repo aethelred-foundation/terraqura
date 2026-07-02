@@ -1,6 +1,7 @@
 // TerraQura Gasless Transaction Routes
 // API endpoints for meta-transaction relay
 
+import { getActiveDeployment, getNetwork } from "@terraqura/network-manifest";
 import { FastifyInstance } from "fastify";
 
 import { getGaslessRelayer } from "../../services/gasless/relayer.service.js";
@@ -264,8 +265,8 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
           data: forwardRequest.data,
         };
 
-        // Use Defender relay in production, direct relay otherwise
-        const result = process.env.DEFENDER_RELAYER_API_KEY
+        // Relay mode is resolved by the relayer service from validated config.
+        const result = relayer.getRelayMode() === "defender"
           ? await relayer.relayViaDefender(typedRequest, signature)
           : await relayer.relay(typedRequest, signature);
 
@@ -319,6 +320,9 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
                   enabled: { type: "boolean" },
                   forwarderAddress: { type: "string" },
                   chainId: { type: "number" },
+                  mode: { type: "string" },
+                  signingConfigured: { type: "boolean" },
+                  defenderConfigured: { type: "boolean" },
                 },
               },
             },
@@ -327,12 +331,18 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
       },
     },
     async (_request, _reply) => {
+      const deployment = getActiveDeployment(process.env);
+      const network = getNetwork(deployment.network);
+
       return {
         success: true,
         data: {
           enabled: relayer !== null,
           forwarderAddress: process.env.FORWARDER_CONTRACT || null,
-          chainId: parseInt(process.env.CHAIN_ID || "137", 10),
+          chainId: parseInt(process.env.CHAIN_ID || String(network.chainId), 10),
+          mode: relayer?.getRelayMode() ?? null,
+          signingConfigured: relayer?.hasSigningCapability() ?? false,
+          defenderConfigured: relayer?.hasDefenderCredentials() ?? false,
         },
       };
     }

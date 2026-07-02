@@ -130,7 +130,7 @@ describe("CarbonAMM", function () {
       expect(bobLp).to.be.gt(0);
     });
 
-    it("should revert with zero AETH", async function () {
+    it("should revert with zero AETHEL", async function () {
       const { amm, alice } = await loadFixture(fixtureWithPool);
       await expect(amm.connect(alice).addLiquidity(1, 10000n, 0, { value: 0 }))
         .to.be.revertedWithCustomError(amm, "ZeroAmount");
@@ -192,7 +192,7 @@ describe("CarbonAMM", function () {
         .to.be.revertedWithCustomError(amm, "InsufficientLpTokens");
     });
 
-    it("should revert if slippage on AETH exceeded", async function () {
+    it("should revert if slippage on AETHEL exceeded", async function () {
       const { amm, alice } = await loadFixture(fixtureWithLiquidity);
       const lpBalance = await amm.lpBalances(1, alice.address);
       await expect(
@@ -213,8 +213,8 @@ describe("CarbonAMM", function () {
   // SWAPS
   // ==========================================
 
-  describe("Swap AETH for Credits", function () {
-    it("should swap AETH for credits", async function () {
+  describe("Swap AETHEL for Credits", function () {
+    it("should swap AETHEL for credits", async function () {
       const { amm, bob, mockCredit } = await loadFixture(fixtureWithLiquidity);
       const creditsBefore = await mockCredit.balanceOf(bob.address, CREDIT_ID);
 
@@ -225,7 +225,7 @@ describe("CarbonAMM", function () {
       expect(creditsAfter).to.be.gt(creditsBefore);
     });
 
-    it("should revert with zero AETH", async function () {
+    it("should revert with zero AETHEL", async function () {
       const { amm, bob } = await loadFixture(fixtureWithLiquidity);
       await expect(amm.connect(bob).swapAethForCredits(1, 0, { value: 0 }))
         .to.be.revertedWithCustomError(amm, "ZeroAmount");
@@ -255,7 +255,7 @@ describe("CarbonAMM", function () {
       const bigIn = ethers.parseEther("5");
       const bigQuote = await amm.getQuote(1, bigIn, true);
 
-      // Price impact: big swap should cost more AETH per credit
+      // Price impact: big swap should cost more AETHEL per credit
       // effectivePrice = amountIn / creditsOut  (higher = worse for buyer)
       // For comparison: smallIn/smallQuote < bigIn/bigQuote
       // Rearranged to avoid division: smallIn * bigQuote < bigIn * smallQuote
@@ -263,8 +263,8 @@ describe("CarbonAMM", function () {
     });
   });
 
-  describe("Swap Credits for AETH", function () {
-    it("should swap credits for AETH", async function () {
+  describe("Swap Credits for AETHEL", function () {
+    it("should swap credits for AETHEL", async function () {
       const { amm, bob } = await loadFixture(fixtureWithLiquidity);
       const balanceBefore = await ethers.provider.getBalance(bob.address);
 
@@ -272,7 +272,7 @@ describe("CarbonAMM", function () {
 
       const balanceAfter = await ethers.provider.getBalance(bob.address);
       // Balance should increase (minus gas)
-      // We check the AETH was received by looking at the event
+      // We check the AETHEL was received by looking at the event
       expect(balanceAfter).to.be.gt(balanceBefore - ethers.parseEther("0.01"));
     });
 
@@ -282,7 +282,7 @@ describe("CarbonAMM", function () {
         .to.be.revertedWithCustomError(amm, "ZeroAmount");
     });
 
-    it("should enforce slippage protection on credit-to-AETH swaps", async function () {
+    it("should enforce slippage protection on credit-to-AETHEL swaps", async function () {
       const { amm, bob } = await loadFixture(fixtureWithLiquidity);
       await expect(
         amm.connect(bob).swapCreditsForAeth(1, 100n, ethers.parseEther("999"))

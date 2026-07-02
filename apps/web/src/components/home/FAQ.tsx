@@ -3,62 +3,25 @@
 import { useState, useRef, useEffect } from "react";
 import { motion, AnimatePresence, useInView } from "framer-motion";
 import { ChevronDown, ArrowRight } from "lucide-react";
+import { homeFaqs as faqs, type FAQItem } from "./faqs";
 
-interface FAQItem {
-  q: string;
-  a: string;
-}
-
-const faqs: FAQItem[] = [
-  {
-    q: "What is the Aethelred Protocol?",
-    a: "TerraQura's sovereign blockchain infrastructure purpose-built for enterprise carbon verification. Sub-second finality, gasless transactions, and full data sovereignty powering our Proof-of-Physics engine.",
-  },
-  {
-    q: "What is Proof-of-Physics?",
-    a: "Our proprietary verification engine that validates carbon capture claims against physical constraints. It checks energy consumption (200-600 kWh/tonne range), flow rates, and conditions. If the physics don't add up, the credit is rejected.",
-  },
-  {
-    q: "How is TerraQura different?",
-    a: "Legacy registries rely on self-reported data and quarterly manual audits. TerraQura uses real-time IoT sensors, a sovereign oracle, satellite cross-verification, and on-chain mathematical validation. Every credit is publicly verifiable.",
-  },
-  {
-    q: "Can enterprises buy without crypto?",
-    a: "Yes. Our gasless settlement system using ERC-2771 meta-transactions enables purchase via standard invoices and wire transfers. The blockchain interaction is fully abstracted.",
-  },
-  {
-    q: "Why build a sovereign chain?",
-    a: "Aethelred's security, performance, and governance are optimized specifically for carbon verification. Sub-second finality, gasless transactions, and full data sovereignty, purpose-built for enterprise carbon assets.",
-  },
-  {
-    q: "What is the regulatory status?",
-    a: "TerraQura is a Zhyra Holdings venture headquartered in Abu Dhabi. Incorporating under ADGM with full KYC/AML compliance via Sumsub and UAE data residency.",
-  },
-  {
-    q: "How are smart contracts secured?",
-    a: "UUPS upgradeable proxy pattern with OpenZeppelin standards, multi-sig wallet with timelock delays, and circuit breakers. Tier-1 security audit before mainnet launch.",
-  },
-  {
-    q: "When does the protocol launch?",
-    a: "Testnet targeted for Q3 2026. Currently in smart contract development. Mainnet with institutional pilots follows the validation period. Actively engaging enterprise partners.",
-  },
-  {
-    q: "What types of carbon credits does TerraQura support?",
-    a: "TerraQura focuses exclusively on Direct Air Capture (DAC) carbon removal credits. Unlike nature-based offsets that rely on estimates and projections, DAC produces measurable, verifiable removal data that our Proof-of-Physics engine can validate in real-time.",
-  },
-  {
-    q: "How does satellite cross-verification work?",
-    a: "Satellite imagery provides an independent verification layer alongside IoT sensor data. We cross-reference facility operational status, thermal signatures, and environmental conditions against reported capture data to detect anomalies and ensure data integrity.",
-  },
-];
-
-function FAQCard({ item, index, isVisible }: { item: FAQItem; index: number; isVisible: boolean }) {
+function FAQCard({
+  item,
+  index,
+  isVisible,
+}: {
+  item: FAQItem;
+  index: number;
+  isVisible: boolean;
+}) {
   const [isOpen, setIsOpen] = useState(false);
 
   return (
     <motion.div
       className={`rounded-xl bg-white/[0.02] border overflow-hidden transition-colors duration-300 ${
-        isOpen ? "border-emerald-500/20 bg-emerald-500/[0.02]" : "border-white/[0.06] hover:border-white/10"
+        isOpen
+          ? "border-emerald-500/20 bg-emerald-500/[0.02]"
+          : "border-white/[0.06] hover:border-white/10"
       }`}
       initial={false}
       animate={isVisible ? { opacity: 1, y: 0 } : {}}
@@ -69,7 +32,9 @@ function FAQCard({ item, index, isVisible }: { item: FAQItem; index: number; isV
         className="w-full flex items-start justify-between gap-3 px-5 py-4 text-left transition-colors"
         aria-expanded={isOpen}
       >
-        <span className="text-white/90 font-semibold text-sm leading-snug">{item.q}</span>
+        <span className="text-white/90 font-semibold text-sm leading-snug">
+          {item.q}
+        </span>
         <motion.div
           className="w-6 h-6 rounded-md bg-white/[0.04] flex items-center justify-center shrink-0 mt-0.5"
           animate={{ rotate: isOpen ? 180 : 0 }}
@@ -110,38 +75,85 @@ export function FAQ() {
   const rightColumn = faqs.filter((_, i) => i % 2 === 1);
 
   return (
-    <section ref={sectionRef} className="relative py-16 sm:py-20 overflow-hidden" aria-labelledby="faq-heading">
-      <div className="container mx-auto px-6 sm:px-8 lg:px-10 relative z-10">
-        {/* Header */}
-        <motion.div className="text-center mb-10" initial={false} animate={visible ? { opacity: 1, y: 0 } : {}} transition={{ duration: 0.6 }}>
-          <h2 id="faq-heading" className="text-display-sm font-display text-white mb-3">
-            Frequently Asked{" "}
-            <span className="text-emerald-500">Questions</span>
+    <section
+      ref={sectionRef}
+      className="relative section-padding overflow-hidden"
+      aria-labelledby="faq-heading"
+    >
+      {/* Background - soft top glow + blueprint */}
+      <div
+        className="absolute inset-0 bg-blueprint-fine opacity-[0.4] pointer-events-none"
+        aria-hidden
+      />
+      <div
+        className="absolute top-0 left-1/2 -translate-x-1/2 h-[28rem] w-[60rem] pointer-events-none"
+        aria-hidden
+        style={{
+          background:
+            "radial-gradient(60% 60% at 50% 0%, rgba(16,185,129,0.06), transparent 70%)",
+        }}
+      />
+
+      <div className="container-premium relative z-10">
+        {/* Header - editorial */}
+        <div className="mb-10 lg:mb-12 max-w-3xl">
+          <span className="kicker mb-6">
+            <span className="kicker-num">08</span>
+            Common Questions
+          </span>
+          <h2
+            id="faq-heading"
+            className="font-display text-display lg:text-display-lg text-white leading-[1.06]"
+          >
+            What you actually want to know,{" "}
+            <span className="accent-italic">in plain English.</span>
           </h2>
-          <p className="text-white/50 text-sm font-body max-w-2xl mx-auto">
-            Everything you need to know about the Aethelred Protocol and Proof-of-Physics verification.
+          <p className="mt-5 max-w-xl text-body text-white/70 font-body leading-relaxed">
+            Everything you need to know about the Aethelred Protocol,
+            Proof-of-Physics, and what makes a TerraQura credit different.
           </p>
-        </motion.div>
+        </div>
 
         {/* 2-Column FAQ Grid */}
-        <div className="max-w-5xl mx-auto grid md:grid-cols-2 gap-3">
+        <div className="max-w-6xl grid md:grid-cols-2 gap-3">
           <div className="space-y-3">
             {leftColumn.map((faq, index) => (
-              <FAQCard key={index * 2} item={faq} index={index * 2} isVisible={visible} />
+              <FAQCard
+                key={index * 2}
+                item={faq}
+                index={index * 2}
+                isVisible={visible}
+              />
             ))}
           </div>
           <div className="space-y-3">
             {rightColumn.map((faq, index) => (
-              <FAQCard key={index * 2 + 1} item={faq} index={index * 2 + 1} isVisible={visible} />
+              <FAQCard
+                key={index * 2 + 1}
+                item={faq}
+                index={index * 2 + 1}
+                isVisible={visible}
+              />
             ))}
           </div>
         </div>
 
         {/* Contact CTA */}
-        <motion.div className="text-center mt-8" initial={false} animate={visible ? { opacity: 1 } : {}} transition={{ delay: 0.5 }}>
-          <a href="mailto:hello@terraqura.com" className="inline-flex items-center gap-2 text-emerald-500/70 hover:text-emerald-400 text-sm font-medium transition-colors">
-            Have more questions? Contact our team
-            <ArrowRight className="w-3.5 h-3.5" />
+        <motion.div
+          className="mt-12 inline-flex items-center gap-3 rounded-2xl border border-white/[0.06] bg-white/[0.02] backdrop-blur-md px-5 py-3.5"
+          initial={false}
+          animate={visible ? { opacity: 1 } : {}}
+          transition={{ delay: 0.45 }}
+        >
+          <span className="text-[13px] text-white/65 font-body">
+            Need something else?
+          </span>
+          <a
+            href="mailto:hello@terraqura.com"
+            className="inline-flex items-center gap-1.5 text-[13px] font-semibold text-emerald-300 hover:text-emerald-200 transition-colors"
+          >
+            hello@terraqura.com
+            <ArrowRight className="h-3.5 w-3.5" />
           </a>
         </motion.div>
       </div>

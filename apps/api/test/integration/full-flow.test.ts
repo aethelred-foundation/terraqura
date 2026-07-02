@@ -10,6 +10,16 @@ import { describe, it, expect, vi, beforeAll } from "vitest";
 // Shared in-memory store used across all route modules
 // ---------------------------------------------------------------------------
 const store = new Map<string, unknown>();
+const domainEvents: DomainEventCapture[] = [];
+
+interface DomainEventCapture {
+  eventType: string;
+  aggregateType: string;
+  aggregateId: string;
+  chainId?: number;
+  txHash?: string;
+  payload: Record<string, unknown>;
+}
 
 vi.mock("../../src/lib/state-store.js", () => ({
   readState: vi.fn(async <T>(key: string, defaultState: T): Promise<T> => {
@@ -19,15 +29,23 @@ vi.mock("../../src/lib/state-store.js", () => ({
     async <T, R>(
       key: string,
       defaultState: T,
-      mutator: (state: T) => Promise<R> | R,
+      mutator: (
+        state: T,
+        context: { recordDomainEvent(input: unknown): void },
+      ) => Promise<R> | R,
     ): Promise<R> => {
       const current = (store.get(key) as T) ?? structuredClone(defaultState);
       const mutableState = structuredClone(current);
-      const result = await mutator(mutableState);
+      const result = await mutator(mutableState, {
+        recordDomainEvent: (input: unknown) => {
+          domainEvents.push(input as DomainEventCapture);
+        },
+      });
       store.set(key, mutableState);
       return result;
     },
   ),
+  closeStateStore: vi.fn(async () => undefined),
 }));
 
 vi.mock("../../src/lib/runtime-env.js", () => ({
@@ -63,7 +81,9 @@ const OPERATOR_WALLET = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const BUYER_WALLET = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
 function sign(app: FastifyInstance, payload: object): string {
-  return (app as unknown as { jwt: { sign: (p: object) => string } }).jwt.sign(payload);
+  return (app as unknown as { jwt: { sign: (p: object) => string } }).jwt.sign(
+    payload,
+  );
 }
 
 async function buildApp() {
@@ -84,7 +104,10 @@ async function buildApp() {
     } catch {
       return reply.status(401).send({
         success: false,
-        error: { code: "UNAUTHORIZED", message: "Missing or invalid bearer token" },
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Missing or invalid bearer token",
+        },
       });
     }
   });
@@ -108,6 +131,7 @@ describe("full lifecycle integration", () => {
 
   beforeAll(async () => {
     store.clear();
+    domainEvents.length = 0;
     app = await buildApp();
   });
 
@@ -142,7 +166,10 @@ describe("full lifecycle integration", () => {
   // ---------------------------------------------------------------
 
   it("step 2: whitelist the DAC unit", async () => {
-    const adminToken = sign(app, { address: OPERATOR_WALLET, userType: "admin" });
+    const adminToken = sign(app, {
+      address: OPERATOR_WALLET,
+      userType: "admin",
+    });
     const res = await app.inject({
       method: "POST",
       url: `/v1/dac-units/${dacUnitId}/whitelist`,
@@ -437,5 +464,68 @@ describe("full lifecycle integration", () => {
       },
     });
     expect(res.statusCode).toBe(409);
+  });
+
+  // ---------------------------------------------------------------
+  // 16. Domain event spine links golden workflow
+  // ---------------------------------------------------------------
+
+  it("step 16: typed domain events link mint, trade, and retirement", () => {
+    expect(domainEvents.map((event) => event.eventType)).toEqual([
+      "carbon_credit.minted",
+      "market_listing.created",
+      "market_purchase.settled",
+      "carbon_credit.retired",
+    ]);
+
+    const [minted, listed, purchased, retired] = domainEvents;
+    expect(minted).toMatchObject({
+      aggregateType: "carbon_credit",
+      aggregateId: creditId,
+      payload: {
+        creditId,
+        verificationId,
+        ownerWallet: OPERATOR_WALLET,
+      },
+    });
+
+    const tokenId = minted.payload.tokenId;
+    expect(tokenId).toBeTruthy();
+    expect(listed).toMatchObject({
+      aggregateType: "market_listing",
+      aggregateId: listingId,
+      payload: {
+        listingId,
+        tokenId,
+        sellerWallet: OPERATOR_WALLET,
+      },
+    });
+    expect(purchased).toMatchObject({
+      aggregateType: "market_purchase",
+      payload: {
+        listingId,
+        tokenId,
+        buyerWallet: BUYER_WALLET,
+        sellerWallet: OPERATOR_WALLET,
+      },
+    });
+    expect(retired).toMatchObject({
+      aggregateType: "carbon_credit",
+      aggregateId: creditId,
+      payload: {
+        creditId,
+        tokenId,
+        retiredByWallet: OPERATOR_WALLET,
+        fullyRetired: true,
+      },
+    });
+
+    const chainIds = new Set(domainEvents.map((event) => event.chainId));
+    expect(chainIds.size).toBe(1);
+    expect([...chainIds][0]).toBeGreaterThan(0);
+
+    for (const event of domainEvents) {
+      expect(event.txHash).toMatch(/^0x[a-f0-9]{64}$/);
+    }
   });
 });

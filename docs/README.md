@@ -12,6 +12,9 @@
 | API Reference | REST API endpoints, authentication, webhooks | [api/](api/) |
 | Smart Contracts | 25 Solidity contracts, roles, upgrade process | [contracts/](contracts/) |
 | Compliance | ADGM, ITMO/Article 6, KYC tiers, data residency | [compliance/](compliance/) |
+| Platform Manifest | Network/deployment source of truth | [platform/NETWORK_DEPLOYMENT_MANIFEST.md](platform/NETWORK_DEPLOYMENT_MANIFEST.md) |
+| Golden Workflows | Enterprise hardening focus | [platform/GOLDEN_WORKFLOWS.md](platform/GOLDEN_WORKFLOWS.md) |
+| Enterprise Readiness | Minimum readiness envelope | [platform/ENTERPRISE_READINESS.md](platform/ENTERPRISE_READINESS.md) |
 | Disaster Recovery | RTO/RPO targets, failover procedures | [DISASTER_RECOVERY.md](DISASTER_RECOVERY.md) |
 | Gas Optimization | Contract gas benchmarks and optimization notes | [GAS_OPTIMIZATION_REVIEW.md](GAS_OPTIMIZATION_REVIEW.md) |
 
@@ -36,7 +39,8 @@ TerraQura is a full-stack, institutional-grade carbon credit platform built on *
 | Smart contracts | 25 (Solidity 0.8.28, UUPS upgradeable) |
 | Test coverage | 881+ tests passing across all layers |
 | Dashboard pages | 8 operational |
-| Deployment target | Aethelred Testnet (pre-mainnet) |
+| Deployment target | Aethelred Testnet (pending canonical deployment manifest) |
+| Legacy validation deployment | Polygon Amoy v3 final manifest dated 2026-02-02 |
 | License | Apache 2.0 |
 
 ---
@@ -56,9 +60,9 @@ terraqura/
     indexer/        Go blockchain indexer
   packages/
     config/         Shared ESLint and TypeScript configs
-    contract-types/ Generated TypeChain typings
     database/       Drizzle ORM schema and migrations
     monitoring/     Prometheus metrics and alerting
+    network-manifest/ Canonical network and deployment metadata
     queue/          BullMQ queue definitions
     sdk/            Client SDK
     subgraph/       The Graph subgraph definitions

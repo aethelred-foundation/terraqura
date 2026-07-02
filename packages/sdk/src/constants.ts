@@ -6,6 +6,13 @@
  * type narrowing.
  */
 
+import {
+  DEPLOYMENTS,
+  NETWORKS,
+  PLATFORM_CONFIG as MANIFEST_PLATFORM_CONFIG,
+  type ContractAddresses as ManifestContractAddresses,
+} from "@terraqura/network-manifest";
+
 // ============================================
 // Network Types & Configs
 // ============================================
@@ -28,26 +35,20 @@ export interface NetworkConfig {
 
 export const NETWORK_CONFIGS: Record<NetworkName, NetworkConfig> = {
   "aethelred-testnet": {
-    chainId: 78432,
-    name: "aethelred-testnet",
-    displayName: "Aethelred Testnet",
-    rpcUrls: [
-      "https://rpc-testnet.aethelred.network",
-      "https://testnet.aethelred.drpc.org",
-    ],
-    explorerUrl: "https://explorer-testnet.aethelred.network",
-    nativeCurrency: { name: "AETH", symbol: "AETH", decimals: 18 },
+    chainId: NETWORKS.aethelredTestnet.chainId,
+    name: NETWORKS.aethelredTestnet.name,
+    displayName: NETWORKS.aethelredTestnet.displayName,
+    rpcUrls: NETWORKS.aethelredTestnet.rpcUrls,
+    explorerUrl: NETWORKS.aethelredTestnet.explorerUrl,
+    nativeCurrency: NETWORKS.aethelredTestnet.nativeCurrency,
   },
   aethelred: {
-    chainId: 78431,
-    name: "aethelred",
-    displayName: "Aethelred Mainnet",
-    rpcUrls: [
-      "https://rpc.aethelred.network",
-      "https://mainnet.aethelred.drpc.org",
-    ],
-    explorerUrl: "https://explorer.aethelred.network",
-    nativeCurrency: { name: "AETH", symbol: "AETH", decimals: 18 },
+    chainId: NETWORKS.aethelred.chainId,
+    name: NETWORKS.aethelred.name,
+    displayName: NETWORKS.aethelred.displayName,
+    rpcUrls: NETWORKS.aethelred.rpcUrls,
+    explorerUrl: NETWORKS.aethelred.explorerUrl,
+    nativeCurrency: NETWORKS.aethelred.nativeCurrency,
   },
 } as const;
 
@@ -64,29 +65,26 @@ export interface ContractAddresses {
   readonly multisig: string;
   readonly timelock: string;
   readonly circuitBreaker: string;
+  readonly riskOracle: string;
+}
+
+function toSdkContractAddresses(addresses: ManifestContractAddresses): ContractAddresses {
+  return {
+    accessControl: addresses.accessControl,
+    verificationEngine: addresses.verificationEngine,
+    carbonCredit: addresses.carbonCredit,
+    carbonMarketplace: addresses.carbonMarketplace,
+    gaslessMarketplace: addresses.gaslessMarketplace,
+    multisig: addresses.multisig,
+    timelock: addresses.timelock,
+    circuitBreaker: addresses.circuitBreaker,
+    riskOracle: addresses.riskOracle,
+  };
 }
 
 export const CONTRACT_ADDRESSES: Record<NetworkName, ContractAddresses> = {
-  "aethelred-testnet": {
-    accessControl: "0x55695aAAEC30AB495074c57e85Ae2E1A4866B83b",
-    verificationEngine: "0x8dad7E87646e9607Fae225e3A7EAD17ce179dEA8",
-    carbonCredit: "0x29B58064fD95b175e5824767d3B18bACFafaF959",
-    carbonMarketplace: "0x5a4cb32709AB829E2918F0a914FBa1e0Dab2Fdec",
-    gaslessMarketplace: "0x45a65e46e8C1D588702cB659b7d3786476Be0A80",
-    multisig: "0x0805E6ffDE71fd798F3Fe787D1dC907aABA65bAD",
-    timelock: "0xb8b01581d61Bf2D58B8B8626Ebb7Ab959ccF6354",
-    circuitBreaker: "0x24192ecf06aA782F1dF69878413D217d9319e257",
-  },
-  aethelred: {
-    accessControl: "",
-    verificationEngine: "",
-    carbonCredit: "",
-    carbonMarketplace: "",
-    gaslessMarketplace: "",
-    multisig: "",
-    timelock: "",
-    circuitBreaker: "",
-  },
+  "aethelred-testnet": toSdkContractAddresses(DEPLOYMENTS.aethelredTestnetPending.contracts),
+  aethelred: toSdkContractAddresses(DEPLOYMENTS.aethelredMainnetPending.contracts),
 } as const;
 
 // ============================================
@@ -95,11 +93,11 @@ export const CONTRACT_ADDRESSES: Record<NetworkName, ContractAddresses> = {
 
 export const PLATFORM_CONFIG = {
   /** Platform fee in basis points (250 = 2.5%) */
-  platformFeeBps: 250,
+  platformFeeBps: MANIFEST_PLATFORM_CONFIG.platformFeeBps,
   /** Fee recipient address */
-  feeRecipient: "0x7F6A87fE3191FFBFa06D37939F3a3a4341159ABc",
+  feeRecipient: MANIFEST_PLATFORM_CONFIG.feeRecipient,
   /** Basis points scale */
-  BPS_SCALE: 10_000,
+  BPS_SCALE: MANIFEST_PLATFORM_CONFIG.BPS_SCALE,
 } as const;
 
 // ============================================

@@ -1,4 +1,11 @@
 import { ethers } from "hardhat";
+import {
+  getActiveDeployment,
+  getActiveDeploymentKey,
+  getNetwork,
+  requireContractAddress,
+  withContractAddressOverrides,
+} from "@terraqura/network-manifest";
 
 /**
  * TerraQura Investor Demo Script
@@ -11,19 +18,23 @@ import { ethers } from "hardhat";
  * 5. Execute a trade
  * 6. Demonstrate emergency controls
  *
- * Run: npx hardhat run scripts/investor-demo.ts --network aethelredTestnet
+ * Run: TERRAQURA_DEPLOYMENT=<deployed-manifest> npx hardhat run scripts/investor-demo.ts --network aethelredTestnet
  */
 
-// Solidity 0.8.28 - All contracts bug-free (v3 Final)
+const ACTIVE_DEPLOYMENT_KEY = getActiveDeploymentKey(process.env);
+const ACTIVE_DEPLOYMENT = getActiveDeployment(process.env);
+const ACTIVE_NETWORK = getNetwork(ACTIVE_DEPLOYMENT.network);
+const ACTIVE_CONTRACTS = withContractAddressOverrides(ACTIVE_DEPLOYMENT.contracts, process.env);
+
 const CONTRACTS = {
-  accessControl: "0x55695aAAEC30AB495074c57e85Ae2E1A4866B83b",
-  verificationEngine: "0x8dad7E87646e9607Fae225e3A7EAD17ce179dEA8",
-  carbonCredit: "0x29B58064fD95b175e5824767d3B18bACFafaF959",
-  carbonMarketplace: "0x5a4cb32709AB829E2918F0a914FBa1e0Dab2Fdec",
-  multisig: "0x0805E6ffDE71fd798F3Fe787D1dC907aABA65bAD",
-  timelock: "0xb8b01581d61Bf2D58B8B8626Ebb7Ab959ccF6354",
-  circuitBreaker: "0x24192ecf06aA782F1dF69878413D217d9319e257",
-  gaslessMarketplace: "0x45a65e46e8C1D588702cB659b7d3786476Be0A80",
+  accessControl: requireContractAddress(ACTIVE_CONTRACTS, "accessControl", ACTIVE_DEPLOYMENT_KEY),
+  verificationEngine: requireContractAddress(ACTIVE_CONTRACTS, "verificationEngine", ACTIVE_DEPLOYMENT_KEY),
+  carbonCredit: requireContractAddress(ACTIVE_CONTRACTS, "carbonCredit", ACTIVE_DEPLOYMENT_KEY),
+  carbonMarketplace: requireContractAddress(ACTIVE_CONTRACTS, "carbonMarketplace", ACTIVE_DEPLOYMENT_KEY),
+  multisig: requireContractAddress(ACTIVE_CONTRACTS, "multisig", ACTIVE_DEPLOYMENT_KEY),
+  timelock: requireContractAddress(ACTIVE_CONTRACTS, "timelock", ACTIVE_DEPLOYMENT_KEY),
+  circuitBreaker: requireContractAddress(ACTIVE_CONTRACTS, "circuitBreaker", ACTIVE_DEPLOYMENT_KEY),
+  gaslessMarketplace: requireContractAddress(ACTIVE_CONTRACTS, "gaslessMarketplace", ACTIVE_DEPLOYMENT_KEY),
   testDacId: "0x45ccede947d5f744703ab7f5ba091940677382ac34daf7f8de21769129b88c55",
 };
 
@@ -58,7 +69,8 @@ async function main() {
 ║               with Proof-of-Physics Verification               ║
 ║                                                                ║
 ╠════════════════════════════════════════════════════════════════╣
-║  Network: Aethelred Testnet (Chain ID: 78432)                 ║
+║  Network: ${ACTIVE_NETWORK.displayName} (Chain ID: ${ACTIVE_NETWORK.chainId})  ║
+║  Deployment: ${ACTIVE_DEPLOYMENT_KEY}  ║
 ║  Demo Account: ${deployer.address}  ║
 ╚════════════════════════════════════════════════════════════════╝
   `);
@@ -178,7 +190,7 @@ async function main() {
       subSection("Creating marketplace listing...");
       console.log("    Token ID: " + tokenId?.toString().slice(0, 20) + "...");
       console.log("    Amount: 500 credits");
-      console.log("    Price: 0.01 AETH per credit");
+      console.log("    Price: 0.01 AETHEL per credit");
 
       // Approve marketplace
       console.log("\n    Approving marketplace...");
@@ -191,7 +203,7 @@ async function main() {
       const listTx = await marketplace.createListing(
         tokenId,
         500, // 500 credits
-        ethers.parseEther("0.01"), // 0.01 AETH per credit
+        ethers.parseEther("0.01"), // 0.01 AETHEL per credit
         50, // minimum 50 credits per purchase
         7 * 24 * 60 * 60 // 7 day listing duration
       );

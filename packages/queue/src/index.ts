@@ -2,4 +2,5 @@
 // Enterprise-grade async job processing
 
 export * from "./connection.js";
+export * from "./logger.js";
 export * from "./queues.js";

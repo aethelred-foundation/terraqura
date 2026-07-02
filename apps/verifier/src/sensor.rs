@@ -219,7 +219,10 @@ pub fn detect_tampering(readings: &[SensorReading]) -> TamperingResult {
     let temp_values: Vec<f64> = readings.iter().map(|r| r.temperature).collect();
 
     // Check for constant CO2
-    if co2_values.windows(2).all(|w| (w[0] - w[1]).abs() < f64::EPSILON) {
+    if co2_values
+        .windows(2)
+        .all(|w| (w[0] - w[1]).abs() < f64::EPSILON)
+    {
         reasons.push("all CO2 readings are identical".into());
         confidence += 0.4;
     }
@@ -254,11 +257,7 @@ pub fn detect_tampering(readings: &[SensorReading]) -> TamperingResult {
     // Check for perfectly linear progression (manufactured data)
     if readings.len() >= 3 {
         let diffs: Vec<f64> = co2_values.windows(2).map(|w| w[1] - w[0]).collect();
-        if diffs.len() >= 2
-            && diffs
-                .windows(2)
-                .all(|w| (w[0] - w[1]).abs() < 1e-10)
-        {
+        if diffs.len() >= 2 && diffs.windows(2).all(|w| (w[0] - w[1]).abs() < 1e-10) {
             reasons.push("CO2 values follow a perfectly linear pattern".into());
             confidence += 0.3;
         }

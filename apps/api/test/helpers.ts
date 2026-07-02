@@ -11,13 +11,15 @@ import { vi } from "vitest";
 // 1. Environment variables (must be set before any source module is imported)
 // ---------------------------------------------------------------------------
 
-process.env.DATABASE_URL = "postgresql://test:test@localhost:5432/terraqura_test";
+process.env.DATABASE_URL =
+  "postgresql://test:test@localhost:5432/terraqura_test";
 process.env.JWT_SECRET = "test-jwt-secret-that-is-at-least-32-characters-long";
 process.env.SIWE_DOMAIN = "localhost";
 process.env.NODE_ENV = "test";
 process.env.LOG_LEVEL = "silent";
 process.env.KYC_PROVIDER = "disabled";
-process.env.SENSOR_API_KEYS = "test-sensor-key-1:dac-unit-001,test-sensor-key-2:dac-unit-002";
+process.env.SENSOR_API_KEYS =
+  "test-sensor-key-1:dac-unit-001,test-sensor-key-2:dac-unit-002";
 
 // ---------------------------------------------------------------------------
 // 2. In-memory state store mock
@@ -50,16 +52,25 @@ vi.mock("../src/lib/state-store.js", () => ({
   async mutateState<T, R>(
     storeKey: string,
     defaultState: T,
-    mutator: (state: T) => Promise<R> | R,
+    mutator: (
+      state: T,
+      context: { recordDomainEvent(input: unknown): void },
+    ) => Promise<R> | R,
   ): Promise<R> {
     const stored = stateMap.get(storeKey);
     const current =
       stored !== undefined
         ? (structuredClone(stored) as T)
         : structuredClone(defaultState);
-    const result = await mutator(current);
+    const result = await mutator(current, {
+      recordDomainEvent: vi.fn(),
+    });
     stateMap.set(storeKey, structuredClone(current));
     return result;
+  },
+
+  async closeStateStore(): Promise<void> {
+    // no-op for the in-memory test store
   },
 }));
 
@@ -111,7 +122,7 @@ let siweVerifyResult: {
   success: true,
   data: {
     address: "0x1234567890abcdef1234567890abcdef12345678",
-    chainId: 78432,
+    chainId: 7332,
     domain: "localhost",
     nonce: "mock-nonce",
   },
@@ -126,7 +137,7 @@ export function resetSiweVerifyResult(): void {
     success: true,
     data: {
       address: "0x1234567890abcdef1234567890abcdef12345678",
-      chainId: 78432,
+      chainId: 7332,
       domain: "localhost",
       nonce: "mock-nonce",
     },
@@ -181,7 +192,7 @@ export interface TestTokenPayload {
 const DEFAULT_OPERATOR: TestTokenPayload = {
   sub: "0x1234567890abcdef1234567890abcdef12345678",
   address: "0x1234567890abcdef1234567890abcdef12345678",
-  chainId: 78432,
+  chainId: 7332,
   userType: "operator",
   kycStatus: "approved",
 };
@@ -189,7 +200,7 @@ const DEFAULT_OPERATOR: TestTokenPayload = {
 const DEFAULT_ADMIN: TestTokenPayload = {
   sub: "0xadmin00000000000000000000000000000000000",
   address: "0xadmin00000000000000000000000000000000000",
-  chainId: 78432,
+  chainId: 7332,
   userType: "admin",
   kycStatus: "approved",
 };
@@ -284,7 +295,7 @@ export function makeVerification(overrides: Record<string, unknown> = {}) {
 export function makeUser(overrides: Record<string, unknown> = {}) {
   return {
     address: "0x1234567890abcdef1234567890abcdef12345678",
-    chainId: 78432,
+    chainId: 7332,
     userType: "operator" as const,
     kycStatus: "approved" as const,
     ...overrides,

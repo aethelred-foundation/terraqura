@@ -4,13 +4,13 @@ import { Footer } from "@/components/layout/Footer";
 import { BlogContent } from "./content";
 
 export const metadata: Metadata = {
-  title: "Blog | Carbon Market Insights & Research",
+  title: "Insights | TerraQura",
   description:
-    "Technical deep dives, industry analysis, and research on carbon verification, blockchain infrastructure, Direct Air Capture, and the future of climate markets. By TerraQura Research.",
+    "Data, research, and market perspectives from TerraQura for credible carbon markets.",
   openGraph: {
-    title: "Blog | TerraQura Carbon Market Insights & Research",
+    title: "Insights | TerraQura",
     description:
-      "Technical deep dives, industry analysis, and research on carbon verification and climate markets.",
+      "Data, research, and market perspectives from TerraQura for credible carbon markets.",
   },
 };
 

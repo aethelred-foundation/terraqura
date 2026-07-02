@@ -148,7 +148,7 @@ Response:
   "token": "eyJhbGciOiJIUzI1NiIs...",
   "user": {
     "address": "0xabc...def",
-    "chainId": 78432
+    "chainId": 7332
   }
 }
 ```

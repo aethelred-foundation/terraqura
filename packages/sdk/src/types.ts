@@ -9,7 +9,7 @@
 import { z } from "zod";
 
 import type { NetworkName } from "./constants.js";
-import type { IIdempotencyBackend } from "./utils.js";
+import type { IIdempotencyBackend, ISessionBackend } from "./utils.js";
 import type { Tracer, Meter } from "@opentelemetry/api";
 import type { ethers } from "ethers";
 
@@ -111,6 +111,14 @@ export interface TerraQuraClientConfig {
   rpcUrl?: string;
   /** Custom subgraph URL */
   subgraphUrl?: string;
+  /**
+   * Explicit RiskOracle contract address for on-chain actuarial reads/writes.
+   *
+   * Local health-score calculations do not require this address. Methods that
+   * query or update the on-chain oracle fail closed until this is configured or
+   * present in the deployment manifest.
+   */
+  riskOracleAddress?: string;
   /** Gas management settings */
   gas?: GasConfig;
   /** Retry / resilience settings */
@@ -143,6 +151,15 @@ export interface TerraQuraClientConfig {
    * will be allowed through.
    */
   idempotencyTtlMs?: number;
+  /**
+   * Durable checkout-session backend for hosted checkout.
+   *
+   * By default, checkout uses an in-memory backend suitable only for local
+   * development and single-process workers. Production checkout servers should
+   * provide a Redis, Postgres, DynamoDB, or equivalent backend implementing
+   * `ISessionBackend`.
+   */
+  checkoutSessionBackend?: ISessionBackend<unknown>;
 }
 
 // ============================================
@@ -169,6 +186,7 @@ export const TerraQuraClientConfigSchema = z.object({
   signer: z.any().optional(),
   rpcUrl: z.string().url().optional(),
   subgraphUrl: z.string().url().optional(),
+  riskOracleAddress: EthAddressSchema.optional(),
   gas: z
     .object({
       multiplier: z.number().positive().max(5).optional(),
@@ -196,6 +214,7 @@ export const TerraQuraClientConfigSchema = z.object({
     .optional(),
   idempotencyBackend: z.any().optional(),
   idempotencyTtlMs: z.number().int().positive().optional(),
+  checkoutSessionBackend: z.any().optional(),
 });
 
 /** Pagination parameters */
@@ -514,7 +533,7 @@ export interface GasEstimate {
   maxPriorityFeePerGas: bigint;
   /** Estimated cost in wei */
   estimatedCostWei: bigint;
-  /** Estimated cost in AETH (human-readable) */
+  /** Estimated cost in AETHEL (human-readable) */
   estimatedCostAeth: string;
 }
 
@@ -542,11 +561,13 @@ export interface InternalConfig {
     carbonMarketplace: string;
     gaslessMarketplace: string;
     circuitBreaker: string;
+    riskOracle: string;
   };
   subgraphUrl: string;
   gas: Required<GasConfig>;
   retry: Required<RetryConfig>;
   telemetryEnabled: boolean;
+  checkoutSessionBackend?: ISessionBackend<unknown>;
 }
 
 /** Webhook event types */

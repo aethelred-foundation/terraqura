@@ -117,11 +117,11 @@ scrape_configs:
     metrics_path: /metrics
 
   # ==========================================================================
-  # Polygon RPC Node Health
+  # Primary Chain RPC Node Health
   # ==========================================================================
-  - job_name: 'polygon-rpc'
+  - job_name: 'primary-chain-rpc'
     static_configs:
-      - targets: ['polygon-rpc-health:9100']
+      - targets: ['primary-chain-rpc-health:9100']
     metrics_path: /metrics
     scrape_interval: 30s
 

@@ -6,6 +6,11 @@ import crypto from "crypto";
 import { Job, Processor } from "bullmq";
 import type { KycCheckJobData } from "@terraqura/queue";
 
+import {
+  createScopedLogger,
+  logReference,
+  serializeError,
+} from "../lib/logger.js";
 import { getWorkerRuntimeEnv } from "../lib/runtime-env.js";
 
 interface KycResult {
@@ -58,6 +63,13 @@ function deriveOnfidoStatus(result?: string): KycResult["status"] {
   return "rejected";
 }
 
+function providerHttpError(provider: "Sumsub" | "Onfido", statusCode: number): Error {
+  const error = new Error(`${provider} API error: ${statusCode}`);
+  error.name = "ProviderHttpError";
+  (error as Error & { statusCode: number }).statusCode = statusCode;
+  return error;
+}
+
 async function sumsubRequest<T>(params: {
   appToken: string;
   secretKey: string;
@@ -82,8 +94,7 @@ async function sumsubRequest<T>(params: {
   });
 
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Sumsub API error: ${response.status} ${body}`);
+    throw providerHttpError("Sumsub", response.status);
   }
 
   return response.json() as Promise<T>;
@@ -103,8 +114,7 @@ async function onfidoRequest<T>(params: {
   });
 
   if (!response.ok) {
-    const body = await response.text();
-    throw new Error(`Onfido API error: ${response.status} ${body}`);
+    throw providerHttpError("Onfido", response.status);
   }
 
   return response.json() as Promise<T>;
@@ -113,13 +123,18 @@ async function onfidoRequest<T>(params: {
 export const kycProcessor: Processor<KycCheckJobData, KycResult> = async (
   job: Job<KycCheckJobData>
 ) => {
-  const logger = console;
   const { userId, walletAddress, applicantId, provider, checkType } = job.data;
+  const logger = createScopedLogger("kyc.processor", {
+    jobId: job.id,
+    provider,
+    checkType,
+    userRef: logReference(userId, "user"),
+    walletRef: logReference(walletAddress, "wallet"),
+    applicantRef: logReference(applicantId, "applicant"),
+  });
   const workerEnv = getWorkerRuntimeEnv();
 
-  logger.log(
-    `[KYC] Processing ${checkType} check for user ${userId} (${walletAddress}) via ${provider}`
-  );
+  logger.info("Processing KYC check");
 
   if (workerEnv.KYC_PROVIDER === "disabled") {
     throw new Error("KYC_PROVIDER=disabled; KYC checks cannot be processed");
@@ -142,7 +157,9 @@ export const kycProcessor: Processor<KycCheckJobData, KycResult> = async (
     }
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : "Unknown error";
-    logger.error(`[KYC] Check failed: ${errorMessage}`);
+    logger.error("KYC check failed", {
+      err: serializeError(error),
+    });
 
     return {
       success: false,
@@ -158,13 +175,17 @@ export const kycProcessor: Processor<KycCheckJobData, KycResult> = async (
  */
 async function processSumsubCheck(job: Job<KycCheckJobData>): Promise<KycResult> {
   const { userId, walletAddress, applicantId, checkType } = job.data;
-  const logger = console;
+  const logger = createScopedLogger("kyc.sumsub", {
+    jobId: job.id,
+    checkType,
+    userRef: logReference(userId, "user"),
+    walletRef: logReference(walletAddress, "wallet"),
+    applicantRef: logReference(applicantId, "applicant"),
+  });
   const workerEnv = getWorkerRuntimeEnv();
 
   await job.updateProgress(10);
-  logger.log(
-    `[Sumsub] Fetching ${checkType} status for ${userId} (${walletAddress}), applicant: ${applicantId}`
-  );
+  logger.info("Fetching Sumsub applicant status");
 
   // Sumsub API configuration
   const sumsubAppToken = workerEnv.SUMSUB_APP_TOKEN;
@@ -176,7 +197,7 @@ async function processSumsubCheck(job: Job<KycCheckJobData>): Promise<KycResult>
   }
 
   await job.updateProgress(30);
-  logger.log(`[Sumsub] Using provider endpoint: ${SUMSUB_BASE_URL}`);
+  logger.info("Using Sumsub provider endpoint", { providerEndpoint: SUMSUB_BASE_URL });
   const applicant = await sumsubRequest<{
     review?: {
       reviewStatus?: string;
@@ -210,14 +231,19 @@ async function processSumsubCheck(job: Job<KycCheckJobData>): Promise<KycResult>
     });
     sanctionsHit = sanctions.answer !== "clear";
   } catch (error) {
-    logger.warn(`[Sumsub] sanctions check failed: ${String(error)}`);
+    logger.warn("Sumsub sanctions check failed", {
+      err: serializeError(error),
+    });
   }
 
   const reviewResult = applicant.review?.reviewResult;
   const status = deriveSumsubStatus(applicant.review?.reviewStatus, reviewResult?.reviewAnswer);
 
   await job.updateProgress(100);
-  logger.log(`[Sumsub] Check completed: ${status}`);
+  logger.info("Sumsub check completed", {
+    status,
+    sanctionsHit,
+  });
 
   return {
     success: true,
@@ -238,13 +264,17 @@ async function processSumsubCheck(job: Job<KycCheckJobData>): Promise<KycResult>
  */
 async function processOnfidoCheck(job: Job<KycCheckJobData>): Promise<KycResult> {
   const { userId, walletAddress, applicantId, checkType } = job.data;
-  const logger = console;
+  const logger = createScopedLogger("kyc.onfido", {
+    jobId: job.id,
+    checkType,
+    userRef: logReference(userId, "user"),
+    walletRef: logReference(walletAddress, "wallet"),
+    applicantRef: logReference(applicantId, "applicant"),
+  });
   const workerEnv = getWorkerRuntimeEnv();
 
   await job.updateProgress(10);
-  logger.log(
-    `[Onfido] Fetching ${checkType} status for ${userId} (${walletAddress}), applicant: ${applicantId}`
-  );
+  logger.info("Fetching Onfido applicant status");
 
   const ONFIDO_API_TOKEN = workerEnv.ONFIDO_API_TOKEN;
   const ONFIDO_BASE_URL = "https://api.onfido.com/v3.6";
@@ -254,7 +284,9 @@ async function processOnfidoCheck(job: Job<KycCheckJobData>): Promise<KycResult>
   }
 
   await job.updateProgress(30);
-  logger.log(`[Onfido] Using provider endpoint: ${ONFIDO_BASE_URL}`);
+  logger.info("Using Onfido provider endpoint", {
+    providerEndpoint: ONFIDO_BASE_URL,
+  });
   const checksResponse = await onfidoRequest<{
     checks?: Array<{
       result?: string;
@@ -287,7 +319,7 @@ async function processOnfidoCheck(job: Job<KycCheckJobData>): Promise<KycResult>
   const sanctionsHit = false;
 
   await job.updateProgress(100);
-  logger.log(`[Onfido] Check completed: ${status}`);
+  logger.info("Onfido check completed", { status });
 
   return {
     success: true,

@@ -8,6 +8,7 @@ import { useAccount } from "wagmi";
 import { useKycStatus } from "@/hooks/useKycStatus";
 import { SumsubWidget } from "./SumsubWidget";
 import { ConnectButton } from "@rainbow-me/rainbowkit";
+import { reportClientError } from "@/lib/errors";
 
 interface ComplianceGateProps {
   children: ReactNode;
@@ -23,6 +24,14 @@ export function ComplianceGate({
   const { isConnected } = useAccount();
   const { status, isLoading, error, initiateKyc, refreshToken, refetch } = useKycStatus();
   const [showWidget, setShowWidget] = useState(false);
+  const handleWidgetError = (err: Error) => {
+    void reportClientError(err, {
+      source: "compliance-gate",
+      provider: "sumsub",
+      action: "identity-verification-widget",
+      hasAccessToken: Boolean(status.accessToken),
+    });
+  };
 
   // If KYC not required, just render children
   if (!requireKyc) {
@@ -116,7 +125,7 @@ export function ComplianceGate({
                 setShowWidget(false);
                 refetch();
               }}
-              onError={(err) => console.error("Sumsub error:", err)}
+              onError={handleWidgetError}
               onTokenExpired={refreshToken}
             />
 

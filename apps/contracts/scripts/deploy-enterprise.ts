@@ -1,21 +1,34 @@
 import { ethers, upgrades } from "hardhat";
+import {
+  getActiveDeployment,
+  getActiveDeploymentKey,
+  getNetwork,
+  requireContractAddress,
+  withContractAddressOverrides,
+} from "@terraqura/network-manifest";
 
 /**
  * Enterprise Deployment Script
  * Deploys: TerraQuraTimelock, TerraQuraMultisig, CircuitBreaker, GaslessMarketplace
  *
- * Previous deployment addresses:
- * - TerraQuraAccessControl: 0x6098a0cF16D90817f4C8d730DeA998453F2DE904
- * - VerificationEngine: 0xcB746aB50254A735566676979e69aD6F5842080d
- * - CarbonCredit: 0xfc0CaCA6C6abc035562F4a47e12a0d8f7Cd51036
- * - CarbonMarketplace: 0xABc0Fa37a6B78DA9514ee36974DAf16ABafFd682
+ * Requires either a deployed manifest or TERRAQURA_CONTRACT_* overrides for
+ * the existing core contracts.
  */
 
+const deploymentEnv = {
+  ...process.env,
+  TERRAQURA_NETWORK: process.env.TERRAQURA_NETWORK ?? "aethelredTestnet",
+};
+const ACTIVE_DEPLOYMENT_KEY = getActiveDeploymentKey(deploymentEnv);
+const ACTIVE_DEPLOYMENT = getActiveDeployment(deploymentEnv);
+const ACTIVE_NETWORK = getNetwork(ACTIVE_DEPLOYMENT.network);
+const ACTIVE_CONTRACTS = withContractAddressOverrides(ACTIVE_DEPLOYMENT.contracts, deploymentEnv);
+
 const EXISTING_CONTRACTS = {
-  accessControl: "0x6098a0cF16D90817f4C8d730DeA998453F2DE904",
-  verificationEngine: "0xcB746aB50254A735566676979e69aD6F5842080d",
-  carbonCredit: "0xfc0CaCA6C6abc035562F4a47e12a0d8f7Cd51036",
-  carbonMarketplace: "0xABc0Fa37a6B78DA9514ee36974DAf16ABafFd682",
+  accessControl: requireContractAddress(ACTIVE_CONTRACTS, "accessControl", ACTIVE_DEPLOYMENT_KEY),
+  verificationEngine: requireContractAddress(ACTIVE_CONTRACTS, "verificationEngine", ACTIVE_DEPLOYMENT_KEY),
+  carbonCredit: requireContractAddress(ACTIVE_CONTRACTS, "carbonCredit", ACTIVE_DEPLOYMENT_KEY),
+  carbonMarketplace: requireContractAddress(ACTIVE_CONTRACTS, "carbonMarketplace", ACTIVE_DEPLOYMENT_KEY),
 };
 
 async function main() {
@@ -23,7 +36,7 @@ async function main() {
   console.log("Deploying Enterprise Security contracts with account:", deployer.address);
 
   const balance = await ethers.provider.getBalance(deployer.address);
-  console.log("Account balance:", ethers.formatEther(balance), "AETH\n");
+  console.log("Account balance:", ethers.formatEther(balance), "AETHEL\n");
 
   // ============================================
   // 1. Deploy TerraQuraMultisig (2-of-3 for testnet)
@@ -131,8 +144,9 @@ async function main() {
   console.log("\n========================================");
   console.log("ENTERPRISE DEPLOYMENT COMPLETE");
   console.log("========================================");
-  console.log("Network: aethelredTestnet");
-  console.log("Chain ID: 78432");
+  console.log("Network:", ACTIVE_NETWORK.name);
+  console.log("Chain ID:", ACTIVE_NETWORK.chainId);
+  console.log("Deployment:", ACTIVE_DEPLOYMENT_KEY);
   console.log("----------------------------------------");
   console.log("GOVERNANCE:");
   console.log("  TerraQuraMultisig:", multisigAddress);
@@ -160,13 +174,14 @@ async function main() {
   console.log("========================================");
 
   const finalBalance = await ethers.provider.getBalance(deployer.address);
-  console.log("\nFinal balance:", ethers.formatEther(finalBalance), "AETH");
-  console.log("Gas used:", ethers.formatEther(balance - finalBalance), "AETH");
+  console.log("\nFinal balance:", ethers.formatEther(finalBalance), "AETHEL");
+  console.log("Gas used:", ethers.formatEther(balance - finalBalance), "AETHEL");
 
   // Output JSON for records
   const deployment = {
-    network: "aethelredTestnet",
-    chainId: 78432,
+    network: ACTIVE_NETWORK.name,
+    chainId: ACTIVE_NETWORK.chainId,
+    deploymentKey: ACTIVE_DEPLOYMENT_KEY,
     deployedAt: new Date().toISOString(),
     governance: {
       multisig: {

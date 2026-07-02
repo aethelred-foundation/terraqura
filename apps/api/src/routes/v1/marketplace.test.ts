@@ -4,6 +4,7 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 // Mock state-store
 // ---------------------------------------------------------------------------
 const store = new Map<string, unknown>();
+const domainEvents: unknown[] = [];
 
 vi.mock("../../lib/state-store.js", () => ({
   readState: vi.fn(async <T>(key: string, defaultState: T): Promise<T> => {
@@ -13,15 +14,23 @@ vi.mock("../../lib/state-store.js", () => ({
     async <T, R>(
       key: string,
       defaultState: T,
-      mutator: (state: T) => Promise<R> | R,
+      mutator: (
+        state: T,
+        context: { recordDomainEvent(input: unknown): void },
+      ) => Promise<R> | R,
     ): Promise<R> => {
       const current = (store.get(key) as T) ?? structuredClone(defaultState);
       const mutableState = structuredClone(current);
-      const result = await mutator(mutableState);
+      const result = await mutator(mutableState, {
+        recordDomainEvent: (input: unknown) => {
+          domainEvents.push(input);
+        },
+      });
       store.set(key, mutableState);
       return result;
     },
   ),
+  closeStateStore: vi.fn(async () => undefined),
 }));
 
 vi.mock("../../lib/runtime-env.js", () => ({
@@ -60,7 +69,10 @@ async function buildApp() {
     } catch {
       return reply.status(401).send({
         success: false,
-        error: { code: "UNAUTHORIZED", message: "Missing or invalid bearer token" },
+        error: {
+          code: "UNAUTHORIZED",
+          message: "Missing or invalid bearer token",
+        },
       });
     }
   });
@@ -71,7 +83,9 @@ async function buildApp() {
 }
 
 function sign(app: ReturnType<typeof Fastify>, payload: object) {
-  return (app as unknown as { jwt: { sign: (p: object) => string } }).jwt.sign(payload);
+  return (app as unknown as { jwt: { sign: (p: object) => string } }).jwt.sign(
+    payload,
+  );
 }
 
 /** Creates a listing via the API and returns the parsed response body */
@@ -100,6 +114,7 @@ describe("marketplace routes", () => {
 
   beforeEach(async () => {
     store.clear();
+    domainEvents.length = 0;
     app = await buildApp();
   });
 
@@ -111,6 +126,16 @@ describe("marketplace routes", () => {
     const data = res.json().data;
     expect(data.status).toBe("active");
     expect(data.txHash).toMatch(/^0x/);
+    expect(domainEvents.at(-1)).toMatchObject({
+      eventType: "market_listing.created",
+      aggregateType: "market_listing",
+      payload: {
+        tokenId: "token_1",
+        sellerWallet: SELLER,
+        amount: 100,
+        remainingAmount: 100,
+      },
+    });
   });
 
   it("returns 401 when creating listing without auth", async () => {
@@ -202,6 +227,24 @@ describe("marketplace routes", () => {
     expect(data.totalPrice).toBe("10000000000000000000"); // 10 * 1e18
     // platform fee 2.5%
     expect(data.platformFee).toBe("250000000000000000"); // 2.5% of 10e18
+    expect(
+      domainEvents.find(
+        (event) =>
+          (event as { eventType?: string }).eventType ===
+          "market_purchase.settled",
+      ),
+    ).toMatchObject({
+      eventType: "market_purchase.settled",
+      aggregateType: "market_purchase",
+      payload: {
+        listingId,
+        buyerWallet: BUYER,
+        sellerWallet: SELLER,
+        amount: 10,
+        totalPrice: "10000000000000000000",
+        platformFee: "250000000000000000",
+      },
+    });
   });
 
   it("prevents self-purchase", async () => {

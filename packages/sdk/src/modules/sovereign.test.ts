@@ -190,7 +190,8 @@ describe("SovereignModule", () => {
       const inventory = await sovereign.getNationalInventory(validInput);
 
       expect(inventory.activeDACUnits).toBe(2);
-      expect(inventory.averageFleetHealth).toBeGreaterThan(0);
+      expect(inventory.averageFleetHealth).toBe(85);
+      expect(risk.getRiskProfile).toHaveBeenCalledTimes(2);
     });
 
     it("calculates Paris Agreement NDC progress", async () => {
@@ -218,6 +219,44 @@ describe("SovereignModule", () => {
 
       expect(inventory.sectorBreakdown).not.toBeNull();
       expect(inventory.sectorBreakdown!.length).toBeGreaterThan(0);
+    });
+
+    it("uses explicit sector allocation weights when provided", async () => {
+      const inventory = await sovereign.getNationalInventory({
+        ...validInput,
+        includeSectorBreakdown: true,
+        sectorAllocations: {
+          energy: 3,
+          aviation: 1,
+        },
+      });
+
+      expect(inventory.sectorBreakdown).toEqual([
+        {
+          sector: "energy",
+          co2RemovedTonnes: 375,
+          sharePercentage: 75,
+          creditsCount: 375000,
+          dacUnitsCount: 2,
+        },
+        {
+          sector: "aviation",
+          co2RemovedTonnes: 125,
+          sharePercentage: 25,
+          creditsCount: 125000,
+          dacUnitsCount: 1,
+        },
+      ]);
+    });
+
+    it("reports unknown average fleet health when RiskOracle profiles are unavailable", async () => {
+      (risk.getRiskProfile as ReturnType<typeof vi.fn>).mockRejectedValue(
+        new Error("RiskOracle unavailable"),
+      );
+
+      const inventory = await sovereign.getNationalInventory(validInput);
+
+      expect(inventory.averageFleetHealth).toBe(0);
     });
 
     it("includes operator breakdown when requested", async () => {
@@ -401,9 +440,11 @@ describe("SovereignModule", () => {
 
       const health = await sovereign.getIndustrialHealth();
 
-      // Should fallback to synthetic estimates for whitelisted units
+      // Unknown RiskOracle evidence should stay unknown, not be synthesized.
       expect(health.totalUnits).toBe(2);
-      expect(health.unitSummaries[0].healthScore).toBe(85); // Synthetic
+      expect(health.unitSummaries.every((unit) => unit.healthScore === null)).toBe(true);
+      expect(health.fleetAnalytics).toBeNull();
+      expect(health.overallReadiness).toBe("CRITICAL");
     });
   });
 

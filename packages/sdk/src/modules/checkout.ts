@@ -51,6 +51,7 @@ import {
 
 import type { ITelemetry } from "../telemetry.js";
 import type { InternalConfig, PriceBreakdown, OffsetEstimate } from "../types.js";
+import type { ISessionBackend } from "../utils.js";
 import type { OffsetModule } from "./offset.js";
 
 // ============================================
@@ -90,8 +91,8 @@ export interface CreateCheckoutSessionInput {
   /** Arbitrary metadata attached to the session */
   metadata?: Record<string, string | number | boolean>;
   /**
-   * Currency for price display (default: "AETH").
-   * Note: On-chain settlement is always in AETH.
+   * Currency for price display (default: "AETHEL").
+   * Note: On-chain settlement is always in AETHEL.
    */
   displayCurrency?: string;
   /** Customer email for receipt delivery */
@@ -174,9 +175,59 @@ export interface CheckoutSessionFilter {
 // Internal Session Record
 // ============================================
 
-interface SessionRecord extends CheckoutSession {
+export interface CheckoutSessionStoreRecord extends CheckoutSession {
   /** Internal: whether the session has been locked for execution */
   executionLock: boolean;
+}
+
+export type CheckoutSessionBackend =
+  ISessionBackend<CheckoutSessionStoreRecord>;
+
+export class InMemoryCheckoutSessionBackend implements CheckoutSessionBackend {
+  private readonly sessions = new Map<string, CheckoutSessionStoreRecord>();
+
+  get(id: string): CheckoutSessionStoreRecord | undefined {
+    const session = this.sessions.get(id);
+    return session ? cloneSessionRecord(session) : undefined;
+  }
+
+  put(id: string, session: CheckoutSessionStoreRecord): void {
+    this.sessions.set(id, cloneSessionRecord(session));
+  }
+
+  async update(
+    id: string,
+    updater: (
+      session: CheckoutSessionStoreRecord,
+    ) => CheckoutSessionStoreRecord | Promise<CheckoutSessionStoreRecord>,
+  ): Promise<CheckoutSessionStoreRecord | undefined> {
+    const existing = this.sessions.get(id);
+    if (!existing) {
+      return undefined;
+    }
+
+    const updated = await updater(cloneSessionRecord(existing));
+    this.sessions.set(id, cloneSessionRecord(updated));
+    return cloneSessionRecord(updated);
+  }
+
+  list(): CheckoutSessionStoreRecord[] {
+    return Array.from(this.sessions.values()).map(cloneSessionRecord);
+  }
+
+  delete(id: string): void {
+    this.sessions.delete(id);
+  }
+
+  destroy(): void {
+    this.sessions.clear();
+  }
+}
+
+function cloneSessionRecord(
+  session: CheckoutSessionStoreRecord,
+): CheckoutSessionStoreRecord {
+  return globalThis.structuredClone(session);
 }
 
 // ============================================
@@ -212,22 +263,30 @@ export class CheckoutModule {
   private readonly config: InternalConfig;
   private readonly telemetry: ITelemetry;
   private readonly offset: OffsetModule;
-
-  // Session store (in-memory; production should use Redis/DB)
-  private readonly sessions = new Map<string, SessionRecord>();
+  private readonly sessions: CheckoutSessionBackend;
+  private readonly ownsSessionBackend: boolean;
   private cleanupInterval: ReturnType<typeof setInterval> | null = null;
 
   constructor(
     config: InternalConfig,
     telemetry: ITelemetry,
     offset: OffsetModule,
+    sessionBackend?: CheckoutSessionBackend,
   ) {
     this.config = config;
     this.telemetry = telemetry;
     this.offset = offset;
+    const configuredBackend =
+      sessionBackend ??
+      (config.checkoutSessionBackend as CheckoutSessionBackend | undefined);
+    this.sessions =
+      configuredBackend ?? new InMemoryCheckoutSessionBackend();
+    this.ownsSessionBackend = configuredBackend === undefined;
 
     // Periodic cleanup of expired sessions
-    this.cleanupInterval = setInterval(() => this.cleanupExpired(), 60_000);
+    this.cleanupInterval = setInterval(() => {
+      void this.cleanupExpired();
+    }, 60_000);
     if (this.cleanupInterval.unref) {
       this.cleanupInterval.unref();
     }
@@ -292,7 +351,8 @@ export class CheckoutModule {
       // Generate session ID
       const sessionId = this.generateSessionId();
 
-      const session: SessionRecord = {
+      const now = Date.now();
+      const session: CheckoutSessionStoreRecord = {
         id: sessionId,
         status: "pending",
         amountKg: input.amountKg,
@@ -302,19 +362,19 @@ export class CheckoutModule {
         checkoutUrl: `${CHECKOUT_BASE_URL}/${sessionId}`,
         successUrl: input.successUrl || null,
         cancelUrl: input.cancelUrl || null,
-        expiresAt: Date.now() + ttl,
+        expiresAt: now + ttl,
         partnerId: input.partnerId || null,
         subAccountId: input.subAccountId || null,
         metadata: input.metadata || {},
         customerEmail: input.customerEmail || null,
         webhookUrl: input.webhookUrl || null,
-        createdAt: Date.now(),
+        createdAt: now,
         completedAt: null,
         result: null,
         executionLock: false,
       };
 
-      this.sessions.set(sessionId, session);
+      await this.sessions.put(sessionId, session);
 
       return this.toCheckoutSession(session);
     });
@@ -335,80 +395,102 @@ export class CheckoutModule {
     return this.telemetry.wrapAsync("checkout.confirmSession", async () => {
       this.requireSigner();
 
-      const session = this.sessions.get(sessionId);
-      if (!session) {
+      let shouldExecute = false;
+      const lockedSession = await this.sessions.update(sessionId, (session) => {
+        if (session.status === "completed") {
+          return session;
+        }
+
+        if (session.status === "cancelled") {
+          throw new ValidationError("Session has been cancelled", {
+            sessionId,
+            status: session.status,
+          });
+        }
+
+        if (session.status === "processing") {
+          throw new ValidationError("Session is already being processed", {
+            sessionId,
+            status: session.status,
+          });
+        }
+
+        if (session.expiresAt < Date.now()) {
+          session.status = "expired";
+          return session;
+        }
+
+        if (session.executionLock) {
+          throw new ValidationError("Session is locked for execution", {
+            sessionId,
+          });
+        }
+
+        session.executionLock = true;
+        session.status = "processing";
+        shouldExecute = true;
+        return session;
+      });
+
+      if (!lockedSession) {
         throw new ValidationError(`Session not found: ${sessionId}`, {
           field: "sessionId",
         });
       }
 
-      // Validate session state
-      if (session.status === "completed") {
-        return this.toCheckoutSession(session); // Idempotent
+      if (lockedSession.status === "completed") {
+        return this.toCheckoutSession(lockedSession); // Idempotent
       }
 
-      if (session.status === "cancelled") {
-        throw new ValidationError("Session has been cancelled", {
-          sessionId,
-          status: session.status,
-        });
-      }
-
-      if (session.status === "processing") {
-        throw new ValidationError("Session is already being processed", {
-          sessionId,
-          status: session.status,
-        });
-      }
-
-      if (session.expiresAt < Date.now()) {
-        session.status = "expired";
+      if (lockedSession.status === "expired" && !shouldExecute) {
         throw new ValidationError("Session has expired", {
           sessionId,
-          expiresAt: session.expiresAt,
+          expiresAt: lockedSession.expiresAt,
         });
       }
-
-      if (session.executionLock) {
-        throw new ValidationError("Session is locked for execution", {
-          sessionId,
-        });
-      }
-
-      // Lock for execution
-      session.executionLock = true;
-      session.status = "processing";
 
       try {
         // Execute the offset
         const result = await this.offset.offsetFootprint(
-          session.amountKg,
-          session.reason,
+          lockedSession.amountKg,
+          lockedSession.reason,
           { generateCertificate: true },
         );
 
-        // Update session
-        session.status = "completed";
-        session.completedAt = Date.now();
-        session.result = {
-          tokenIds: result.tokenIds,
-          amountRetiredKg: result.amountRetiredKg,
-          txHashes: result.txHashes,
-          certificate: result.certificate,
-          finalCost: result.cost,
-        };
+        const completed = await this.sessions.update(sessionId, (session) => {
+          session.status = "completed";
+          session.executionLock = false;
+          session.completedAt = Date.now();
+          session.result = {
+            tokenIds: result.tokenIds,
+            amountRetiredKg: result.amountRetiredKg,
+            txHashes: result.txHashes,
+            certificate: result.certificate,
+            finalCost: result.cost,
+          };
+          return session;
+        });
+
+        if (!completed) {
+          throw new ValidationError(`Session not found: ${sessionId}`, {
+            field: "sessionId",
+          });
+        }
 
         // Dispatch webhook if configured
-        if (session.webhookUrl) {
-          this.dispatchWebhook(session).catch(() => {
+        if (completed.webhookUrl) {
+          this.dispatchWebhook(completed).catch(() => {
             // Webhook failures are non-fatal
           });
         }
 
-        return this.toCheckoutSession(session);
+        return this.toCheckoutSession(completed);
       } catch (error) {
-        session.status = "failed";
-        session.executionLock = false;
+        await this.sessions.update(sessionId, (session) => {
+          session.status = "failed";
+          session.executionLock = false;
+          return session;
+        });
 
         if (error instanceof TerraQuraError) throw error;
         throw TerraQuraError.fromContractRevert(error);
@@ -421,21 +503,24 @@ export class CheckoutModule {
    */
   async cancelSession(sessionId: string): Promise<CheckoutSession> {
     return this.telemetry.wrapAsync("checkout.cancelSession", async () => {
-      const session = this.sessions.get(sessionId);
+      const session = await this.sessions.update(sessionId, (session) => {
+        if (session.status !== "pending") {
+          throw new ValidationError(
+            `Cannot cancel session in "${session.status}" state`,
+            { sessionId, status: session.status },
+          );
+        }
+
+        session.status = "cancelled";
+        return session;
+      });
+
       if (!session) {
         throw new ValidationError(`Session not found: ${sessionId}`, {
           field: "sessionId",
         });
       }
 
-      if (session.status !== "pending") {
-        throw new ValidationError(
-          `Cannot cancel session in "${session.status}" state`,
-          { sessionId, status: session.status },
-        );
-      }
-
-      session.status = "cancelled";
       return this.toCheckoutSession(session);
     });
   }
@@ -445,19 +530,20 @@ export class CheckoutModule {
    */
   async getSession(sessionId: string): Promise<CheckoutSession> {
     return this.telemetry.wrapAsync("checkout.getSession", async () => {
-      const session = this.sessions.get(sessionId);
+      const session = await this.sessions.update(sessionId, (session) => {
+        if (
+          session.status === "pending" &&
+          session.expiresAt < Date.now()
+        ) {
+          session.status = "expired";
+        }
+        return session;
+      });
+
       if (!session) {
         throw new ValidationError(`Session not found: ${sessionId}`, {
           field: "sessionId",
         });
-      }
-
-      // Auto-expire if past TTL
-      if (
-        session.status === "pending" &&
-        session.expiresAt < Date.now()
-      ) {
-        session.status = "expired";
       }
 
       return this.toCheckoutSession(session);
@@ -475,7 +561,7 @@ export class CheckoutModule {
     hasMore: boolean;
   }> {
     return this.telemetry.wrapAsync("checkout.listSessions", async () => {
-      let sessions = Array.from(this.sessions.values());
+      let sessions = await this.sessions.list();
 
       // Apply filters
       if (filter?.status) {
@@ -524,7 +610,7 @@ export class CheckoutModule {
     conversionRate: number;
   }> {
     return this.telemetry.wrapAsync("checkout.getAnalytics", async () => {
-      let sessions = Array.from(this.sessions.values());
+      let sessions = await this.sessions.list();
 
       if (options?.partnerId) {
         sessions = sessions.filter((s) => s.partnerId === options.partnerId);
@@ -577,7 +663,9 @@ export class CheckoutModule {
       clearInterval(this.cleanupInterval);
       this.cleanupInterval = null;
     }
-    this.sessions.clear();
+    if (this.ownsSessionBackend) {
+      void this.sessions.destroy?.();
+    }
   }
 
   // ============================================
@@ -663,7 +751,7 @@ export class CheckoutModule {
     return `tqcs_${hex}`;
   }
 
-  private toCheckoutSession(record: SessionRecord): CheckoutSession {
+  private toCheckoutSession(record: CheckoutSessionStoreRecord): CheckoutSession {
     const { executionLock: _lock, ...session } = record;
     return session;
   }
@@ -671,7 +759,7 @@ export class CheckoutModule {
   /**
    * Dispatch a webhook notification for session status change.
    */
-  private async dispatchWebhook(session: SessionRecord): Promise<void> {
+  private async dispatchWebhook(session: CheckoutSessionStoreRecord): Promise<void> {
     if (!session.webhookUrl) return;
 
     const payload = {
@@ -709,9 +797,10 @@ export class CheckoutModule {
     );
     const signature = ethers.hexlify(new Uint8Array(signatureBuffer));
 
+    let timeout: ReturnType<typeof setTimeout> | undefined;
     try {
       const controller = new AbortController();
-      const timeout = setTimeout(() => controller.abort(), 10_000);
+      timeout = setTimeout(() => controller.abort(), 10_000);
 
       await fetch(session.webhookUrl, {
         method: "POST",
@@ -724,28 +813,33 @@ export class CheckoutModule {
         body,
         signal: controller.signal,
       });
-
-      clearTimeout(timeout);
     } catch {
       // Webhook delivery failure is non-fatal
+    } finally {
+      if (timeout) {
+        clearTimeout(timeout);
+      }
     }
   }
 
   /**
    * Cleanup expired sessions older than 24 hours.
    */
-  private cleanupExpired(): void {
+  private async cleanupExpired(): Promise<void> {
     const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-    for (const [id, session] of this.sessions) {
+    for (const session of await this.sessions.list()) {
       if (session.status === "pending" && session.expiresAt < Date.now()) {
-        session.status = "expired";
+        await this.sessions.update(session.id, (current) => ({
+          ...current,
+          status: current.status === "pending" ? "expired" : current.status,
+        }));
       }
       // Remove completed/expired sessions older than 24h
       if (
         (session.status === "expired" || session.status === "cancelled") &&
         session.createdAt < cutoff
       ) {
-        this.sessions.delete(id);
+        await this.sessions.delete(session.id);
       }
     }
   }

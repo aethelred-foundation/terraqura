@@ -206,10 +206,10 @@ interface BugBountyTier {
 }
 
 const BUG_BOUNTY_TIERS: BugBountyTier[] = [
-  { severity: "Critical", reward: "Up to 25,000 AETH", color: "text-red-400" },
-  { severity: "High", reward: "Up to 10,000 AETH", color: "text-orange-400" },
-  { severity: "Medium", reward: "Up to 2,500 AETH", color: "text-amber-400" },
-  { severity: "Low", reward: "Up to 500 AETH", color: "text-yellow-400" },
+  { severity: "Critical", reward: "Up to 25,000 AETHEL", color: "text-red-400" },
+  { severity: "High", reward: "Up to 10,000 AETHEL", color: "text-orange-400" },
+  { severity: "Medium", reward: "Up to 2,500 AETHEL", color: "text-amber-400" },
+  { severity: "Low", reward: "Up to 500 AETHEL", color: "text-yellow-400" },
 ];
 
 interface SecurityTimeline {
@@ -362,16 +362,16 @@ function KYCStatusTab() {
                   </div>
                   <div>
                     <h4 className="font-semibold text-white text-sm">{tier.name}</h4>
-                    <p className="text-[10px] text-white/30 uppercase tracking-wider">Level {tier.level}</p>
+                    <p className="text-[10px] text-white/60 uppercase tracking-wider">Level {tier.level}</p>
                   </div>
                 </div>
 
                 <div className="mb-4">
-                  <p className="text-[10px] text-white/30 uppercase tracking-wider mb-2">Requirements</p>
+                  <p className="text-[10px] text-white/60 uppercase tracking-wider mb-2">Requirements</p>
                   <div className="space-y-1.5">
                     {tier.requirements.map((req) => (
                       <div key={req} className="flex items-center gap-2 text-xs text-white/60">
-                        <Lock className="w-3 h-3 text-white/30 shrink-0" />
+                        <Lock className="w-3 h-3 text-white/60 shrink-0" />
                         <span>{req}</span>
                       </div>
                     ))}
@@ -379,7 +379,7 @@ function KYCStatusTab() {
                 </div>
 
                 <div>
-                  <p className="text-[10px] text-white/30 uppercase tracking-wider mb-2">Benefits</p>
+                  <p className="text-[10px] text-white/60 uppercase tracking-wider mb-2">Benefits</p>
                   <div className="space-y-1.5">
                     {tier.benefits.map((benefit) => (
                       <div key={benefit} className="flex items-center gap-2 text-xs text-white/60">
@@ -406,7 +406,7 @@ function KYCStatusTab() {
             const statusColors = {
               verified: { bg: "bg-emerald-500/10", text: "text-emerald-400", label: "Verified" },
               pending: { bg: "bg-amber-500/10", text: "text-amber-400", label: "Pending" },
-              not_started: { bg: "bg-white/[0.05]", text: "text-white/30", label: "Not Started" },
+              not_started: { bg: "bg-white/[0.05]", text: "text-white/60", label: "Not Started" },
             };
             const s = statusColors[doc.status];
             return (
@@ -448,7 +448,7 @@ function KYCStatusTab() {
                 <GlassCard className="flex-1 p-4">
                   <div className="flex items-start justify-between mb-1">
                     <h4 className="text-sm font-medium text-white">{event.action}</h4>
-                    <span className="text-[11px] text-white/30">{event.date}</span>
+                    <span className="text-[11px] text-white/60">{event.date}</span>
                   </div>
                   <p className="text-xs text-white/40">{event.detail}</p>
                 </GlassCard>
@@ -484,7 +484,7 @@ function RegulatoryMapTab() {
                 <div className="flex items-start justify-between mb-3">
                   <div>
                     <h4 className="font-semibold text-white text-sm">{j.country}</h4>
-                    <p className="text-[10px] text-white/30 mt-0.5">{j.regulatoryBody}</p>
+                    <p className="text-[10px] text-white/60 mt-0.5">{j.regulatoryBody}</p>
                   </div>
                   <div className="flex items-center gap-1.5">
                     <div className={`w-2 h-2 rounded-full ${cfg.dot}`} />
@@ -592,22 +592,22 @@ function AuditReportsTab() {
                     <td className="px-5 py-4 text-sm text-white/50">{entry.auditor}</td>
                     <td className="px-5 py-4 text-xs text-white/40 font-mono">{entry.auditDate}</td>
                     <td className="px-5 py-4 text-center">
-                      <span className={`text-sm font-mono ${entry.findings.critical > 0 ? "text-red-400 font-bold" : "text-white/30"}`}>
+                      <span className={`text-sm font-mono ${entry.findings.critical > 0 ? "text-red-400 font-bold" : "text-white/60"}`}>
                         {entry.findings.critical}
                       </span>
                     </td>
                     <td className="px-5 py-4 text-center">
-                      <span className={`text-sm font-mono ${entry.findings.high > 0 ? "text-orange-400 font-bold" : "text-white/30"}`}>
+                      <span className={`text-sm font-mono ${entry.findings.high > 0 ? "text-orange-400 font-bold" : "text-white/60"}`}>
                         {entry.findings.high}
                       </span>
                     </td>
                     <td className="px-5 py-4 text-center">
-                      <span className={`text-sm font-mono ${entry.findings.medium > 0 ? "text-amber-400" : "text-white/30"}`}>
+                      <span className={`text-sm font-mono ${entry.findings.medium > 0 ? "text-amber-400" : "text-white/60"}`}>
                         {entry.findings.medium}
                       </span>
                     </td>
                     <td className="px-5 py-4 text-center">
-                      <span className={`text-sm font-mono ${entry.findings.low > 0 ? "text-yellow-400" : "text-white/30"}`}>
+                      <span className={`text-sm font-mono ${entry.findings.low > 0 ? "text-yellow-400" : "text-white/60"}`}>
                         {entry.findings.low}
                       </span>
                     </td>
@@ -642,17 +642,17 @@ function AuditReportsTab() {
 
             <div className="grid grid-cols-2 gap-4 mb-5">
               <div className="bg-white/[0.03] rounded-xl p-4 border border-white/[0.06]">
-                <p className="text-[10px] text-white/30 uppercase tracking-wider mb-1">Total Pool</p>
-                <p className="text-xl font-bold text-white">50,000 <span className="text-sm text-white/40 font-normal">AETH</span></p>
+                <p className="text-[10px] text-white/60 uppercase tracking-wider mb-1">Total Pool</p>
+                <p className="text-xl font-bold text-white">50,000 <span className="text-sm text-white/40 font-normal">AETHEL</span></p>
               </div>
               <div className="bg-white/[0.03] rounded-xl p-4 border border-white/[0.06]">
-                <p className="text-[10px] text-white/30 uppercase tracking-wider mb-1">Payouts to Date</p>
-                <p className="text-xl font-bold text-white">8,750 <span className="text-sm text-white/40 font-normal">AETH</span></p>
+                <p className="text-[10px] text-white/60 uppercase tracking-wider mb-1">Payouts to Date</p>
+                <p className="text-xl font-bold text-white">8,750 <span className="text-sm text-white/40 font-normal">AETHEL</span></p>
               </div>
             </div>
 
             <div className="space-y-2">
-              <p className="text-[10px] text-white/30 uppercase tracking-wider mb-2">Severity Tiers</p>
+              <p className="text-[10px] text-white/60 uppercase tracking-wider mb-2">Severity Tiers</p>
               {BUG_BOUNTY_TIERS.map((tier) => (
                 <div key={tier.severity} className="flex items-center justify-between py-2 px-3 bg-white/[0.02] rounded-lg">
                   <span className={`text-sm font-medium ${tier.color}`}>{tier.severity}</span>
@@ -705,7 +705,7 @@ function AuditReportsTab() {
                 </div>
                 <div className="flex justify-between">
                   <span className="text-white/40">Coverage</span>
-                  <span className="text-white/70 font-mono">500,000 AETH</span>
+                  <span className="text-white/70 font-mono">500,000 AETHEL</span>
                 </div>
                 <div className="flex justify-between">
                   <span className="text-white/40">Type</span>
@@ -749,7 +749,7 @@ function AuditReportsTab() {
                   <div className="flex items-start justify-between">
                     <div>
                       <h4 className="text-sm font-medium text-white">{event.event}</h4>
-                      <p className="text-xs text-white/30 mt-0.5">{event.date}</p>
+                      <p className="text-xs text-white/60 mt-0.5">{event.date}</p>
                     </div>
                     <span className="text-[10px] px-2 py-0.5 bg-white/[0.05] border border-white/[0.08] rounded-full text-white/40">
                       {typeLabels[event.type]}
@@ -887,7 +887,7 @@ function MRVStandardsTab() {
                 </div>
                 <div>
                   <p className="text-sm text-white/70 font-medium">{template.name}</p>
-                  <p className="text-xs text-white/30">{template.format} - {template.size}</p>
+                  <p className="text-xs text-white/60">{template.format} - {template.size}</p>
                 </div>
               </div>
               <button className="flex items-center gap-1.5 px-3 py-1.5 text-xs text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 rounded-lg hover:bg-emerald-500/15 transition">
@@ -918,7 +918,7 @@ function MRVStandardsTab() {
                 <p className="text-xs text-white/40 uppercase tracking-wider mb-2">{metric.label}</p>
                 <p className="text-2xl font-bold text-white mb-2">{metric.score}%</p>
                 <ProgressBar value={metric.score} color={color} size="sm" className="mb-2" />
-                <p className="text-[11px] text-white/30">{metric.description}</p>
+                <p className="text-[11px] text-white/60">{metric.description}</p>
               </GlassCard>
             );
           })}

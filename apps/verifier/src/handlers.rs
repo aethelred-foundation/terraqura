@@ -1,5 +1,6 @@
-use axum::Json;
+use axum::{extract::State, Json};
 
+use crate::config::Config;
 use crate::error::VerificationError;
 use crate::merkle::{self, MerkleTree};
 use crate::provenance;
@@ -7,11 +8,19 @@ use crate::sensor::SensorValidator;
 use crate::types::*;
 use crate::verification;
 
+#[derive(Clone)]
+pub struct AppState {
+    pub config: Config,
+}
+
 /// GET /health
-pub async fn health() -> Json<HealthResponse> {
+pub async fn health(State(state): State<AppState>) -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok".into(),
         version: env!("CARGO_PKG_VERSION").into(),
+        network_key: state.config.network_key,
+        deployment_key: state.config.deployment_key,
+        chain_id: state.config.chain_id,
     })
 }
 

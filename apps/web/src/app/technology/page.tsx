@@ -4,12 +4,13 @@ import { Footer } from "@/components/layout/Footer";
 import { TechnologyContent } from "./content";
 
 export const metadata: Metadata = {
-  title: "Technology | Proof-of-Physics Engine",
+  title: "Technology | TerraQura",
   description:
-    "Building the TerraQura Proof-of-Physics verification engine with IoT sensors, mathematical validation, and ERC-1155 token minting on Aethelred. Try our interactive physics simulator.",
+    "Transparent verification architecture for facility telemetry, satellite observation, environmental data, provenance, security, and APIs.",
   openGraph: {
-    title: "Technology | TerraQura Proof-of-Physics Engine",
-    description: "Three-phase verification: Capture, Compute, Mint. Try the interactive simulator.",
+    title: "Technology | TerraQura",
+    description:
+      "Transparent verification architecture for facility telemetry, satellite observation, environmental data, provenance, security, and APIs.",
   },
 };
 

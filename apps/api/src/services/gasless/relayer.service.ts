@@ -1,7 +1,14 @@
 // TerraQura Gasless Transaction Relayer
 // Enables meta-transactions via OpenZeppelin Defender
 
+import { getActiveDeployment, getNetwork } from "@terraqura/network-manifest";
 import { ethers } from "ethers";
+
+import {
+  createScopedLogger,
+  logReference,
+  serializeError,
+} from "../../lib/logger.js";
 
 // ERC-2771 ForwardRequest type
 interface ForwardRequest {
@@ -18,15 +25,31 @@ interface RelayerConfig {
   forwarderAddress: string;
   defenderApiKey?: string;
   defenderApiSecret?: string;
+  defenderRelayHandler?: DefenderRelayHandler;
   privateKey?: string;
   rpcUrl: string;
   chainId: number;
+  mode?: RelayMode;
 }
 
 interface RelayResult {
   success: boolean;
   txHash?: string;
   error?: string;
+  mode?: RelayMode;
+}
+
+export type RelayMode = "direct" | "defender";
+
+export interface DefenderRelayHandlerInput {
+  forwarderAddress: string;
+  request: ForwardRequest;
+  signature: string;
+  chainId: number;
+}
+
+export interface DefenderRelayHandler {
+  relay(input: DefenderRelayHandlerInput): Promise<RelayResult>;
 }
 
 type ForwardRequestTuple = [
@@ -81,14 +104,20 @@ const EIP712_TYPES = {
   ],
 };
 
+const gaslessLogger = createScopedLogger("gasless.relayer");
+
 export class GaslessRelayer {
   private config: RelayerConfig;
   private provider: ethers.JsonRpcProvider;
   private signer: ethers.Wallet | null = null;
   private forwarder: ForwarderContract;
+  private mode: RelayMode;
 
   constructor(config: RelayerConfig) {
     this.config = config;
+    this.mode = config.mode ?? (
+      config.defenderApiKey && config.defenderApiSecret ? "defender" : "direct"
+    );
     this.provider = new ethers.JsonRpcProvider(config.rpcUrl);
 
     // Initialize signer (use Defender Relayer in production)
@@ -172,7 +201,14 @@ export class GaslessRelayer {
         signature
       );
     } catch (error) {
-      console.error("Request verification failed:", error);
+      gaslessLogger.warn(
+        {
+          fromRef: logReference(request.from, "wallet"),
+          targetRef: logReference(request.to, "target"),
+          err: serializeError(error),
+        },
+        "Forward request verification failed"
+      );
       return false;
     }
   }
@@ -188,6 +224,7 @@ export class GaslessRelayer {
       return {
         success: false,
         error: "Relayer not configured with signing capability",
+        mode: "direct",
       };
     }
 
@@ -197,6 +234,7 @@ export class GaslessRelayer {
       return {
         success: false,
         error: "Invalid signature or request",
+        mode: "direct",
       };
     }
 
@@ -206,6 +244,7 @@ export class GaslessRelayer {
         return {
           success: false,
           error: "Request has expired",
+          mode: "direct",
         };
       }
 
@@ -225,23 +264,26 @@ export class GaslessRelayer {
           success: false,
           error: "Transaction reverted",
           txHash: tx.hash,
+          mode: "direct",
         };
       }
 
       return {
         success: true,
         txHash: tx.hash,
+        mode: "direct",
       };
     } catch (error) {
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
+        mode: "direct",
       };
     }
   }
 
   /**
-   * Relay via OpenZeppelin Defender (production)
+   * Relay via an explicitly configured Defender transport.
    */
   async relayViaDefender(
     request: ForwardRequest,
@@ -251,34 +293,45 @@ export class GaslessRelayer {
       return {
         success: false,
         error: "Defender credentials not configured",
+        mode: "defender",
+      };
+    }
+
+    if (!this.config.defenderRelayHandler) {
+      return {
+        success: false,
+        error: "Defender relay handler not configured; direct relay fallback is disabled",
+        mode: "defender",
       };
     }
 
     try {
-      // In production, use @openzeppelin/defender-sdk
-      // const { Defender } = require("@openzeppelin/defender-sdk");
-      // const client = new Defender({
-      //   apiKey: this.config.defenderApiKey,
-      //   apiSecret: this.config.defenderApiSecret,
-      // });
-      //
-      // const tx = await client.relaySigner.sendTransaction({
-      //   to: this.config.forwarderAddress,
-      //   data: this.forwarder.interface.encodeFunctionData("execute", [
-      //     [request.from, request.to, request.value, request.gas, request.nonce, request.deadline, request.data],
-      //     signature,
-      //   ]),
-      //   speed: "fast",
-      // });
-
-      // Fallback to direct relay for now
-      return this.relay(request, signature);
+      const result = await this.config.defenderRelayHandler.relay({
+        forwarderAddress: this.config.forwarderAddress,
+        request,
+        signature,
+        chainId: this.config.chainId,
+      });
+      return { ...result, mode: "defender" };
     } catch (error) {
       return {
         success: false,
         error: error instanceof Error ? error.message : "Defender relay failed",
+        mode: "defender",
       };
     }
+  }
+
+  getRelayMode(): RelayMode {
+    return this.mode;
+  }
+
+  hasSigningCapability(): boolean {
+    return this.signer !== null;
+  }
+
+  hasDefenderCredentials(): boolean {
+    return Boolean(this.config.defenderApiKey && this.config.defenderApiSecret);
   }
 
   /**
@@ -304,20 +357,54 @@ export class GaslessRelayer {
 // Factory function
 let relayer: GaslessRelayer | null = null;
 
+function shouldWarnRelayerNotConfigured(): boolean {
+  return process.env.NODE_ENV !== "test" && process.env.VITEST !== "true";
+}
+
+function resolveRelayMode(): RelayMode {
+  const configured = process.env.GASLESS_RELAYER_MODE;
+  if (configured === "direct" || configured === "defender") {
+    return configured;
+  }
+
+  return process.env.DEFENDER_RELAYER_API_KEY && process.env.DEFENDER_RELAYER_API_SECRET
+    ? "defender"
+    : "direct";
+}
+
 export function getGaslessRelayer(): GaslessRelayer | null {
   if (!relayer) {
     const forwarderAddress = process.env.FORWARDER_CONTRACT;
-    const rpcUrl = process.env.AETHELRED_RPC_URL;
+    const deployment = getActiveDeployment(process.env);
+    const network = getNetwork(deployment.network);
+    const scopedRpcUrl =
+      network.key === "polygonAmoy"
+        ? process.env.POLYGON_AMOY_RPC_URL ?? process.env.POLYGON_RPC_URL
+        : network.key === "aethelredTestnet"
+          ? process.env.AETHELRED_TESTNET_RPC_URL ?? process.env.AETHELRED_RPC_URL
+          : process.env.AETHELRED_RPC_URL;
+    const rpcUrl = process.env.TERRAQURA_RPC_URL ?? scopedRpcUrl ?? network.rpcUrls[0];
 
     if (!forwarderAddress || !rpcUrl) {
-      console.warn("Gasless relayer not configured");
+      if (shouldWarnRelayerNotConfigured()) {
+        gaslessLogger.warn(
+          {
+            hasForwarderAddress: Boolean(forwarderAddress),
+            hasRpcUrl: Boolean(rpcUrl),
+            networkKey: network.key,
+            deploymentKey: deployment.key,
+          },
+          "Gasless relayer not configured"
+        );
+      }
       return null;
     }
 
     relayer = new GaslessRelayer({
       forwarderAddress,
       rpcUrl,
-      chainId: parseInt(process.env.CHAIN_ID || "78432", 10),
+      chainId: parseInt(process.env.CHAIN_ID || String(network.chainId), 10),
+      mode: resolveRelayMode(),
       privateKey: process.env.RELAYER_PRIVATE_KEY,
       defenderApiKey: process.env.DEFENDER_RELAYER_API_KEY,
       defenderApiSecret: process.env.DEFENDER_RELAYER_API_SECRET,

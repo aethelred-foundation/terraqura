@@ -16,7 +16,7 @@ export enum SDKErrorCode {
   CONTRACT_REVERT = "CONTRACT_REVERT",
   /** Input validation failure (Zod) */
   VALIDATION_ERROR = "VALIDATION_ERROR",
-  /** Insufficient AETH for gas */
+  /** Insufficient AETHEL for gas */
   INSUFFICIENT_FUNDS = "INSUFFICIENT_FUNDS",
   /** Insufficient carbon credit balance */
   INSUFFICIENT_BALANCE = "INSUFFICIENT_BALANCE",
@@ -173,10 +173,10 @@ export class ValidationError extends TerraQuraError {
   }
 }
 
-/** Insufficient native token (AETH) for gas */
+/** Insufficient native token (AETHEL) for gas */
 export class InsufficientFundsError extends TerraQuraError {
   constructor(
-    message: string = "Insufficient AETH for gas fees",
+    message: string = "Insufficient AETHEL for gas fees",
     details: Record<string, unknown> = {},
   ) {
     super(message, SDKErrorCode.INSUFFICIENT_FUNDS, details);

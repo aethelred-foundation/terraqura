@@ -1,43 +1,77 @@
 /**
  * TerraQura Application Providers
  *
- * The Web3 provider stack (Wagmi, RainbowKit, React Query) is lazily loaded
- * on the client only. Children always render during SSR so page content
- * is server-rendered for SEO and fast first paint. Once the Web3 module
- * loads on the client, it wraps children with blockchain providers.
+ * Web3 provider stack (Wagmi, RainbowKit, React Query) is loaded lazily AND
+ * gated by route. Marketing routes (/, /about, /technology, /blog, /privacy,
+ * /terms, etc.) never load wagmi/viem/RainbowKit - keeping the JS budget for
+ * the public-facing site small.
  *
- * @version 5.0.0
- * @author TerraQura Engineering
+ * Routes that DO load the Web3 stack:
+ *   /dashboard/*  - full dapp
+ *   /buyer        - wallet-connected procurement preview
+ *   /operator     - DAC operator console preview
+ *   /explorer     - on-chain explorer with wallet-aware features
  */
 
 "use client";
 
 import React, { useState, useEffect, type ComponentType } from "react";
+import { usePathname } from "next/navigation";
 import { AppProvider, AppProviderSSR } from "@/contexts/AppContext";
 
 interface ProvidersProps {
   children: React.ReactNode;
 }
 
+const WEB3_ROUTE_PREFIXES = ["/dashboard", "/buyer", "/operator", "/explorer"];
+
+function isWeb3Route(pathname: string | null): boolean {
+  if (!pathname) return false;
+  return WEB3_ROUTE_PREFIXES.some((prefix) => pathname.startsWith(prefix));
+}
+
+interface Web3Bundle {
+  Provider: ComponentType<{ children: React.ReactNode }>;
+  hasWagmi: boolean;
+}
+
 export function Providers({ children }: ProvidersProps): React.JSX.Element {
-  const [Web3Module, setWeb3Module] = useState<ComponentType<{
-    children: React.ReactNode;
-  }> | null>(null);
+  const pathname = usePathname();
+  const needsWeb3 = isWeb3Route(pathname);
+  const [bundle, setBundle] = useState<Web3Bundle | null>(null);
 
   useEffect(() => {
-    // Dynamically import the Web3 provider stack on the client only.
-    // This prevents RainbowKit's getDefaultConfig from running during SSR
-    // where window.ethereum and localStorage don't exist.
-    import("./web3-providers").then((mod) => {
-      setWeb3Module(() => mod.default);
-    });
-  }, []);
+    if (!needsWeb3) return;
+    let cancelled = false;
+    Promise.all([import("./web3-providers"), import("@/lib/wagmi")]).then(
+      ([web3Mod, wagmiMod]) => {
+        if (cancelled) return;
+        setBundle({
+          Provider: web3Mod.default,
+          hasWagmi: Boolean(wagmiMod.config) && !wagmiMod.configError,
+        });
+      },
+    );
+    return () => {
+      cancelled = true;
+    };
+  }, [needsWeb3]);
 
-  if (Web3Module) {
-    return <Web3Module><AppProvider>{children}</AppProvider></Web3Module>;
+  if (needsWeb3 && bundle) {
+    // Two paths:
+    //  - hasWagmi: real WagmiProvider mounted, AppProvider can call wagmi hooks
+    //  - !hasWagmi: wagmi config failed to init (e.g. missing WC projectId
+    //    in dev). Web3Providers renders children without WagmiProvider, so
+    //    we MUST use AppProviderSSR - calling wagmi hooks would throw.
+    const AppShell = bundle.hasWagmi ? AppProvider : AppProviderSSR;
+    return (
+      <bundle.Provider>
+        <AppShell>{children}</AppShell>
+      </bundle.Provider>
+    );
   }
 
-  // During SSR and initial client render, provide a static SSR-safe context
-  // so useApp() doesn't throw. Web3 features activate after load.
+  // SSR-safe fallback for marketing routes AND for the brief moment between
+  // hydration and the Web3 module finishing its dynamic import on dapp routes.
   return <AppProviderSSR>{children}</AppProviderSSR>;
 }

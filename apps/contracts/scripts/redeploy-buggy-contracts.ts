@@ -1,4 +1,5 @@
 import { ethers, upgrades } from "hardhat";
+import { DEPLOYMENTS } from "@terraqura/network-manifest";
 
 /**
  * Redeploy contracts that still have Solidity 0.8.28 bug
@@ -9,10 +10,11 @@ import { ethers, upgrades } from "hardhat";
  * - GaslessMarketplace (was reused: 0x5472c5096846f52cef6bc8FD30E95e9DcAda8463)
  */
 
-// Current V2 deployment addresses
+// Legacy validation deployment addresses. Keep these sourced from the canonical manifest.
+const VALIDATION_DEPLOYMENT = DEPLOYMENTS.polygonAmoyV3Final;
 const CURRENT = {
-  accessControl: "0x55695aAAEC30AB495074c57e85Ae2E1A4866B83b",
-  carbonCredit: "0x29B58064fD95b175e5824767d3B18bACFafaF959",
+  accessControl: VALIDATION_DEPLOYMENT.contracts.accessControl,
+  carbonCredit: VALIDATION_DEPLOYMENT.contracts.carbonCredit,
 };
 
 async function main() {

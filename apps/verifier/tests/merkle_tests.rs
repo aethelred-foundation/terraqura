@@ -96,7 +96,9 @@ fn empty_tree_get_proof_returns_none() {
 
 #[test]
 fn large_tree_1000_leaves() {
-    let leaves: Vec<Vec<u8>> = (0..1000).map(|i| format!("leaf_{i}").into_bytes()).collect();
+    let leaves: Vec<Vec<u8>> = (0..1000)
+        .map(|i| format!("leaf_{i}").into_bytes())
+        .collect();
     let tree = MerkleTree::build(&leaves);
     assert_eq!(tree.leaf_count(), 1000);
 

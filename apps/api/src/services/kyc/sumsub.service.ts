@@ -3,6 +3,11 @@
 
 import crypto from "crypto";
 
+import {
+  createScopedLogger,
+  logReference,
+  serializeError,
+} from "../../lib/logger.js";
 import { getApiRuntimeEnv } from "../../lib/runtime-env.js";
 
 export interface SumsubConfig {
@@ -58,11 +63,19 @@ export interface WebhookPayload {
   createdAt: string;
 }
 
+function providerHttpError(statusCode: number): Error {
+  const error = new Error(`Sumsub API error: ${statusCode}`);
+  error.name = "ProviderHttpError";
+  (error as Error & { statusCode: number }).statusCode = statusCode;
+  return error;
+}
+
 export class SumsubService {
   private appToken: string;
   private secretKey: string;
   private baseUrl: string;
   private webhookSecret?: string;
+  private logger = createScopedLogger("kyc.sumsub");
 
   constructor(config: SumsubConfig) {
     this.appToken = config.appToken;
@@ -113,8 +126,7 @@ export class SumsubService {
     });
 
     if (!response.ok) {
-      const error = await response.text();
-      throw new Error(`Sumsub API error: ${response.status} - ${error}`);
+      throw providerHttpError(response.status);
     }
 
     return response.json() as Promise<T>;
@@ -240,7 +252,13 @@ export class SumsubService {
       };
     } catch (error) {
       // Log but don't fail - sanctions check may not be available
-      console.error("Sanctions check error:", error);
+      this.logger.warn(
+        {
+          applicantRef: logReference(applicantId, "applicant"),
+          err: serializeError(error),
+        },
+        "Sumsub sanctions check failed"
+      );
       return { hit: false };
     }
   }
@@ -250,7 +268,10 @@ export class SumsubService {
    */
   verifyWebhookSignature(payload: string, signature: string): boolean {
     if (!this.webhookSecret) {
-      console.warn("Webhook secret not configured");
+      this.logger.warn(
+        { payloadBytes: Buffer.byteLength(payload, "utf8") },
+        "Sumsub webhook secret not configured"
+      );
       return false;
     }
 
@@ -259,10 +280,14 @@ export class SumsubService {
       .update(payload)
       .digest("hex");
 
-    return crypto.timingSafeEqual(
-      Buffer.from(signature),
-      Buffer.from(expectedSignature)
-    );
+    const provided = Buffer.from(signature, "hex");
+    const expected = Buffer.from(expectedSignature, "hex");
+
+    if (provided.length !== expected.length) {
+      return false;
+    }
+
+    return crypto.timingSafeEqual(provided, expected);
   }
 
   /**
@@ -270,14 +295,23 @@ export class SumsubService {
    */
   parseWebhook(payload: string, signature: string): WebhookPayload | null {
     if (!this.verifyWebhookSignature(payload, signature)) {
-      console.error("Invalid webhook signature");
+      this.logger.warn(
+        { payloadBytes: Buffer.byteLength(payload, "utf8") },
+        "Rejected Sumsub webhook with invalid signature"
+      );
       return null;
     }
 
     try {
       return JSON.parse(payload) as WebhookPayload;
     } catch (error) {
-      console.error("Failed to parse webhook payload:", error);
+      this.logger.warn(
+        {
+          payloadBytes: Buffer.byteLength(payload, "utf8"),
+          err: serializeError(error),
+        },
+        "Failed to parse Sumsub webhook payload"
+      );
       return null;
     }
   }

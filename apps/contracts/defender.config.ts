@@ -409,7 +409,7 @@ export const defenderConfig: DefenderConfig = {
     {
       name: "terraqura-relayer",
       network: "aethelredTestnet",
-      minBalance: "1000000000000000000", // 1 AETH
+      minBalance: "1000000000000000000", // 1 AETHEL
       policies: {
         gasPriceCap: "500000000000", // 500 gwei
         whitelistedReceivers: [

@@ -104,6 +104,19 @@ export type IndustrialSector =
   | "real-estate"     // Property developers (Aldar, Emaar)
   | "other";
 
+const DEFAULT_UAE_SECTOR_DISTRIBUTION: Array<{
+  sector: IndustrialSector;
+  share: number;
+}> = [
+  { sector: "energy", share: 0.45 },
+  { sector: "aviation", share: 0.20 },
+  { sector: "manufacturing", share: 0.15 },
+  { sector: "finance", share: 0.08 },
+  { sector: "logistics", share: 0.07 },
+  { sector: "government", share: 0.03 },
+  { sector: "real-estate", share: 0.02 },
+];
+
 /** Readiness classification for reserves and infrastructure */
 export type ReadinessLevel =
   | "SOVEREIGN"       // Exceeds all thresholds with margin
@@ -127,6 +140,8 @@ export interface NationalInventoryInput {
   operatorAddresses?: string[];
   /** Include per-sector breakdown */
   includeSectorBreakdown?: boolean;
+  /** Explicit sector allocation weights for the report period */
+  sectorAllocations?: Partial<Record<IndustrialSector, number>>;
   /** Include per-operator breakdown */
   includeOperatorBreakdown?: boolean;
   /** Paris Agreement NDC target (tonnes CO2 removed per year) */
@@ -628,14 +643,7 @@ export class SovereignModule {
         // ---- Compute Fleet Health ----
         let averageFleetHealth = 0;
         if (dacUnits.length > 0) {
-          // Use a synthetic health estimate based on whitelisted status
-          // In production, this queries the Risk Oracle for each unit
-          const healthScores = dacUnits.map((u) =>
-            u.isWhitelisted ? 85 : 40,
-          );
-          averageFleetHealth = Math.round(
-            healthScores.reduce((sum, h) => sum + h, 0) / healthScores.length,
-          );
+          averageFleetHealth = await this.getAverageFleetHealthFromRiskProfiles(dacUnits);
         }
 
         // ---- CO2 Conversion (credits → tonnes) ----
@@ -663,6 +671,8 @@ export class SovereignModule {
             totalCO2RemovedTonnes,
             totalMintedNum,
             dacUnits.length,
+            input.sectors,
+            input.sectorAllocations,
           );
         }
 
@@ -873,13 +883,7 @@ export class SovereignModule {
             failureProbabilityBps = profile.failureProbabilityBps;
             isInsured = profile.isInsured;
           } catch {
-            // Risk Oracle may not be deployed; use synthetic estimate
-            if (unit.isWhitelisted) {
-              healthScore = 85;
-              riskTier = "low";
-              failureProbabilityBps = 100;
-              isInsured = true;
-            }
+            // RiskOracle data is intentionally left unknown if unavailable.
           }
 
           unitSummaries.push({
@@ -936,12 +940,14 @@ export class SovereignModule {
         const critical = unitSummaries.filter(
           (u) => u.healthScore !== null && u.healthScore < 30,
         ).length;
+        const unknown = unitSummaries.filter((u) => u.healthScore === null).length;
 
         const overallReadiness = this.classifyFleetReadiness(
           unitSummaries.length,
           operational,
           degraded,
           critical,
+          unknown,
         );
 
         return {
@@ -1482,12 +1488,17 @@ export class SovereignModule {
     operational: number,
     _degraded: number,
     critical: number,
+    unknown = 0,
   ): ReadinessLevel {
     if (total === 0) return "CRITICAL";
 
     const operationalRatio = operational / total;
     const criticalRatio = critical / total;
+    const unknownRatio = unknown / total;
 
+    if (criticalRatio > 0.20) return "CRITICAL";
+    if (unknownRatio === 1) return "CRITICAL";
+    if (unknownRatio > 0.20) return "LOW_RESERVE";
     if (operationalRatio >= 0.95 && criticalRatio === 0) return "SOVEREIGN";
     if (operationalRatio >= 0.85 && criticalRatio === 0) return "SECURE";
     if (operationalRatio >= 0.70) return "ADEQUATE";
@@ -1527,29 +1538,45 @@ export class SovereignModule {
     return "CRITICAL";
   }
 
+  private async getAverageFleetHealthFromRiskProfiles(
+    dacUnits: Array<{ dacUnitId: string; operator: string; isWhitelisted: boolean }>,
+  ): Promise<number> {
+    const healthScores: number[] = [];
+
+    for (const unit of dacUnits) {
+      try {
+        const profile = await this.risk.getRiskProfile(unit.dacUnitId);
+        if (Number.isFinite(profile.healthScore)) {
+          healthScores.push(profile.healthScore);
+        }
+      } catch {
+        // Missing RiskOracle data is represented as unknown rather than estimated.
+      }
+    }
+
+    if (healthScores.length === 0) {
+      return 0;
+    }
+
+    return Math.round(
+      healthScores.reduce((sum, score) => sum + score, 0) / healthScores.length,
+    );
+  }
+
   /**
-   * Build sector breakdown with distribution estimates.
-   * In production, this queries the subgraph with sector tags.
+   * Build sector breakdown from explicit allocations or a documented default model.
    */
   private buildSectorBreakdown(
     totalTonnes: number,
     totalCredits: number,
     totalDACUnits: number,
+    sectors?: IndustrialSector[],
+    sectorAllocations?: Partial<Record<IndustrialSector, number>>,
   ): SectorBreakdown[] {
-    // Approximate sector distribution (UAE-specific estimates)
-    // In production, credits are tagged with sector metadata on-chain
-    const sectorDistribution: Array<{
-      sector: IndustrialSector;
-      share: number;
-    }> = [
-      { sector: "energy", share: 0.45 },
-      { sector: "aviation", share: 0.20 },
-      { sector: "manufacturing", share: 0.15 },
-      { sector: "finance", share: 0.08 },
-      { sector: "logistics", share: 0.07 },
-      { sector: "government", share: 0.03 },
-      { sector: "real-estate", share: 0.02 },
-    ];
+    const sectorDistribution = this.resolveSectorDistribution(
+      sectors,
+      sectorAllocations,
+    );
 
     return sectorDistribution.map(({ sector, share }) => ({
       sector,
@@ -1558,6 +1585,53 @@ export class SovereignModule {
       creditsCount: Math.round(totalCredits * share),
       dacUnitsCount: Math.max(1, Math.round(totalDACUnits * share)),
     }));
+  }
+
+  private resolveSectorDistribution(
+    sectors?: IndustrialSector[],
+    sectorAllocations?: Partial<Record<IndustrialSector, number>>,
+  ): Array<{ sector: IndustrialSector; share: number }> {
+    const requestedSectors = sectors && sectors.length > 0
+      ? new Set(sectors)
+      : null;
+    const allocationEntries = Object.entries(sectorAllocations ?? {})
+      .filter((entry): entry is [IndustrialSector, number] => {
+        const [sector, weight] = entry;
+        return (
+          this.isIndustrialSector(sector) &&
+          Number.isFinite(weight) &&
+          weight > 0 &&
+          (!requestedSectors || requestedSectors.has(sector))
+        );
+      });
+
+    if (allocationEntries.length > 0) {
+      const totalWeight = allocationEntries.reduce((sum, [, weight]) => sum + weight, 0);
+      return allocationEntries.map(([sector, weight]) => ({
+        sector,
+        share: weight / totalWeight,
+      }));
+    }
+
+    if (requestedSectors) {
+      const share = 1 / requestedSectors.size;
+      return Array.from(requestedSectors).map((sector) => ({ sector, share }));
+    }
+
+    return DEFAULT_UAE_SECTOR_DISTRIBUTION;
+  }
+
+  private isIndustrialSector(value: string): value is IndustrialSector {
+    return (
+      value === "energy" ||
+      value === "aviation" ||
+      value === "finance" ||
+      value === "manufacturing" ||
+      value === "logistics" ||
+      value === "government" ||
+      value === "real-estate" ||
+      value === "other"
+    );
   }
 
   /**

@@ -86,7 +86,7 @@ export function cleanupMockRuntimeEnv(): void {
  */
 export function createMockProvider(): Record<string, unknown> {
   return {
-    getNetwork: vi.fn().mockResolvedValue({ chainId: 1n, name: "aethelred" }),
+    getNetwork: vi.fn().mockResolvedValue({ chainId: 7332n, name: "aethelred-testnet" }),
     getBlockNumber: vi.fn().mockResolvedValue(1000),
     getFeeData: vi.fn().mockResolvedValue({
       maxFeePerGas: 50000000000n, // 50 gwei

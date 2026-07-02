@@ -1,5 +1,70 @@
+import {
+  getActiveDeployment,
+  getNetwork,
+  type DeploymentDefinition,
+  type NetworkDefinition,
+} from "@terraqura/network-manifest";
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { Pool } from "pg";
+
+interface NetworkRuntime {
+  deployment: DeploymentDefinition;
+  network: NetworkDefinition;
+  rpcUrl: string | undefined;
+  configuredChainId: number | null;
+  chainIdMatchesManifest: boolean;
+}
+
+const NETWORK_HEALTH_SCHEMA = {
+  type: "object",
+  properties: {
+    key: { type: "string" },
+    deploymentKey: { type: "string" },
+    deploymentStatus: { type: "string" },
+    chainId: { type: "number" },
+    configuredChainId: { type: ["number", "null"] },
+    chainIdMatchesManifest: { type: "boolean" },
+    rpcConfigured: { type: "boolean" },
+  },
+} as const;
+
+function getNetworkRuntime(): NetworkRuntime {
+  const deployment = getActiveDeployment(process.env);
+  const network = getNetwork(deployment.network);
+  const configuredChainId = process.env.CHAIN_ID ? parseInt(process.env.CHAIN_ID, 10) : null;
+
+  return {
+    deployment,
+    network,
+    rpcUrl: resolveRpcUrl(network),
+    configuredChainId,
+    chainIdMatchesManifest:
+      configuredChainId === null || configuredChainId === network.chainId,
+  };
+}
+
+function resolveRpcUrl(network: NetworkDefinition): string | undefined {
+  const scopedRpcUrl =
+    network.key === "polygonAmoy"
+      ? process.env.POLYGON_AMOY_RPC_URL ?? process.env.POLYGON_RPC_URL
+      : network.key === "aethelredTestnet"
+        ? process.env.AETHELRED_TESTNET_RPC_URL ?? process.env.AETHELRED_RPC_URL
+        : process.env.AETHELRED_RPC_URL;
+
+  return process.env.TERRAQURA_RPC_URL ?? scopedRpcUrl;
+}
+
+function networkHealthPayload(runtime = getNetworkRuntime()) {
+  return {
+    key: runtime.network.key,
+    deploymentKey: runtime.deployment.key,
+    deploymentStatus: runtime.deployment.status,
+    chainId: runtime.network.chainId,
+    configuredChainId: runtime.configuredChainId,
+    chainIdMatchesManifest: runtime.chainIdMatchesManifest,
+    rpcConfigured: Boolean(runtime.rpcUrl),
+  };
+}
 
 async function checkDatabase(): Promise<boolean> {
   const connectionString = process.env.DATABASE_URL;
@@ -25,8 +90,8 @@ async function checkDatabase(): Promise<boolean> {
 }
 
 async function checkBlockchain(): Promise<boolean> {
-  const rpcUrl = process.env.AETHELRED_RPC_URL;
-  if (!rpcUrl) {
+  const runtime = getNetworkRuntime();
+  if (!runtime.rpcUrl || !runtime.chainIdMatchesManifest) {
     return false;
   }
 
@@ -34,7 +99,7 @@ async function checkBlockchain(): Promise<boolean> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 1500);
     try {
-      const response = await fetch(rpcUrl, {
+      const response = await fetch(runtime.rpcUrl, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -51,9 +116,8 @@ async function checkBlockchain(): Promise<boolean> {
       }
 
       const payload = (await response.json()) as { result?: string };
-      const expectedChainId = parseInt(process.env.CHAIN_ID || "78432", 10);
       return typeof payload.result === "string"
-        ? parseInt(payload.result, 16) === expectedChainId
+        ? parseInt(payload.result, 16) === runtime.network.chainId
         : false;
     } finally {
       clearTimeout(timeout);
@@ -82,17 +146,20 @@ export async function healthRoutes(
               timestamp: { type: "string" },
               version: { type: "string" },
               uptime: { type: "number" },
+              network: NETWORK_HEALTH_SCHEMA,
             },
           },
         },
       },
     },
     async (_request, _reply) => {
+      const runtime = getNetworkRuntime();
       return {
         status: "healthy",
         timestamp: new Date().toISOString(),
         version: "1.0.0",
         uptime: process.uptime(),
+        network: networkHealthPayload(runtime),
       };
     }
   );
@@ -109,6 +176,7 @@ export async function healthRoutes(
             type: "object",
             properties: {
               ready: { type: "boolean" },
+              network: NETWORK_HEALTH_SCHEMA,
               checks: {
                 type: "object",
                 properties: {
@@ -122,6 +190,7 @@ export async function healthRoutes(
             type: "object",
             properties: {
               ready: { type: "boolean" },
+              network: NETWORK_HEALTH_SCHEMA,
               checks: {
                 type: "object",
                 properties: {
@@ -135,6 +204,7 @@ export async function healthRoutes(
       },
     },
     async (_request, reply) => {
+      const runtime = getNetworkRuntime();
       const [database, blockchain] = await Promise.all([
         checkDatabase(),
         checkBlockchain(),
@@ -143,6 +213,7 @@ export async function healthRoutes(
       const ready = database && blockchain;
       const body = {
         ready,
+        network: networkHealthPayload(runtime),
         checks: {
           database,
           blockchain,

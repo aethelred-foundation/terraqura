@@ -2,7 +2,7 @@
 
 > **Version:** 1.0.0
 > **Date:** February 2026
-> **Network Target:** Polygon PoS / Polygon zkEVM
+> **Network Target:** Aethelred sovereign EVM
 > **Author:** TerraQura Engineering
 
 ---
@@ -386,11 +386,11 @@ On zkEVM, storage is relatively cheaper than L1. Consider caching more computed 
 
 | Operation | Current | Target | Network |
 |-----------|---------|--------|---------|
-| mintVerifiedCredits | 350,000 | 280,000 | Polygon PoS |
-| purchase | 250,000 | 200,000 | Polygon PoS |
-| retireCredits | 120,000 | 95,000 | Polygon PoS |
-| createListing | 200,000 | 160,000 | Polygon PoS |
-| batchMint (10 items) | 2,500,000 | 2,100,000 | Polygon PoS |
+| mintVerifiedCredits | 350,000 | 280,000 | Aethelred EVM |
+| purchase | 250,000 | 200,000 | Aethelred EVM |
+| retireCredits | 120,000 | 95,000 | Aethelred EVM |
+| createListing | 200,000 | 160,000 | Aethelred EVM |
+| batchMint (10 items) | 2,500,000 | 2,100,000 | Aethelred EVM |
 
 ---
 

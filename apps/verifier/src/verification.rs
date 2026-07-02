@@ -79,7 +79,11 @@ fn source_check(request: &VerificationRequest) -> Result<PhaseResult, Verificati
     }
 
     // All device IDs should be consistent within a batch (same device)
-    let device_ids: HashSet<&str> = request.sensor_data.iter().map(|r| r.device_id.as_str()).collect();
+    let device_ids: HashSet<&str> = request
+        .sensor_data
+        .iter()
+        .map(|r| r.device_id.as_str())
+        .collect();
     if device_ids.len() > 1 {
         issues.push(format!(
             "mixed device IDs in batch: {} unique devices",
@@ -139,7 +143,8 @@ fn logic_check(request: &VerificationRequest) -> Result<PhaseResult, Verificatio
             "{} of {} sensor readings failed validation",
             batch_result.invalid_count, batch_result.total
         ));
-        let penalty = ((batch_result.invalid_count as f64 / batch_result.total.max(1) as f64) * 60.0) as u8;
+        let penalty =
+            ((batch_result.invalid_count as f64 / batch_result.total.max(1) as f64) * 60.0) as u8;
         score = score.saturating_sub(penalty);
     }
 

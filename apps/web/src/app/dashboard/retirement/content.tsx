@@ -262,7 +262,7 @@ function CertificateGalleryTab() {
               </div>
               <div>
                 <h3 className="text-sm font-bold text-white">Carbon Retirement Certificate</h3>
-                <p className="text-[10px] text-white/30 uppercase tracking-wider">TerraQura Verified</p>
+                <p className="text-[10px] text-white/60 uppercase tracking-wider">TerraQura Verified</p>
               </div>
             </div>
 
@@ -303,7 +303,7 @@ function CertificateGalleryTab() {
               <hr className="border-white/[0.06]" />
 
               <div className="flex items-center justify-between">
-                <span className="text-[10px] text-white/30 font-mono">
+                <span className="text-[10px] text-white/60 font-mono">
                   {cert.txHash.slice(0, 10)}...{cert.txHash.slice(-8)}
                 </span>
                 <CopyButton text={cert.txHash} />
@@ -531,11 +531,11 @@ function RetireCreditsTab() {
           <GlassCard className="p-6 space-y-4">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="bg-white/[0.03] rounded-xl p-4 border border-white/[0.06]">
-                <p className="text-[10px] text-white/30 uppercase tracking-wider mb-1">Credits to Retire</p>
+                <p className="text-[10px] text-white/60 uppercase tracking-wider mb-1">Credits to Retire</p>
                 <p className="text-xl font-bold text-white">{totalSelected} <span className="text-sm text-white/40 font-normal">credits</span></p>
               </div>
               <div className="bg-white/[0.03] rounded-xl p-4 border border-white/[0.06]">
-                <p className="text-[10px] text-white/30 uppercase tracking-wider mb-1">Total CO2 Impact</p>
+                <p className="text-[10px] text-white/60 uppercase tracking-wider mb-1">Total CO2 Impact</p>
                 <p className="text-xl font-bold text-emerald-400">{totalCO2.toFixed(3)} <span className="text-sm text-emerald-400/60 font-normal">tonnes</span></p>
               </div>
             </div>
@@ -675,12 +675,12 @@ function RetireCreditsTab() {
                 </div>
                 <div>
                   <p className="text-sm text-white/70 font-medium">{r.beneficiary}</p>
-                  <p className="text-xs text-white/30">{r.reason} - {r.date}</p>
+                  <p className="text-xs text-white/60">{r.reason} - {r.date}</p>
                 </div>
               </div>
               <div className="text-right">
                 <p className="text-sm font-bold text-emerald-400">{r.amount} tCO2</p>
-                <p className="text-[10px] text-white/30 font-mono">{r.txHash.slice(0, 10)}...</p>
+                <p className="text-[10px] text-white/60 font-mono">{r.txHash.slice(0, 10)}...</p>
               </div>
             </div>
           ))}
@@ -757,12 +757,12 @@ function CorporatePortalTab() {
                   </div>
                   <div className="text-right">
                     <p className="text-lg font-bold text-white">{coverage}%</p>
-                    <p className="text-[10px] text-white/30">Coverage</p>
+                    <p className="text-[10px] text-white/60">Coverage</p>
                   </div>
                 </div>
                 <ProgressBar value={coverage} color={scope.color} />
                 <div className="flex items-center justify-between mt-2">
-                  <span className="text-xs text-white/30">Emissions: {scope.emissions} tCO2e</span>
+                  <span className="text-xs text-white/60">Emissions: {scope.emissions} tCO2e</span>
                   <span className="text-xs text-emerald-400/70">Retired: {scope.retired} tCO2e</span>
                 </div>
               </GlassCard>
@@ -779,7 +779,7 @@ function CorporatePortalTab() {
         />
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
           <GlassCard className="p-5">
-            <p className="text-[10px] text-white/30 uppercase tracking-wider mb-3">Environmental Metrics</p>
+            <p className="text-[10px] text-white/60 uppercase tracking-wider mb-3">Environmental Metrics</p>
             <div className="space-y-3">
               {[
                 { label: "Total GHG Emissions", value: `${totalEmissions} tCO2e` },
@@ -796,7 +796,7 @@ function CorporatePortalTab() {
             </div>
           </GlassCard>
           <GlassCard className="p-5">
-            <p className="text-[10px] text-white/30 uppercase tracking-wider mb-3">Reporting Standards</p>
+            <p className="text-[10px] text-white/60 uppercase tracking-wider mb-3">Reporting Standards</p>
             <div className="space-y-3">
               {[
                 { label: "Framework", value: "GHG Protocol Corporate Standard" },
@@ -847,7 +847,7 @@ function CorporatePortalTab() {
                       className={`w-full rounded-t-sm transition-all ${isCurrentYear ? "bg-emerald-400" : "bg-emerald-500/20"}`}
                       style={{ height: `${height}%` }}
                     />
-                    <span className="text-[8px] text-white/30">{String(year).slice(-2)}</span>
+                    <span className="text-[8px] text-white/60">{String(year).slice(-2)}</span>
                   </div>
                 );
               })}
@@ -922,7 +922,7 @@ function PublicVerificationTab() {
 
         <div className="flex gap-3">
           <div className="relative flex-1">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-white/60" />
             <input
               type="text"
               value={searchInput}
@@ -941,7 +941,7 @@ function PublicVerificationTab() {
           </button>
         </div>
 
-        <div className="flex items-center gap-4 mt-3 text-xs text-white/30">
+        <div className="flex items-center gap-4 mt-3 text-xs text-white/60">
           <span>Try:</span>
           <button
             onClick={() => { setSearchInput(mockTxHash); setShowResult(false); }}
@@ -996,9 +996,9 @@ function PublicVerificationTab() {
                             Step {idx + 1}
                           </span>
                         </div>
-                        <p className="text-[11px] text-white/30 font-mono mt-0.5">{pStep.timestamp}</p>
+                        <p className="text-[11px] text-white/60 font-mono mt-0.5">{pStep.timestamp}</p>
                       </div>
-                      <span className="text-[10px] text-white/30 font-mono">{pStep.hash}</span>
+                      <span className="text-[10px] text-white/60 font-mono">{pStep.hash}</span>
                     </div>
                     <p className="text-xs text-white/50 leading-relaxed">{pStep.detail}</p>
                   </GlassCard>
@@ -1022,7 +1022,7 @@ function PublicVerificationTab() {
                 </div>
                 <CopyButton text={`https://terraqura.app/verify/${searchInput}`} />
               </div>
-              <p className="text-[10px] text-white/30 mt-2">
+              <p className="text-[10px] text-white/60 mt-2">
                 Share this link to allow anyone to verify this retirement certificate
               </p>
             </GlassCard>
@@ -1035,8 +1035,8 @@ function PublicVerificationTab() {
               <div className="flex items-center justify-center py-6 bg-white/[0.03] rounded-xl border border-dashed border-white/[0.1]">
                 <div className="text-center">
                   <QrCode className="w-16 h-16 text-white/10 mx-auto mb-2" />
-                  <p className="text-xs text-white/30">QR Code for physical certificate</p>
-                  <p className="text-[10px] text-white/20">Links to on-chain verification</p>
+                  <p className="text-xs text-white/60">QR Code for physical certificate</p>
+                  <p className="text-[10px] text-white/55">Links to on-chain verification</p>
                 </div>
               </div>
             </GlassCard>
