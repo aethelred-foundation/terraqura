@@ -59,6 +59,12 @@ const config: HardhatUserConfig = {
       accounts: REMOTE_ACCOUNTS,
       chainId: AETHELRED_TESTNET_CHAIN_ID,
       gasPrice: "auto",
+      // Aethelred's cosmos/evm EVM charges max(actualGas, gasLimit/2) — a refund
+      // above half the limit is capped — so an over-large fixed limit overpays.
+      // Its eth_estimateGas is accurate, so keep estimation on (do NOT pin a
+      // fixed `gas`) and add 2x headroom: the fee stays at the true cost while
+      // a disallowed call still reverts at estimate time.
+      gasMultiplier: 2,
     },
     // ─── Aethelred Sovereign Network ────────────────────
     // TerraQura's flagship enterprise deployment chain.
@@ -69,6 +75,9 @@ const config: HardhatUserConfig = {
       accounts: REMOTE_ACCOUNTS,
       chainId: AETHELRED_CHAIN_ID,
       gasPrice: "auto",
+      // Aethelred's cosmos/evm EVM charges max(actualGas, gasLimit/2); keep
+      // estimation on and add 2x headroom rather than pinning a fixed limit.
+      gasMultiplier: 2,
       // Enterprise: longer timeout for Aethelred's block finality
       timeout: 120000,
     },
