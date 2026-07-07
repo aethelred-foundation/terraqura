@@ -30,9 +30,11 @@ import { ethers, network } from "hardhat";
  * internal/evmhost/terraqura_test.go — this script is the live-node
  * counterpart.
  *
- * Run (local aethelredd devnet reachable as the testnet network):
+ * Run (local aethelredd devnet reachable as the testnet network). The signer
+ * comes from PRIVATE_KEY (what hardhat.config feeds the network's accounts);
+ * AETHELRED_TESTNET_RPC_URL points the network at the node:
  *   AETHELRED_TESTNET_RPC_URL=http://127.0.0.1:8545 \
- *   AETHELRED_TESTNET_PRIVATE_KEY=<funded-key> \
+ *   PRIVATE_KEY=<funded-key> \
  *   [REGISTRY_ADDRESS=0x…] [JOB_ID=<sealed-job>] \
  *   npx hardhat run scripts/devnet-seal-proof-of-physics-e2e.ts --network aethelredTestnet
  */
