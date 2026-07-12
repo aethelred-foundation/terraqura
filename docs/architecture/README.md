@@ -122,7 +122,6 @@ pnpm test:all       # All of the above
 | Web3 | wagmi v2, viem, RainbowKit |
 | State | TanStack React Query v5 |
 | Auth | NextAuth v4 (SIWE provider) |
-| Analytics | Vercel Analytics + Speed Insights |
 
 ### SSR Strategy
 
@@ -135,7 +134,7 @@ Key pages: landing, dashboard (operator/buyer views), explorer, developer portal
 
 ### Deployment
 
-The frontend is deployed to Vercel with SSR enabled. Environment variables are injected via Vercel project settings and `.env.local` for development.
+The frontend ships as a self-hosted container. `next.config.js` sets `output: "standalone"`; `apps/web/Dockerfile` builds a minimal Node runtime image, and CI publishes it to GitHub Container Registry (`ghcr.io/.../web`). The `infrastructure/` Terraform and Kubernetes manifests roll the image out to staging/production. Environment variables are injected via the container runtime (Kubernetes secrets/config) and `.env.local` for development.
 
 ---
 
@@ -308,7 +307,7 @@ The `docker-compose.yml` at the repository root provides:
 
 | Component | Platform |
 |-----------|----------|
-| Frontend | Vercel (SSR) |
+| Frontend | Containerised (Docker, Next.js standalone) |
 | API | Containerised (Docker) |
 | Workers | Containerised (Docker) |
 | Database | Managed PostgreSQL + TimescaleDB |

@@ -3,6 +3,9 @@ const path = require("path");
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   reactStrictMode: true,
+  // Self-hosted container output (replaces Vercel). Produces a minimal
+  // standalone server bundle consumed by apps/web/Dockerfile.
+  output: "standalone",
   transpilePackages: ["@terraqura/network-manifest", "@terraqura/types"],
 
   // Image optimization
@@ -60,13 +63,13 @@ const nextConfig = {
     // Flip the header key to "Content-Security-Policy" once confirmed clean.
     const cspDirectives = [
       "default-src 'self'",
-      // 'unsafe-inline' for Next.js inlined RSC/runtime; Sumsub for KYC SDK; Vercel Analytics.
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.sumsub.com https://*.vercel-scripts.com https://va.vercel-scripts.com",
+      // 'unsafe-inline' for Next.js inlined RSC/runtime; Sumsub for KYC SDK.
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.sumsub.com",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://*.aethelred.network https://*.walletconnect.com https://explorer-api.walletconnect.com",
       "font-src 'self' data:",
-      // Wallet/RPC/WS endpoints + Vercel telemetry + Sumsub + WalletConnect relays
-      "connect-src 'self' https://*.aethelred.network wss://*.aethelred.network https://*.walletconnect.org wss://*.walletconnect.org https://*.walletconnect.com wss://*.walletconnect.com https://api.web3modal.org https://pulse.walletconnect.org https://explorer-api.walletconnect.com https://*.blockvision.org https://*.alchemy.com https://*.infura.io https://api.aethelred.io https://api.sumsub.com wss://api.sumsub.com https://vitals.vercel-insights.com https://va.vercel-scripts.com https://*.vercel-insights.com",
+      // Wallet/RPC/WS endpoints + Sumsub + WalletConnect relays
+      "connect-src 'self' https://*.aethelred.network wss://*.aethelred.network https://*.walletconnect.org wss://*.walletconnect.org https://*.walletconnect.com wss://*.walletconnect.com https://api.web3modal.org https://pulse.walletconnect.org https://explorer-api.walletconnect.com https://*.blockvision.org https://*.alchemy.com https://*.infura.io https://api.aethelred.io https://api.sumsub.com wss://api.sumsub.com",
       // Wallet redirect frames + Sumsub iframe
       "frame-src 'self' https://verify.walletconnect.com https://verify.walletconnect.org https://*.walletconnect.com https://api.sumsub.com",
       "worker-src 'self' blob:",
