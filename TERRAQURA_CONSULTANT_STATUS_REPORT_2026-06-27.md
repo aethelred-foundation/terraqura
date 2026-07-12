@@ -14,7 +14,7 @@ Important context:
 
 - Current repository root resolves to `/Users/rameshtamilselvan/Downloads/terraqura`.
 - The workspace path `/Users/rameshtamilselvan/Downloads/aethelred/dApps/terraqura` is a symlink to that repository.
-- Current branch: `fix/vercel-gitignore`.
+- Current branch: `remove-vercel` (renamed from `fix/vercel-gitignore`).
 - Latest committed baseline inspected: `fe64f6d`, dated 2026-03-24.
 - The current worktree is very active: 193 modified tracked files, 4 deleted tracked files, and 68 untracked paths.
 - I reran the core enterprise validation chain during this reporting pass. I did not perform a live deployment.

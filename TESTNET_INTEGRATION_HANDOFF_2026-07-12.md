@@ -5,7 +5,7 @@
 **To:** Aethelred testnet team (US)
 **Purpose:** hand off the P0-remediated TerraQura contract stack for deployment to the Aethelred testnet (chain 7332), on-chain validation, and independent testing. This document is the integration contract: what changed, how to wire it, what the enforced invariants are, and the full local test evidence behind it.
 
-**Branch:** `fix/vercel-gitignore` @ `468357b` (+ stress-suite commit on top)
+**Branch:** `remove-vercel` @ `47352ff` (renamed from `fix/vercel-gitignore` after Vercel was removed; pull the latest tip)
 **Bottom line:** all local suites are green — **1,611 contract tests + 5,000+ across the stack and sibling dApps, 0 failing**; contract statement coverage **97.3%**. Nothing here is theoretical; every enforced behavior below has a regression test named in §6.
 
 ---

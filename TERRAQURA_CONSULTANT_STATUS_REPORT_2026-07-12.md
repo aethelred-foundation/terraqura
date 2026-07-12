@@ -12,7 +12,7 @@
 This is a current workspace snapshot, not a live-environment audit.
 
 - Repository root: `/Users/rameshtamilselvan/Downloads/terraqura`
-- Current branch: `fix/vercel-gitignore`
+- Current branch: `remove-vercel`
 - Latest commits inspected (newest first):
   - `73f88c3` 2026-07-08 — docs(devnet-e2e): correct signer env var to `PRIVATE_KEY`
   - `ad7f164` 2026-07-08 — fix(contracts): use `gasMultiplier` for Aethelred, not a fixed gas cap
