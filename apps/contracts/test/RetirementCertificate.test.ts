@@ -47,6 +47,9 @@ describe("RetirementCertificate", function () {
       .connect(retiree)
       .setApprovalForAll(await retirement.getAddress(), true);
 
+    // Register the retirement contract as an approved retirer (burn authority)
+    await mockCredit.setApprovedRetirer(await retirement.getAddress(), true);
+
     return { retirement, certificate, mockCredit, owner, retiree, other, unauthorized };
   }
 

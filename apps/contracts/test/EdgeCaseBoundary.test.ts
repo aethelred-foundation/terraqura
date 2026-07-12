@@ -616,11 +616,12 @@ describe("EdgeCaseBoundary", function () {
         ).to.be.revertedWithCustomError(carbonCredit, "InsufficientBalance");
       });
 
-      it("should allow retiring zero (no-op)", async function () {
-        // Zero retirement is allowed (just doesn't do anything meaningful)
+      it("should REJECT retiring zero (audit finding)", async function () {
+        // Zero retirement previously "succeeded" as a no-op — and let a
+        // zero-balance caller flag an entire batch as retired. It must revert.
         await expect(
           carbonCredit.connect(operator).retireCredits(tokenId, 0n, "zero")
-        ).to.not.be.reverted;
+        ).to.be.revertedWithCustomError(carbonCredit, "InvalidRetirementAmount");
       });
     });
   });

@@ -10,6 +10,7 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "../interfaces/ICarbonCredit.sol";
 import "../interfaces/IVerificationEngine.sol";
 import "../interfaces/ISealProofOfPhysics.sol";
+import "../interfaces/ICircuitBreaker.sol";
 
 /**
  * @title CarbonCredit
@@ -132,6 +133,39 @@ contract CarbonCredit is
      */
     bool public sealAnchorRequired;
 
+    // ============ Lifecycle & Enforcement State (v3.2.0) ============
+    // Appended AFTER all pre-existing state for UUPS storage-layout safety.
+
+    /**
+     * @notice Contracts allowed to retire credits on behalf of holders
+     *         (e.g. CarbonRetirement). A retirer must ALSO be an approved
+     *         ERC-1155 operator of the account it retires for.
+     */
+    mapping(address => bool) public approvedRetirers;
+
+    /**
+     * @notice Token IDs minted while seal-anchor enforcement was active.
+     *         These batches carry the top assurance tier: settlement and
+     *         retirement paths keep re-checking their consensus anchor, so a
+     *         revoked seal suspends the batch instantly.
+     */
+    mapping(uint256 => bool) public sealAnchoredToken;
+
+    /**
+     * @notice Once locked, seal-anchor enforcement is one-way: the registry
+     *         cannot be changed or cleared and the requirement cannot be
+     *         disabled. Intended to be set at mainnet activation so the top
+     *         assurance tier is not admin-mutable.
+     */
+    bool public sealEnforcementLocked;
+
+    /**
+     * @notice Platform circuit breaker consulted on every token movement
+     *         (mint, transfer, burn). address(0) disables the check; the
+     *         production launch gate requires it to be configured.
+     */
+    address public circuitBreaker;
+
     // ============ Events ============
 
     /**
@@ -153,6 +187,21 @@ contract CarbonCredit is
      * @notice Emitted when the seal-anchor mint requirement is toggled
      */
     event SealAnchorRequirementUpdated(bool required);
+
+    /**
+     * @notice Emitted when a retirer contract is approved or revoked
+     */
+    event RetirerUpdated(address indexed retirer, bool approved);
+
+    /**
+     * @notice Emitted when seal-anchor enforcement is permanently locked
+     */
+    event SealEnforcementLocked(address indexed by);
+
+    /**
+     * @notice Emitted when the circuit breaker reference is updated
+     */
+    event CircuitBreakerUpdated(address indexed oldBreaker, address indexed newBreaker);
 
     /**
      * @notice Emitted when buffer pool configuration is updated
@@ -221,6 +270,37 @@ contract CarbonCredit is
     error InsufficientBufferBalance();
     error ReversalAmountExceedsBuffer();
     error InvalidReversalAmount();
+
+    /**
+     * @notice Thrown when a retirement is attempted with a zero amount
+     */
+    error InvalidRetirementAmount();
+
+    /**
+     * @notice Thrown when a caller is not an approved retirer contract
+     */
+    error UnauthorizedRetirer();
+
+    /**
+     * @notice Thrown when a retirer is not an approved operator of the account
+     */
+    error RetirerNotApprovedOperator();
+
+    /**
+     * @notice Thrown when acting on a seal-anchored batch whose consensus
+     *         anchor is no longer live (seal revoked or registry cleared)
+     */
+    error CreditSuspended(uint256 tokenId);
+
+    /**
+     * @notice Thrown when mutating seal wiring after enforcement was locked
+     */
+    error SealEnforcementIsLocked();
+
+    /**
+     * @notice Thrown when the platform circuit breaker blocks the operation
+     */
+    error CircuitBreakerTripped();
 
     // ============ Modifiers ============
 
@@ -322,6 +402,13 @@ if (_owner != msg.sender) {
 
         // Generate unique token ID
         tokenId = _generateTokenId(dacUnitId, captureTimestamp, sourceDataHash);
+
+        // Record the assurance tier: this batch was minted under enforced
+        // seal-anchoring, so settlement/retirement paths keep re-checking its
+        // consensus anchor (a revoked seal suspends the batch instantly).
+        if (sealAnchorRequired) {
+            sealAnchoredToken[tokenId] = true;
+        }
 
         // Run three-phase verification with Net-Negative grid intensity
         (
@@ -433,24 +520,74 @@ if (_owner != msg.sender) {
         uint256 amount,
         string calldata reason
     ) external override whenNotPaused nonReentrant {
-        // Check balance
-        if (balanceOf(msg.sender, tokenId) < amount) {
+        _retireFor(msg.sender, tokenId, amount, reason);
+    }
+
+    /**
+     * @inheritdoc ICarbonCredit
+     * @dev The single supply-burning retirement authority for retirement
+     *      manager contracts (e.g. CarbonRetirement). Restricted two ways:
+     *      the caller must be an approved retirer contract AND an approved
+     *      ERC-1155 operator of `account` — so a retirer can only retire for
+     *      holders who explicitly opted in via setApprovalForAll.
+     */
+    function retireCreditsFrom(
+        address account,
+        uint256 tokenId,
+        uint256 amount,
+        string calldata reason
+    ) external override whenNotPaused nonReentrant {
+        if (!approvedRetirers[msg.sender]) {
+            revert UnauthorizedRetirer();
+        }
+        if (!isApprovedForAll(account, msg.sender)) {
+            revert RetirerNotApprovedOperator();
+        }
+        _retireFor(account, tokenId, amount, reason);
+    }
+
+    /**
+     * @notice Shared retirement invariants for every retirement path.
+     * @dev Invariants enforced here (audit finding — retirement correctness):
+     *      - zero-amount retirements revert (previously a zero-balance caller
+     *        could flag an entire batch retired without burning any supply);
+     *      - `isRetired` derives from the batch's REMAINING TOTAL SUPPLY,
+     *        never from one holder's balance (multi-holder safety);
+     *      - a seal-anchored batch whose consensus anchor is no longer live
+     *        cannot be normally retired (corrective flows use the buffer
+     *        pool's reversal mechanism instead).
+     */
+    function _retireFor(
+        address account,
+        uint256 tokenId,
+        uint256 amount,
+        string memory reason
+    ) internal {
+        if (amount == 0) {
+            revert InvalidRetirementAmount();
+        }
+        if (balanceOf(account, tokenId) < amount) {
             revert InsufficientBalance();
+        }
+        if (!_sealAnchorLive(tokenId)) {
+            revert CreditSuspended(tokenId);
         }
 
         // Burn the tokens (permanent retirement)
-        _burn(msg.sender, tokenId, amount);
+        _burn(account, tokenId, amount);
 
         // Update totals
         _totalCreditsRetired += amount;
         _tokenTotalSupply[tokenId] -= amount;
 
-        // Mark as fully retired if no balance remaining
-        if (balanceOf(msg.sender, tokenId) == 0) {
+        // Mark as fully retired only when the batch's entire remaining supply
+        // is gone — one holder retiring their own balance must never flag a
+        // batch other holders still own.
+        if (_tokenTotalSupply[tokenId] == 0) {
             _creditMetadata[tokenId].isRetired = true;
         }
 
-        emit CreditRetired(tokenId, msg.sender, amount, reason);
+        emit CreditRetired(tokenId, account, amount, reason);
     }
 
     /**
@@ -463,6 +600,49 @@ if (_owner != msg.sender) {
         returns (CreditMetadata memory metadata, VerificationResult memory verification)
     {
         return (_creditMetadata[tokenId], _verificationResults[tokenId]);
+    }
+
+    /**
+     * @inheritdoc ICarbonCredit
+     * @dev Settlement paths (marketplace listing/purchase/offer-accept) and
+     *      retirement MUST consult this: a seal-anchored batch whose Digital
+     *      Seal was revoked on-chain (or whose anchor was locally revoked)
+     *      reads inactive on the very next call — no admin transaction needed.
+     */
+    function isCreditActive(uint256 tokenId) external view override returns (bool) {
+        CreditMetadata storage meta = _creditMetadata[tokenId];
+        if (meta.dacUnitId == bytes32(0)) {
+            return false; // batch does not exist
+        }
+        if (meta.isRetired) {
+            return false;
+        }
+        return _sealAnchorLive(tokenId);
+    }
+
+    /**
+     * @inheritdoc ICarbonCredit
+     */
+    function methodology() external pure override returns (string memory) {
+        return "DAC";
+    }
+
+    /**
+     * @notice True unless this is a seal-anchored batch whose consensus
+     *         anchor is no longer live. Non-seal-tier batches always pass —
+     *         their assurance comes from the three-phase VerificationEngine.
+     * @dev Fail-closed for seal-tier batches: if the registry was cleared,
+     *      the batch reads suspended rather than silently downgrading tier.
+     */
+    function _sealAnchorLive(uint256 tokenId) internal view returns (bool) {
+        if (!sealAnchoredToken[tokenId]) {
+            return true;
+        }
+        if (address(sealRegistry) == address(0)) {
+            return false;
+        }
+        CreditMetadata storage meta = _creditMetadata[tokenId];
+        return sealRegistry.isAnchored(meta.dacUnitId, meta.sourceDataHash);
     }
 
     /**
@@ -544,6 +724,9 @@ if (_owner != msg.sender) {
      * @param _sealRegistry New registry address, or address(0) to clear
      */
     function setSealRegistry(address _sealRegistry) external onlyOwner {
+        if (sealEnforcementLocked) {
+            revert SealEnforcementIsLocked();
+        }
         address oldRegistry = address(sealRegistry);
         sealRegistry = ISealProofOfPhysics(_sealRegistry);
 
@@ -558,14 +741,59 @@ if (_owner != msg.sender) {
     /**
      * @notice Toggle whether minting requires a live consensus anchor.
      * @dev Enabling requires a registry to be set (fail-closed wiring).
+     *      Once {lockSealEnforcement} has been called this is immutable.
      * @param required Whether the seal anchor is required to mint
      */
     function setSealAnchorRequired(bool required) external onlyOwner {
+        if (sealEnforcementLocked) {
+            revert SealEnforcementIsLocked();
+        }
         if (required && address(sealRegistry) == address(0)) {
             revert SealRegistryNotSet();
         }
         sealAnchorRequired = required;
         emit SealAnchorRequirementUpdated(required);
+    }
+
+    /**
+     * @notice Permanently lock seal-anchor enforcement (one-way).
+     * @dev Callable only once enforcement is fully wired (registry set and
+     *      requirement on). After locking, neither the registry address nor
+     *      the requirement can ever be changed — the top assurance tier stops
+     *      being admin-mutable. Intended to be called at mainnet activation;
+     *      the production launch gate requires it.
+     */
+    function lockSealEnforcement() external onlyOwner {
+        if (address(sealRegistry) == address(0) || !sealAnchorRequired) {
+            revert SealRegistryNotSet();
+        }
+        sealEnforcementLocked = true;
+        emit SealEnforcementLocked(msg.sender);
+    }
+
+    /**
+     * @notice Approve or revoke a retirer contract (e.g. CarbonRetirement).
+     * @dev Approved retirers may burn-retire on behalf of holders who have
+     *      ALSO approved them as ERC-1155 operators. Only audited retirement
+     *      manager contracts should ever be approved.
+     */
+    function setApprovedRetirer(address retirer, bool approved) external onlyOwner {
+        if (retirer == address(0)) {
+            revert UnauthorizedRetirer();
+        }
+        approvedRetirers[retirer] = approved;
+        emit RetirerUpdated(retirer, approved);
+    }
+
+    /**
+     * @notice Set the platform circuit breaker consulted on every token
+     *         movement. address(0) disables the check (pre-wiring only —
+     *         the production launch gate requires it configured).
+     */
+    function setCircuitBreaker(address _circuitBreaker) external onlyOwner {
+        address oldBreaker = circuitBreaker;
+        circuitBreaker = _circuitBreaker;
+        emit CircuitBreakerUpdated(oldBreaker, _circuitBreaker);
     }
 
     /**
@@ -809,40 +1037,16 @@ if (_owner != msg.sender) {
         require(len > 0 && len <= 100, "Invalid batch size");
 
         address sender = msg.sender;
-        uint256 totalRetired = 0;
 
+        // Each item runs the full shared retirement invariants (_retireFor):
+        // zero-amount rejection, supply-derived isRetired, seal-anchor check.
+        // Correctness is prioritised over the previous aggregated-SSTORE
+        // optimisation, which had duplicated (and diverged from) the
+        // single-retirement logic.
         for (uint256 i = 0; i < len; ) {
-            uint256 tokenId = tokenIds[i];
-            uint256 amount = amounts[i];
-
-            // Check balance
-            if (balanceOf(sender, tokenId) < amount) {
-                revert InsufficientBalance();
-            }
-
-            // Burn the tokens (permanent retirement)
-            _burn(sender, tokenId, amount);
-
-            // Update per-token supply
-            _tokenTotalSupply[tokenId] -= amount;
-
-            // Track total for aggregate update
-            unchecked {
-                totalRetired += amount;
-            }
-
-            // Mark as fully retired if no balance remaining
-            if (balanceOf(sender, tokenId) == 0) {
-                _creditMetadata[tokenId].isRetired = true;
-            }
-
-            emit CreditRetired(tokenId, sender, amount, reason);
-
+            _retireFor(sender, tokenIds[i], amounts[i], reason);
             unchecked { ++i; }
         }
-
-        // Aggregate total update (gas optimization: single SSTORE for total)
-        _totalCreditsRetired += totalRetired;
     }
 
     /**
@@ -891,5 +1095,30 @@ if (_owner != msg.sender) {
             balances[i] = balanceOf(account, tokenIds[i]);
             unchecked { ++i; }
         }
+    }
+
+    // ============ Circuit Breaker Enforcement ============
+
+    /**
+     * @notice Platform circuit breaker gate on EVERY token movement.
+     * @dev Because mint, transfer, marketplace escrow/settlement, and every
+     *      retirement burn all route through this ERC-1155 hook, a single
+     *      global pause on the CircuitBreaker actually halts the platform's
+     *      critical state transitions (audit finding — the breaker previously
+     *      was not wired into any core contract).
+     */
+    function _beforeTokenTransfer(
+        address operator,
+        address from,
+        address to,
+        uint256[] memory ids,
+        uint256[] memory amounts,
+        bytes memory data
+    ) internal virtual override {
+        address breaker = circuitBreaker;
+        if (breaker != address(0) && !ICircuitBreaker(breaker).isOperationAllowed(address(this))) {
+            revert CircuitBreakerTripped();
+        }
+        super._beforeTokenTransfer(operator, from, to, ids, amounts, data);
     }
 }

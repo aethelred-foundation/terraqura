@@ -206,8 +206,19 @@ describe("CircuitBreaker", function () {
 
     describe("Rate Limiting", function () {
         it("should allow operations within rate limit", async function () {
-            const allowed = await circuitBreaker.checkRateLimit.staticCall(contract1.address);
+            const allowed = await circuitBreaker.connect(contract1).checkRateLimit.staticCall(contract1.address);
             expect(allowed).to.be.true;
+        });
+
+        it("should revert when a third party tries to consume another contract's rate limit", async function () {
+            // Audit finding: limits are self-reporting — msg.sender must equal
+            // contractAddr, otherwise anyone could exhaust a contract's budget.
+            await expect(
+                circuitBreaker.connect(unauthorized).checkRateLimit(contract1.address)
+            ).to.be.revertedWithCustomError(circuitBreaker, "UnauthorizedLimitConsumer");
+            await expect(
+                circuitBreaker.connect(unauthorized).checkVolumeLimit(contract1.address, 1n)
+            ).to.be.revertedWithCustomError(circuitBreaker, "UnauthorizedLimitConsumer");
         });
 
         it("should track operations and enforce limit", async function () {
@@ -216,11 +227,11 @@ describe("CircuitBreaker", function () {
 
             // Perform 5 operations
             for (let i = 0; i < 5; i++) {
-                await circuitBreaker.checkRateLimit(contract1.address);
+                await circuitBreaker.connect(contract1).checkRateLimit(contract1.address);
             }
 
             // 6th should fail
-            const allowed = await circuitBreaker.checkRateLimit.staticCall(contract1.address);
+            const allowed = await circuitBreaker.connect(contract1).checkRateLimit.staticCall(contract1.address);
             expect(allowed).to.be.false;
         });
 
@@ -228,36 +239,36 @@ describe("CircuitBreaker", function () {
             await circuitBreaker.setRateLimit(contract1.address, 2);
 
             // Use up the limit
-            await circuitBreaker.checkRateLimit(contract1.address);
-            await circuitBreaker.checkRateLimit(contract1.address);
+            await circuitBreaker.connect(contract1).checkRateLimit(contract1.address);
+            await circuitBreaker.connect(contract1).checkRateLimit(contract1.address);
 
             // Fast forward 1 hour
             await ethers.provider.send("evm_increaseTime", [3601]);
             await ethers.provider.send("evm_mine", []);
 
             // Should work again
-            const allowed = await circuitBreaker.checkRateLimit.staticCall(contract1.address);
+            const allowed = await circuitBreaker.connect(contract1).checkRateLimit.staticCall(contract1.address);
             expect(allowed).to.be.true;
         });
 
         it("should return false when globally paused", async function () {
             await circuitBreaker.connect(pauser).activateGlobalPause("Test");
 
-            const allowed = await circuitBreaker.checkRateLimit.staticCall(contract1.address);
+            const allowed = await circuitBreaker.connect(contract1).checkRateLimit.staticCall(contract1.address);
             expect(allowed).to.be.false;
         });
 
         it("should return false when contract is paused", async function () {
             await circuitBreaker.connect(pauser).pauseContract(contract1.address, "Test");
 
-            const allowed = await circuitBreaker.checkRateLimit.staticCall(contract1.address);
+            const allowed = await circuitBreaker.connect(contract1).checkRateLimit.staticCall(contract1.address);
             expect(allowed).to.be.false;
         });
     });
 
     describe("Volume Limiting", function () {
         it("should allow operations within volume limit", async function () {
-            const allowed = await circuitBreaker.checkVolumeLimit.staticCall(
+            const allowed = await circuitBreaker.connect(contract1).checkVolumeLimit.staticCall(
                 contract1.address,
                 ethers.parseEther("10")
             );
@@ -269,10 +280,10 @@ describe("CircuitBreaker", function () {
             await circuitBreaker.setVolumeLimit(contract1.address, ethers.parseEther("100"));
 
             // Use 80 ETH
-            await circuitBreaker.checkVolumeLimit(contract1.address, ethers.parseEther("80"));
+            await circuitBreaker.connect(contract1).checkVolumeLimit(contract1.address, ethers.parseEther("80"));
 
             // Try to use 30 more - should fail (exceeds 100 limit)
-            const allowed = await circuitBreaker.checkVolumeLimit.staticCall(
+            const allowed = await circuitBreaker.connect(contract1).checkVolumeLimit.staticCall(
                 contract1.address,
                 ethers.parseEther("30")
             );
@@ -283,14 +294,14 @@ describe("CircuitBreaker", function () {
             await circuitBreaker.setVolumeLimit(contract1.address, ethers.parseEther("100"));
 
             // Use full limit
-            await circuitBreaker.checkVolumeLimit(contract1.address, ethers.parseEther("100"));
+            await circuitBreaker.connect(contract1).checkVolumeLimit(contract1.address, ethers.parseEther("100"));
 
             // Fast forward 1 day
             await ethers.provider.send("evm_increaseTime", [86401]);
             await ethers.provider.send("evm_mine", []);
 
             // Should work again
-            const allowed = await circuitBreaker.checkVolumeLimit.staticCall(
+            const allowed = await circuitBreaker.connect(contract1).checkVolumeLimit.staticCall(
                 contract1.address,
                 ethers.parseEther("50")
             );
@@ -300,7 +311,7 @@ describe("CircuitBreaker", function () {
         it("should return false when globally paused", async function () {
             await circuitBreaker.connect(pauser).activateGlobalPause("Test");
 
-            const allowed = await circuitBreaker.checkVolumeLimit.staticCall(
+            const allowed = await circuitBreaker.connect(contract1).checkVolumeLimit.staticCall(
                 contract1.address,
                 ethers.parseEther("1")
             );

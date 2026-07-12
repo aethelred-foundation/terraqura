@@ -51,6 +51,9 @@ describe("CarbonRetirement", function () {
       .connect(retiree)
       .setApprovalForAll(await retirement.getAddress(), true);
 
+    // Register the retirement contract as an approved retirer (burn authority)
+    await mockCredit.setApprovedRetirer(await retirement.getAddress(), true);
+
     return { retirement, certificate, mockCredit, owner, retiree, other, unauthorized };
   }
 
@@ -147,7 +150,7 @@ describe("CarbonRetirement", function () {
       expect(await retirement.totalRetiredByCredit(CREDIT_ID_1)).to.equal(300n);
     });
 
-    it("should transfer credits to retirement contract", async function () {
+    it("should BURN credits on retirement (never escrow them)", async function () {
       const { retirement, mockCredit, retiree } = await loadFixture(deployFixture);
 
       const balanceBefore = await mockCredit.balanceOf(retiree.address, CREDIT_ID_1);
@@ -157,6 +160,12 @@ describe("CarbonRetirement", function () {
       const balanceAfter = await mockCredit.balanceOf(retiree.address, CREDIT_ID_1);
 
       expect(balanceBefore - balanceAfter).to.equal(500n);
+
+      // Audit finding: retirement must be an irreversible burn, not custody.
+      // The retirement contract must hold ZERO credits after retiring.
+      expect(
+        await mockCredit.balanceOf(await retirement.getAddress(), CREDIT_ID_1)
+      ).to.equal(0n);
     });
 
     it("should auto-increment retirement IDs", async function () {

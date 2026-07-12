@@ -9,6 +9,8 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
+import "../interfaces/ICarbonCredit.sol";
+import "../interfaces/IKycRegistry.sol";
 
 /**
  * @title CarbonMarketplace
@@ -100,13 +102,18 @@ contract CarbonMarketplace is
     /// @notice Mapping of token ID to active listing IDs
     mapping(uint256 => uint256[]) public tokenListings;
 
-    /// @notice KYC registry contract (optional)
+    /// @notice Platform KYC authority (TerraQuraAccessControl). When set, ALL
+    ///         KYC decisions delegate here — expiry and sanctions semantics
+    ///         included. The local mapping below is then ignored.
     address public kycRegistry;
 
     /// @notice Whether KYC is required for trading
     bool public kycRequired;
 
-    /// @notice Mapping of KYC-verified addresses
+    /// @notice DEPRECATED local KYC mapping — test/bootstrap fallback only,
+    ///         used exclusively while {kycRegistry} is unset. Production
+    ///         deployments must set the registry (launch-gate requirement) so
+    ///         the platform has one KYC authority (audit finding).
     mapping(address => bool) public isKycVerified;
 
     // ============ Events ============
@@ -172,6 +179,11 @@ contract CarbonMarketplace is
         bool verified
     );
 
+    event KycRegistryUpdated(
+        address indexed oldRegistry,
+        address indexed newRegistry
+    );
+
     event PlatformFeeUpdated(
         uint256 oldFee,
         uint256 newFee
@@ -200,15 +212,43 @@ contract CarbonMarketplace is
     error CannotBuyOwnListing();
     error CannotOfferOnOwnCredits();
     error NotAuthorizedToReject();
+    error SellerNotKycVerified();
+    error BuyerNotKycVerified();
+    error CreditNotActive(uint256 tokenId);
 
     // ============ Modifiers ============
 
     modifier onlyKycVerified() {
         address sender = _msgSender();
-        if (kycRequired && !isKycVerified[sender]) {
+        if (kycRequired && !_isKycCleared(sender)) {
             revert KycNotVerified();
         }
         _;
+    }
+
+    /**
+     * @notice Resolve KYC through the platform registry when configured
+     *         (expiry + sanctions aware); the deprecated local mapping is
+     *         only consulted while no registry is set.
+     */
+    function _isKycCleared(address account) internal view returns (bool) {
+        address registry = kycRegistry;
+        if (registry != address(0)) {
+            return IKycRegistry(registry).isKycVerified(account);
+        }
+        return isKycVerified[account];
+    }
+
+    /**
+     * @notice Settlement paths must trade only live credits: existing,
+     *         unretired, and — for seal-anchored batches — still carrying a
+     *         live consensus anchor. A seal revoked after listing blocks
+     *         settlement on the next call (audit finding).
+     */
+    function _requireCreditActive(uint256 tokenId) internal view {
+        if (!ICarbonCredit(address(carbonCredit)).isCreditActive(tokenId)) {
+            revert CreditNotActive(tokenId);
+        }
     }
 
     // ============ Initialization ============
@@ -274,6 +314,10 @@ if (_owner != msg.sender) {
         if (carbonCredit.balanceOf(sender, tokenId) < amount) {
             revert InsufficientBalance();
         }
+
+        // Only live credits may be listed (blocks retired batches and
+        // seal-anchored batches whose consensus anchor was revoked).
+        _requireCreditActive(tokenId);
 
         listingId = nextListingId++;
 
@@ -403,6 +447,15 @@ if (_owner != msg.sender) {
         if (listing.minPurchaseAmount > 0 && amount < listing.minPurchaseAmount) {
             revert BelowMinPurchase();
         }
+
+        // Settlement-time rechecks (audit finding): the SELLER's KYC can have
+        // been revoked or expired since the listing was created, and the
+        // credit's seal anchor can have been revoked since listing. Both
+        // parties and the asset must be valid at the moment value moves.
+        if (kycRequired && !_isKycCleared(listing.seller)) {
+            revert SellerNotKycVerified();
+        }
+        _requireCreditActive(listing.tokenId);
 
         uint256 totalPrice = amount * listing.pricePerUnit;
         if (msg.value < totalPrice) revert InsufficientPayment();
@@ -541,6 +594,14 @@ if (_owner != msg.sender) {
         if (carbonCredit.balanceOf(sender, offer.tokenId) < offer.amount) {
             revert InsufficientBalance();
         }
+
+        // Settlement-time rechecks (audit finding): the BUYER's KYC can have
+        // been revoked or expired since the offer was created, and the credit
+        // must still be live (seal anchor unrevoked) at settlement.
+        if (kycRequired && !_isKycCleared(offer.buyer)) {
+            revert BuyerNotKycVerified();
+        }
+        _requireCreditActive(offer.tokenId);
 
         offer.isActive = false;
 
@@ -963,7 +1024,22 @@ if (_owner != msg.sender) {
     // ============ Admin Functions ============
 
     /**
+     * @notice Set the platform KYC authority (TerraQuraAccessControl).
+     * @dev When set, all KYC decisions delegate to the registry (expiry and
+     *      sanctions aware) and the deprecated local mapping is ignored.
+     *      Production deployments must set this — launch-gate requirement.
+     * @param _kycRegistry Registry address, or address(0) to fall back to the
+     *        deprecated local mapping (test/bootstrap only)
+     */
+    function setKycRegistry(address _kycRegistry) external onlyOwner {
+        address oldRegistry = kycRegistry;
+        kycRegistry = _kycRegistry;
+        emit KycRegistryUpdated(oldRegistry, _kycRegistry);
+    }
+
+    /**
      * @notice Set KYC verification status for a user
+     * @dev DEPRECATED — only effective while {kycRegistry} is unset.
      */
     function setKycStatus(address user, bool verified) external onlyOwner {
         isKycVerified[user] = verified;

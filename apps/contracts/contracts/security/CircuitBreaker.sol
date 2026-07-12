@@ -114,6 +114,7 @@ contract CircuitBreaker is Initializable, OwnableUpgradeable, UUPSUpgradeable {
     error SecurityLevelTooHigh();
     error CooldownActive();
     error ContractNotMonitored();
+    error UnauthorizedLimitConsumer();
 
     // ============ Modifiers ============
 
@@ -232,6 +233,12 @@ contract CircuitBreaker is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @return allowed Whether the operation is allowed
      */
     function checkRateLimit(address contractAddr) external returns (bool allowed) {
+        // Self-reporting only: a contract may consume only its OWN limit.
+        // Without this, any third party could repeatedly call with another
+        // contract's address and exhaust its rate budget (audit finding).
+        if (msg.sender != contractAddr) {
+            revert UnauthorizedLimitConsumer();
+        }
         if (globalPause || contractStatus[contractAddr].isPaused) {
             return false;
         }
@@ -267,6 +274,10 @@ contract CircuitBreaker is Initializable, OwnableUpgradeable, UUPSUpgradeable {
      * @return allowed Whether the operation is allowed
      */
     function checkVolumeLimit(address contractAddr, uint256 volume) external returns (bool allowed) {
+        // Self-reporting only — see checkRateLimit.
+        if (msg.sender != contractAddr) {
+            revert UnauthorizedLimitConsumer();
+        }
         if (globalPause || contractStatus[contractAddr].isPaused) {
             return false;
         }

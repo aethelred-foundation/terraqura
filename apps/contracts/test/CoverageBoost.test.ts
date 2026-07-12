@@ -75,7 +75,7 @@ describe("Coverage Boost Tests", function () {
 
             // checkRateLimit returns false instead of reverting when paused
             const contractAddr = user1.address;
-            const allowed = await circuitBreaker.checkRateLimit.staticCall(contractAddr);
+            const allowed = await circuitBreaker.connect(user1).checkRateLimit.staticCall(contractAddr);
             expect(allowed).to.be.false;
         });
 
@@ -83,7 +83,7 @@ describe("Coverage Boost Tests", function () {
             const contractAddr = user1.address;
             await circuitBreaker.pauseContract(contractAddr, "Test");
 
-            const allowed = await circuitBreaker.checkRateLimit.staticCall(contractAddr);
+            const allowed = await circuitBreaker.connect(user1).checkRateLimit.staticCall(contractAddr);
             expect(allowed).to.be.false;
         });
 
@@ -101,7 +101,7 @@ describe("Coverage Boost Tests", function () {
 
         it("should check rate limit normally when not paused", async function () {
             const contractAddr = user1.address;
-            const allowed = await circuitBreaker.checkRateLimit.staticCall(contractAddr);
+            const allowed = await circuitBreaker.connect(user1).checkRateLimit.staticCall(contractAddr);
             expect(allowed).to.be.true;
         });
     });

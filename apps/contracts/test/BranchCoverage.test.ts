@@ -261,7 +261,7 @@ describe("Branch Coverage Tests", function () {
         describe("Rate Limit Branches", function () {
             it("should initialize rate limit on first call", async function () {
                 const contractAddr = user.address;
-                await circuitBreaker.checkRateLimit(contractAddr);
+                await circuitBreaker.connect(user).checkRateLimit(contractAddr);
 
                 // Check rate limit was initialized
                 const limit = await circuitBreaker.rateLimits(contractAddr);
@@ -273,14 +273,14 @@ describe("Branch Coverage Tests", function () {
 
                 // Use up some rate limit
                 for (let i = 0; i < 5; i++) {
-                    await circuitBreaker.checkRateLimit(contractAddr);
+                    await circuitBreaker.connect(user).checkRateLimit(contractAddr);
                 }
 
                 // Fast forward 1 hour
                 await time.increase(3601);
 
                 // Should reset
-                const allowed = await circuitBreaker.checkRateLimit.staticCall(contractAddr);
+                const allowed = await circuitBreaker.connect(user).checkRateLimit.staticCall(contractAddr);
                 expect(allowed).to.be.true;
             });
 
@@ -291,11 +291,11 @@ describe("Branch Coverage Tests", function () {
                 await circuitBreaker.setRateLimit(contractAddr, 2);
 
                 // Use up rate limit
-                await circuitBreaker.checkRateLimit(contractAddr);
-                await circuitBreaker.checkRateLimit(contractAddr);
+                await circuitBreaker.connect(user).checkRateLimit(contractAddr);
+                await circuitBreaker.connect(user).checkRateLimit(contractAddr);
 
                 // Third call should fail
-                const allowed = await circuitBreaker.checkRateLimit.staticCall(contractAddr);
+                const allowed = await circuitBreaker.connect(user).checkRateLimit.staticCall(contractAddr);
                 expect(allowed).to.be.false;
             });
         });
@@ -309,7 +309,7 @@ describe("Branch Coverage Tests", function () {
                 await circuitBreaker.setVolumeLimit(contractAddr, ethers.parseEther("1000"));
 
                 // Check volume - should pass
-                const allowed = await circuitBreaker.checkVolumeLimit.staticCall(contractAddr, amount);
+                const allowed = await circuitBreaker.connect(user).checkVolumeLimit.staticCall(contractAddr, amount);
                 expect(allowed).to.be.true;
             });
 
@@ -320,7 +320,7 @@ describe("Branch Coverage Tests", function () {
                 await circuitBreaker.setVolumeLimit(contractAddr, ethers.parseEther("100"));
 
                 // Try to exceed
-                const allowed = await circuitBreaker.checkVolumeLimit.staticCall(
+                const allowed = await circuitBreaker.connect(user).checkVolumeLimit.staticCall(
                     contractAddr,
                     ethers.parseEther("200")
                 );
@@ -333,13 +333,13 @@ describe("Branch Coverage Tests", function () {
                 await circuitBreaker.setVolumeLimit(contractAddr, ethers.parseEther("100"));
 
                 // Use up volume
-                await circuitBreaker.checkVolumeLimit(contractAddr, ethers.parseEther("100"));
+                await circuitBreaker.connect(user).checkVolumeLimit(contractAddr, ethers.parseEther("100"));
 
                 // Fast forward 1 day
                 await time.increase(86401);
 
                 // Should reset
-                const allowed = await circuitBreaker.checkVolumeLimit.staticCall(
+                const allowed = await circuitBreaker.connect(user).checkVolumeLimit.staticCall(
                     contractAddr,
                     ethers.parseEther("100")
                 );

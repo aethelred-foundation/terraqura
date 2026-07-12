@@ -99,6 +99,35 @@ interface ICarbonCredit {
     ) external;
 
     /**
+     * @notice Retire credits on behalf of `account` (approved retirer
+     *         contracts only, e.g. CarbonRetirement). Burns supply so
+     *         retirement is irreversible and accounted in one place.
+     * @dev Caller must be an approved retirer AND an approved ERC-1155
+     *      operator of `account`.
+     */
+    function retireCreditsFrom(
+        address account,
+        uint256 tokenId,
+        uint256 amount,
+        string calldata reason
+    ) external;
+
+    /**
+     * @notice True iff the credit batch exists, is not retired, and — for a
+     *         seal-anchored batch — its consensus anchor is still live.
+     *         Settlement paths (marketplace, retirement) MUST consult this so
+     *         a revoked seal blocks trading and normal retirement.
+     */
+    function isCreditActive(uint256 tokenId) external view returns (bool);
+
+    /**
+     * @notice Methodology label for credits minted by this contract.
+     * @dev Single-methodology contract (DAC). Retirement certificates source
+     *      this from the token contract rather than hardcoding it.
+     */
+    function methodology() external pure returns (string memory);
+
+    /**
      * @notice Get credit provenance
      */
     function getCreditProvenance(uint256 tokenId) external view returns (

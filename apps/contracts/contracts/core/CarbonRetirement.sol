@@ -8,16 +8,26 @@ import "@openzeppelin/contracts-upgradeable/security/PausableUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC1155/utils/ERC1155HolderUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/token/ERC1155/IERC1155Upgradeable.sol";
+import "@openzeppelin/contracts/utils/Strings.sol";
 import "../interfaces/ICarbonRetirement.sol";
 import "../interfaces/IRetirementCertificate.sol";
+import "../interfaces/ICarbonCredit.sol";
 
 /**
  * @title CarbonRetirement
  * @author TerraQura
  * @notice Permanent carbon credit retirement manager with full audit trail
- * @dev Uses UUPS proxy pattern for upgradeability. Burns ERC-1155 carbon credits
- *      from the CarbonCredit contract and creates immutable retirement records.
- *      Optionally mints ERC-721 retirement certificate NFTs.
+ * @dev Uses UUPS proxy pattern for upgradeability. Retirement BURNS the
+ *      ERC-1155 supply through {ICarbonCredit.retireCreditsFrom} — the
+ *      CarbonCredit contract is the single retirement accounting authority
+ *      (audit finding: the previous escrow-custody model was reversible by an
+ *      upgrade and kept a second, competing set of retirement counters).
+ *      This contract keeps the retirement records/indexes and optionally
+ *      mints ERC-721 retirement certificates in the same atomic transaction.
+ *
+ *      Deployment wiring: this contract must be registered via
+ *      {CarbonCredit.setApprovedRetirer}, and each retiree must approve it as
+ *      an ERC-1155 operator (setApprovalForAll), as before.
  */
 contract CarbonRetirement is
     Initializable,
@@ -225,15 +235,22 @@ contract CarbonRetirement is
         string calldata beneficiary,
         string calldata reason
     ) internal returns (uint256 retirementId) {
-        // Transfer credits from sender to this contract, then burn is implicit
-        // (we hold the credits as "retired" — the credits are effectively removed from circulation)
-        carbonCredit.safeTransferFrom(msg.sender, address(this), creditId, amount, "");
+        ICarbonCredit credit = ICarbonCredit(address(carbonCredit));
+
+        // BURN the supply through the CarbonCredit contract — irreversible by
+        // construction, and all supply/retirement accounting stays in one
+        // place. Requires this contract to be an approved retirer AND an
+        // approved ERC-1155 operator of the retiree.
+        credit.retireCreditsFrom(msg.sender, creditId, amount, reason);
 
         retirementId = _nextRetirementId++;
 
-        // Mint certificate if enabled
+        // Mint certificate if enabled — in the SAME transaction as the burn,
+        // with methodology/vintage taken from the credit's real metadata
+        // rather than hardcoded values (audit finding).
         uint256 certificateId = 0;
         if (certificateMintingEnabled && address(certificate) != address(0)) {
+            (ICarbonCredit.CreditMetadata memory meta, ) = credit.getCreditProvenance(creditId);
             IRetirementCertificate.CertificateData memory certData = IRetirementCertificate.CertificateData({
                 retirementId: retirementId,
                 creditId: creditId,
@@ -241,8 +258,8 @@ contract CarbonRetirement is
                 beneficiary: beneficiary,
                 reason: reason,
                 timestamp: block.timestamp,
-                methodology: "DAC",
-                vintage: ""
+                methodology: credit.methodology(),
+                vintage: _vintageOf(meta.captureTimestamp)
             });
             certificateId = certificate.mint(msg.sender, retirementId, certData);
         }
@@ -269,6 +286,30 @@ contract CarbonRetirement is
         _retiredByCredit[creditId] += amount;
 
         emit CreditRetired(retirementId, creditId, msg.sender, amount, beneficiary);
+    }
+
+    /**
+     * @notice Derive the vintage year (UTC) from the credit's real capture
+     *         timestamp — certificates must carry actual credit metadata.
+     * @dev Civil-from-days algorithm (Howard Hinnant), valid for all
+     *      post-1970 timestamps.
+     */
+    function _vintageOf(uint256 captureTimestamp) internal pure returns (string memory) {
+        if (captureTimestamp == 0) {
+            return "";
+        }
+        int256 z = int256(captureTimestamp / 86400) + 719468;
+        int256 era = (z >= 0 ? z : z - 146096) / 146097;
+        int256 doe = z - era * 146097;
+        int256 yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
+        int256 y = yoe + era * 400;
+        int256 doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+        int256 mp = (5 * doy + 2) / 153;
+        int256 m = mp < 10 ? mp + 3 : mp - 9;
+        if (m <= 2) {
+            y += 1;
+        }
+        return Strings.toString(uint256(y));
     }
 
     /**

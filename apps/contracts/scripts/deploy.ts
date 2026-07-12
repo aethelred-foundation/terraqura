@@ -103,6 +103,61 @@ async function main() {
   await wireTx.wait();
   console.log("   Seal registry wired into CarbonCredit (enforcement: OFF)");
 
+  // 5c. Deploy CarbonRetirement + RetirementCertificate and wire the burn
+  //     authority: retirement BURNS supply via CarbonCredit.retireCreditsFrom,
+  //     so the retirement contract must be an approved retirer.
+  console.log("\n5c. Deploying CarbonRetirement + RetirementCertificate...");
+  const CarbonRetirement = await ethers.getContractFactory("CarbonRetirement");
+  const carbonRetirement = await upgrades.deployProxy(
+    CarbonRetirement,
+    [carbonCreditAddress, deployer.address],
+    { initializer: "initialize", kind: "uups" },
+  );
+  await carbonRetirement.waitForDeployment();
+  const carbonRetirementAddress = await carbonRetirement.getAddress();
+  console.log("   CarbonRetirement Proxy:", carbonRetirementAddress);
+
+  const RetirementCertificate = await ethers.getContractFactory(
+    "RetirementCertificate",
+  );
+  const retirementCertificate = await upgrades.deployProxy(
+    RetirementCertificate,
+    [carbonRetirementAddress, deployer.address],
+    { initializer: "initialize", kind: "uups" },
+  );
+  await retirementCertificate.waitForDeployment();
+  const retirementCertificateAddress = await retirementCertificate.getAddress();
+  console.log("   RetirementCertificate Proxy:", retirementCertificateAddress);
+
+  await (
+    await carbonRetirement.setCertificateContract(retirementCertificateAddress)
+  ).wait();
+  await (
+    await carbonCredit.setApprovedRetirer(carbonRetirementAddress, true)
+  ).wait();
+  console.log("   CarbonRetirement approved as burn-retirer on CarbonCredit");
+
+  // 5d. Deploy CircuitBreaker and wire it into CarbonCredit so a global pause
+  //     actually halts every token movement (mint/transfer/burn).
+  console.log("\n5d. Deploying CircuitBreaker...");
+  const CircuitBreaker = await ethers.getContractFactory("CircuitBreaker");
+  const circuitBreaker = await upgrades.deployProxy(
+    CircuitBreaker,
+    [deployer.address],
+    { initializer: "initialize", kind: "uups" },
+  );
+  await circuitBreaker.waitForDeployment();
+  const circuitBreakerAddress = await circuitBreaker.getAddress();
+  console.log("   CircuitBreaker Proxy:", circuitBreakerAddress);
+
+  await (await carbonCredit.setCircuitBreaker(circuitBreakerAddress)).wait();
+  console.log("   CircuitBreaker wired into CarbonCredit token movements");
+
+  // 5e. One KYC authority: the marketplace delegates KYC decisions to
+  //     TerraQuraAccessControl (expiry + sanctions aware).
+  await (await carbonMarketplace.setKycRegistry(accessControlAddress)).wait();
+  console.log("   Marketplace KYC delegated to TerraQuraAccessControl");
+
   // 6. Grant roles via AccessControl
   console.log("\n6. Setting up roles...");
   const MINTER_ROLE = await accessControl.MINTER_ROLE();

@@ -377,13 +377,17 @@ contract TerraQuraAccessControl is
     }
 
     /**
-     * @notice Check if account has role and is KYC verified
+     * @notice Check if account has a VALID (non-expired) role and is KYC
+     *         verified.
+     * @dev Uses {hasValidRole}, not bare hasRole — an expired role must fail
+     *      authorization checks without waiting for an explicit revocation
+     *      transaction (audit finding).
      */
     function hasRoleAndKyc(
         bytes32 role,
         address account
     ) external view returns (bool) {
-        return hasRole(role, account) && isKycVerified(account);
+        return hasValidRole(role, account) && isKycVerified(account);
     }
 
     // ============================================

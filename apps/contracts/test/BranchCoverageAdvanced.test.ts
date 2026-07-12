@@ -131,42 +131,43 @@ describe("Advanced Branch Coverage Tests", function () {
         it("should return false when rate limit is exactly reached (saturation)", async function () {
             // Perform exactly 5 operations (the limit)
             for (let i = 0; i < 5; i++) {
-                const allowed = await circuitBreaker.checkRateLimit.staticCall(testContract.address);
+                const allowed = await circuitBreaker.connect(testContract).checkRateLimit.staticCall(testContract.address);
                 expect(allowed).to.be.true;
-                await circuitBreaker.checkRateLimit(testContract.address);
+                await circuitBreaker.connect(testContract).checkRateLimit(testContract.address);
             }
 
             // The 6th operation should hit the rate limit
-            const allowed = await circuitBreaker.checkRateLimit.staticCall(testContract.address);
+            const allowed = await circuitBreaker.connect(testContract).checkRateLimit.staticCall(testContract.address);
             expect(allowed).to.be.false;
         });
 
         it("should emit RateLimitExceeded event when limit hit", async function () {
             // Fill up the rate limit
             for (let i = 0; i < 5; i++) {
-                await circuitBreaker.checkRateLimit(testContract.address);
+                await circuitBreaker.connect(testContract).checkRateLimit(testContract.address);
             }
 
-            // Next call should emit the event
-            await expect(circuitBreaker.checkRateLimit(testContract.address))
+            // Next call should emit the event (caller == contractAddr since
+            // limits are self-reporting after the audit fix)
+            await expect(circuitBreaker.connect(testContract).checkRateLimit(testContract.address))
                 .to.emit(circuitBreaker, "RateLimitExceeded")
-                .withArgs(testContract.address, owner.address);
+                .withArgs(testContract.address, testContract.address);
         });
 
         it("should reset rate limit after 1 hour window", async function () {
             // Fill up rate limit
             for (let i = 0; i < 5; i++) {
-                await circuitBreaker.checkRateLimit(testContract.address);
+                await circuitBreaker.connect(testContract).checkRateLimit(testContract.address);
             }
 
             // Rate limited
-            expect(await circuitBreaker.checkRateLimit.staticCall(testContract.address)).to.be.false;
+            expect(await circuitBreaker.connect(testContract).checkRateLimit.staticCall(testContract.address)).to.be.false;
 
             // Fast forward 1 hour
             await time.increase(3600);
 
             // Should be allowed again (window reset)
-            expect(await circuitBreaker.checkRateLimit.staticCall(testContract.address)).to.be.true;
+            expect(await circuitBreaker.connect(testContract).checkRateLimit.staticCall(testContract.address)).to.be.true;
         });
 
         it("should hit volume limit exactly (saturation test)", async function () {
@@ -174,18 +175,18 @@ describe("Advanced Branch Coverage Tests", function () {
             await circuitBreaker.setVolumeLimit(testContract.address, ethers.parseEther("10"));
 
             // Use up 9 ETH
-            await circuitBreaker.checkVolumeLimit(testContract.address, ethers.parseEther("9"));
+            await circuitBreaker.connect(testContract).checkVolumeLimit(testContract.address, ethers.parseEther("9"));
 
             // 1 more ETH should be allowed (total = 10, exactly at limit)
-            let allowed = await circuitBreaker.checkVolumeLimit.staticCall(
+            let allowed = await circuitBreaker.connect(testContract).checkVolumeLimit.staticCall(
                 testContract.address,
                 ethers.parseEther("1")
             );
             expect(allowed).to.be.true;
-            await circuitBreaker.checkVolumeLimit(testContract.address, ethers.parseEther("1"));
+            await circuitBreaker.connect(testContract).checkVolumeLimit(testContract.address, ethers.parseEther("1"));
 
             // Any more should fail
-            allowed = await circuitBreaker.checkVolumeLimit.staticCall(
+            allowed = await circuitBreaker.connect(testContract).checkVolumeLimit.staticCall(
                 testContract.address,
                 ethers.parseEther("0.001")
             );
@@ -196,11 +197,11 @@ describe("Advanced Branch Coverage Tests", function () {
             await circuitBreaker.setVolumeLimit(testContract.address, ethers.parseEther("10"));
 
             // Use up the full limit
-            await circuitBreaker.checkVolumeLimit(testContract.address, ethers.parseEther("10"));
+            await circuitBreaker.connect(testContract).checkVolumeLimit(testContract.address, ethers.parseEther("10"));
 
             // Next attempt should emit the event
             await expect(
-                circuitBreaker.checkVolumeLimit(testContract.address, ethers.parseEther("1"))
+                circuitBreaker.connect(testContract).checkVolumeLimit(testContract.address, ethers.parseEther("1"))
             ).to.emit(circuitBreaker, "VolumeLimitExceeded");
         });
 
@@ -208,11 +209,11 @@ describe("Advanced Branch Coverage Tests", function () {
             await circuitBreaker.setVolumeLimit(testContract.address, ethers.parseEther("10"));
 
             // Use full volume
-            await circuitBreaker.checkVolumeLimit(testContract.address, ethers.parseEther("10"));
+            await circuitBreaker.connect(testContract).checkVolumeLimit(testContract.address, ethers.parseEther("10"));
 
             // Should be blocked
             expect(
-                await circuitBreaker.checkVolumeLimit.staticCall(testContract.address, ethers.parseEther("1"))
+                await circuitBreaker.connect(testContract).checkVolumeLimit.staticCall(testContract.address, ethers.parseEther("1"))
             ).to.be.false;
 
             // Fast forward 1 day
@@ -220,21 +221,21 @@ describe("Advanced Branch Coverage Tests", function () {
 
             // Should be allowed again
             expect(
-                await circuitBreaker.checkVolumeLimit.staticCall(testContract.address, ethers.parseEther("1"))
+                await circuitBreaker.connect(testContract).checkVolumeLimit.staticCall(testContract.address, ethers.parseEther("1"))
             ).to.be.true;
         });
 
         it("should return false from checkRateLimit when globally paused", async function () {
             await circuitBreaker.activateGlobalPause("Test pause");
 
-            const allowed = await circuitBreaker.checkRateLimit.staticCall(testContract.address);
+            const allowed = await circuitBreaker.connect(testContract).checkRateLimit.staticCall(testContract.address);
             expect(allowed).to.be.false;
         });
 
         it("should return false from checkVolumeLimit when contract is paused", async function () {
             await circuitBreaker.pauseContract(testContract.address, "Test pause");
 
-            const allowed = await circuitBreaker.checkVolumeLimit.staticCall(
+            const allowed = await circuitBreaker.connect(testContract).checkVolumeLimit.staticCall(
                 testContract.address,
                 ethers.parseEther("1")
             );

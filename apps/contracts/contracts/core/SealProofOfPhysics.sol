@@ -60,6 +60,8 @@ contract SealProofOfPhysics is Ownable2Step, Pausable, ReentrancyGuard {
         uint64 anchoredAt; // block time of anchoring
         bool exists; // record present
         bool revoked; // locally revoked by governance
+        bytes32 policyHash; // hash of the CEAP policy the anchor was admitted under
+        uint32 policyVersion; // monotonic policy version at anchor time
     }
 
     // ============================================
@@ -77,6 +79,10 @@ contract SealProofOfPhysics is Ownable2Step, Pausable, ReentrancyGuard {
     string[] private _allowedPlatforms;
     bool private _requireVendorRoot;
     string[] private _dataResidency;
+
+    /// @notice Monotonic CEAP policy version; bumped on every policy change so
+    ///         each anchor can record exactly which admission rule accepted it.
+    uint32 public policyVersion;
 
     // ============================================
     // Events
@@ -168,7 +174,11 @@ contract SealProofOfPhysics is Ownable2Step, Pausable, ReentrancyGuard {
             sealId: sealId,
             anchoredAt: uint64(block.timestamp),
             exists: true,
-            revoked: false
+            revoked: false,
+            // Snapshot the admission rule: after a policy change, auditors can
+            // still reconstruct exactly which CEAP policy accepted this anchor.
+            policyHash: policyHash(),
+            policyVersion: policyVersion
         });
         emit ClaimAnchored(dacUnitId, sourceDataHash, sealId, jobId);
     }
@@ -236,8 +246,23 @@ contract SealProofOfPhysics is Ownable2Step, Pausable, ReentrancyGuard {
         _allowedPlatforms = allowedPlatforms;
         _requireVendorRoot = requireVendorRoot;
         _dataResidency = dataResidency;
+        policyVersion += 1;
         emit CompliancePolicySet(
             allowedBackends, minVerification, allowedPlatforms, requireVendorRoot, dataResidency
+        );
+    }
+
+    /// @notice Hash of the CEAP policy currently required of backing seals.
+    ///         Recorded into every anchor at admission time.
+    function policyHash() public view returns (bytes32) {
+        return keccak256(
+            abi.encode(
+                _allowedBackends,
+                _minVerification,
+                _allowedPlatforms,
+                _requireVendorRoot,
+                _dataResidency
+            )
         );
     }
 
