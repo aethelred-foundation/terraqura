@@ -145,7 +145,7 @@ class Settings(BaseSettings):
             self.network_manifest_path = manifest_path
         else:
             self.chain_id = chain_id or 7331
-            self.rpc_url = self.rpc_url or "https://rpc.aethelred.network"
+            self.rpc_url = self.rpc_url or "https://evm-rpc.aethelred.network"
 
         self.network_key = network_key
         self.deployment_key = deployment_key or "aethelredMainnetPending"

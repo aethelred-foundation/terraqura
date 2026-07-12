@@ -105,7 +105,7 @@ export const NETWORKS = {
     chainId: 7331,
     name: "aethelred",
     displayName: "Aethelred Mainnet",
-    rpcUrls: ["https://rpc.aethelred.network"],
+    rpcUrls: ["https://evm-rpc.aethelred.network"],
     explorerUrl: "https://explorer.aethelred.network",
     nativeCurrency: {
       name: "AETHEL",
@@ -123,7 +123,7 @@ export const NETWORKS = {
     chainId: 7332,
     name: "aethelred-testnet",
     displayName: "Aethelred Testnet",
-    rpcUrls: ["https://rpc-testnet.aethelred.network"],
+    rpcUrls: ["https://evm-rpc-testnet.aethelred.network"],
     explorerUrl: "https://explorer-testnet.aethelred.network",
     nativeCurrency: {
       name: "AETHEL",

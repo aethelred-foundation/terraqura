@@ -35,7 +35,7 @@ Backend services:
 
 - `TERRAQURA_NETWORK=aethelredTestnet`
 - `TERRAQURA_DEPLOYMENT=aethelredTestnetPending`
-- `TERRAQURA_RPC_URL=https://rpc-testnet.aethelred.network`
+- `TERRAQURA_RPC_URL=https://evm-rpc-testnet.aethelred.network`
 - `TERRAQURA_NETWORK_MANIFEST_JSON=packages/network-manifest/manifest.json`
 
 Frontend:

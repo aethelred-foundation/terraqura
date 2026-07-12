@@ -81,7 +81,7 @@ export const mintingProcessor: Processor<MintingJobData, MintingResult> = async 
   try {
     // Initialize provider and wallet
     const provider = new ethers.JsonRpcProvider(
-      process.env.AETHELRED_RPC_URL || "https://rpc-testnet.aethelred.network"
+      process.env.AETHELRED_RPC_URL || "https://evm-rpc-testnet.aethelred.network"
     );
 
     const wallet = new ethers.Wallet(process.env.MINTER_PRIVATE_KEY!, provider);

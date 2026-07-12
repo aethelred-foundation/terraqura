@@ -40,7 +40,7 @@ Edit `.env.local` and configure:
 # Required
 TERRAQURA_NETWORK=aethelredTestnet
 TERRAQURA_DEPLOYMENT=aethelredTestnetPending
-AETHELRED_TESTNET_RPC_URL=https://rpc-testnet.aethelred.network
+AETHELRED_TESTNET_RPC_URL=https://evm-rpc-testnet.aethelred.network
 DATABASE_URL=postgresql://terraqura:password@localhost:5432/terraqura
 REDIS_PASSWORD=terraqura_dev
 

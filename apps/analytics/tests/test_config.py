@@ -19,7 +19,7 @@ def test_settings_resolve_mainnet_from_portable_manifest(monkeypatch: pytest.Mon
     assert settings.network_key == "aethelred"
     assert settings.deployment_key == "aethelredMainnetPending"
     assert settings.chain_id == 7331
-    assert settings.rpc_url == "https://rpc.aethelred.network"
+    assert settings.rpc_url == "https://evm-rpc.aethelred.network"
 
 
 def test_settings_resolve_testnet_from_portable_manifest(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -34,7 +34,7 @@ def test_settings_resolve_testnet_from_portable_manifest(monkeypatch: pytest.Mon
     assert settings.network_key == "aethelredTestnet"
     assert settings.deployment_key == "aethelredTestnetPending"
     assert settings.chain_id == 7332
-    assert settings.rpc_url == "https://rpc-testnet.aethelred.network"
+    assert settings.rpc_url == "https://evm-rpc-testnet.aethelred.network"
 
 
 def test_settings_reject_chain_id_drift(monkeypatch: pytest.MonkeyPatch) -> None:

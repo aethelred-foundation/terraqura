@@ -48,7 +48,7 @@ export function setupMockRuntimeEnv(overrides?: Record<string, string>): void {
     SUMSUB_APP_TOKEN: "test-sumsub-app-token",
     SUMSUB_SECRET_KEY: "test-sumsub-secret-key",
     ONFIDO_API_TOKEN: "test-onfido-api-token",
-    AETHELRED_RPC_URL: "https://rpc-testnet.aethelred.network",
+    AETHELRED_RPC_URL: "https://evm-rpc-testnet.aethelred.network",
     MINTER_PRIVATE_KEY:
       "0x0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
     CARBON_CREDIT_CONTRACT: "0x1234567890123456789012345678901234567890",

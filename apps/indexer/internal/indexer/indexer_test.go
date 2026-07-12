@@ -33,7 +33,7 @@ func newTestIndexer(fetcher BlockFetcher) (*Indexer, *store.InMemoryStore) {
 	st := store.NewInMemoryStore()
 	logger := zap.NewNop()
 	cfg := &config.Config{
-		RPCEndpoint: "https://rpc-testnet.aethelred.network",
+		RPCEndpoint: "https://evm-rpc-testnet.aethelred.network",
 		APIPort:     8080,
 		ChainID:     7332,
 	}

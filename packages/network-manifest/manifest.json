@@ -11,7 +11,7 @@
       "name": "aethelred",
       "displayName": "Aethelred Mainnet",
       "rpcUrls": [
-        "https://rpc.aethelred.network"
+        "https://evm-rpc.aethelred.network"
       ],
       "explorerUrl": "https://explorer.aethelred.network",
       "nativeCurrency": {
@@ -28,7 +28,7 @@
       "name": "aethelred-testnet",
       "displayName": "Aethelred Testnet",
       "rpcUrls": [
-        "https://rpc-testnet.aethelred.network"
+        "https://evm-rpc-testnet.aethelred.network"
       ],
       "explorerUrl": "https://explorer-testnet.aethelred.network",
       "nativeCurrency": {

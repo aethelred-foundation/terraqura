@@ -37,6 +37,23 @@ const forbiddenPatterns = [
     pattern: /78431/g,
     message: "stale Aethelred mainnet chain id 78431",
   },
+  // 8821/88210 were never-deployed manifest-1.0.0 placeholders (8821 is the
+  // SLIP-44 coin type, not a chain id). Context-anchored to avoid matching
+  // the digits inside hashes/ABIs.
+  {
+    pattern: /chain[\s_-]?id\D{0,12}\b8821\b/gi,
+    message: "stale Aethelred chain id 8821 (never-deployed placeholder; canonical is 7331)",
+  },
+  {
+    pattern: /chain[\s_-]?id\D{0,12}\b88210\b/gi,
+    message: "stale Aethelred chain id 88210 (never-deployed placeholder; canonical is 7332)",
+  },
+  // The pre-canonical EVM RPC host naming; canonical hosts are evm-rpc.* /
+  // evm-rpc-testnet.* per aethelred ecosystem/manifest.json v2.0.0.
+  {
+    pattern: /https:\/\/rpc\.aethelred\.network|https:\/\/rpc-testnet\.aethelred\.network/g,
+    message: "stale Aethelred RPC host (canonical naming is evm-rpc.aethelred.network / evm-rpc-testnet.aethelred.network)",
+  },
   {
     pattern: /testnet-rpc\.aethelred/g,
     message: "stale Aethelred testnet RPC host",

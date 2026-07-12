@@ -32,7 +32,7 @@ func TestLoadUsesPortableManifestDefaults(t *testing.T) {
 	if cfg.ChainID != 7331 {
 		t.Fatalf("ChainID = %d, want 7331", cfg.ChainID)
 	}
-	if cfg.RPCEndpoint != "https://rpc.aethelred.network" {
+	if cfg.RPCEndpoint != "https://evm-rpc.aethelred.network" {
 		t.Fatalf("RPCEndpoint = %q", cfg.RPCEndpoint)
 	}
 	if cfg.IndexerEnabled {
