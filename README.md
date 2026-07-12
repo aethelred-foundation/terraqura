@@ -5,7 +5,7 @@
   <p>
     <a href="https://github.com/aethelred-foundation/terraqura/actions/workflows/ci-cd.yml"><img src="https://img.shields.io/github/actions/workflow/status/aethelred-foundation/terraqura/ci-cd.yml?branch=main&style=flat-square&label=CI" alt="CI"></a>
     <a href="https://codecov.io/gh/aethelred-foundation/terraqura"><img src="https://img.shields.io/codecov/c/github/aethelred-foundation/terraqura?style=flat-square&label=coverage" alt="Coverage"></a>
-    <a href="SECURITY.md"><img src="https://img.shields.io/badge/audit-25_contracts_reviewed-informational?style=flat-square" alt="Audit"></a>
+    <a href="SECURITY.md"><img src="https://img.shields.io/badge/security-internal_review_26_contracts_(external_audit_pending)-informational?style=flat-square" alt="Security"></a>
     <a href="LICENSE"><img src="https://img.shields.io/badge/license-Apache--2.0-blue?style=flat-square" alt="License"></a>
   </p>
   <p>
@@ -28,7 +28,7 @@
 
 TerraQura is a full-stack institutional-grade carbon credit platform built on **Aethelred** — a sovereign Layer 1 optimised for verifiable AI computation. It enables the complete carbon credit lifecycle from Proof-of-Physics verification of direct air capture (DAC) units through to tokenised credit trading, DeFi vaults, and retirement — all with 1st-party sovereign IoT oracle data, ADGM/ITMO/Article 6 compliance, and on-chain provenance tracking.
 
-> **Status** &mdash; Pre-mainnet. 25 contracts deployed to testnet, 881+ tests passing across all layers, 8 dashboard pages operational.
+> **Status** &mdash; Pre-deployment on Aethelred. 26 contracts implemented (Aethelred testnet/mainnet deployment pending in the canonical manifest); a legacy validation stack was deployed to Polygon Amoy (2026-02). 881+ tests passing across all layers, 97.3% measured contract statement coverage, 8 dashboard pages operational. External Tier-1 audit pending — a production launch gate blocks release until deployment and audit evidence exist.
 
 ---
 
@@ -123,7 +123,7 @@ graph TB
     end
 
     subgraph Smart Contracts
-        C[Solidity 0.8.28 / Hardhat<br/>25 contracts / UUPS upgradeable]
+        C[Solidity 0.8.28 / Hardhat<br/>26 contracts / UUPS + immutable seal registry]
     end
 
     subgraph Storage
@@ -154,8 +154,8 @@ graph TB
 | Layer | Technology | Purpose |
 |-------|------------|---------|
 | Monorepo | Turborepo + pnpm | Unified builds, shared configs |
-| Blockchain | Aethelred L1 (EVM) | Sovereign chain, native AETH |
-| Contracts | Solidity 0.8.28 + Hardhat | 25 contracts, UUPS upgradeable |
+| Blockchain | Aethelred L1 (EVM) | Sovereign chain (7331/7332), native AETHEL |
+| Contracts | Solidity 0.8.28 + Hardhat | 26 contracts, UUPS upgradeable (SealProofOfPhysics deliberately non-upgradeable) |
 | Backend | Fastify 4.26 + BullMQ | High-performance REST + job processing |
 | Frontend | Next.js 16 + React 19 | App Router, Turbopack, SSR |
 | Auth | RainbowKit + SIWE | Web3 wallet authentication |
@@ -248,7 +248,7 @@ terraqura/
 ├── apps/
 │   ├── web/              # Next.js 16 Dashboard (8 pages, 50+ features)
 │   ├── api/              # Fastify REST API (15 route modules)
-│   ├── contracts/        # Hardhat Smart Contracts (25 contracts)
+│   ├── contracts/        # Hardhat Smart Contracts (26 contracts)
 │   └── worker/           # BullMQ Background Workers
 ├── packages/
 │   ├── sdk/              # TypeScript SDK (12 modules)
@@ -272,6 +272,7 @@ All contracts target the Aethelred L1 EVM and are written in Solidity 0.8.28 wit
 <tr><td><code>CarbonRetirement</code></td><td>Core</td><td>Credit retirement with on-chain provenance and compliance checks</td></tr>
 <tr><td><code>RetirementCertificate</code></td><td>Core</td><td>NFT retirement certificates with ITMO registry integration</td></tr>
 <tr><td><code>CarbonBatchAuction</code></td><td>Core</td><td>Batch auction mechanism for large-volume credit sales</td></tr>
+<tr><td><code>SealProofOfPhysics</code></td><td>Core</td><td>Consensus-anchored MRV registry (top assurance tier) — anchors claims to Aethelred Digital Seals via the ISeal precompile; deliberately non-upgradeable</td></tr>
 <tr><td><code>CarbonAMM</code></td><td>DeFi</td><td>Automated market maker for continuous carbon credit liquidity</td></tr>
 <tr><td><code>CarbonVault</code></td><td>DeFi</td><td>Yield vault strategies for carbon credit holders</td></tr>
 <tr><td><code>CarbonFutures</code></td><td>DeFi</td><td>Carbon credit futures contracts with settlement</td></tr>
@@ -293,7 +294,7 @@ All contracts target the Aethelred L1 EVM and are written in Solidity 0.8.28 wit
 <tr><td><code>EfficiencyCalculator</code></td><td>Library</td><td>On-chain efficiency calculation library for DAC verification</td></tr>
 </table>
 
-**Interfaces:** 13 interfaces providing full coverage across all contract categories.
+**Interfaces:** 17 interfaces providing full coverage across all contract categories.
 
 ---
 
