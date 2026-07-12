@@ -5,6 +5,14 @@ import Link from "next/link";
 import { X, Cookie } from "lucide-react";
 
 const COOKIE_CONSENT_KEY = "terraqura_cookie_consent";
+// Fired so consent-gated integrations (self-hosted analytics) react in the
+// same tab without a reload.
+const CONSENT_EVENT = "terraqura:consent";
+
+function setConsent(value: "accepted" | "declined") {
+  localStorage.setItem(COOKIE_CONSENT_KEY, value);
+  window.dispatchEvent(new CustomEvent(CONSENT_EVENT, { detail: value }));
+}
 
 export function CookieBanner() {
   const [visible, setVisible] = useState(false);
@@ -19,12 +27,12 @@ export function CookieBanner() {
   }, []);
 
   function accept() {
-    localStorage.setItem(COOKIE_CONSENT_KEY, "accepted");
+    setConsent("accepted");
     setVisible(false);
   }
 
   function decline() {
-    localStorage.setItem(COOKIE_CONSENT_KEY, "declined");
+    setConsent("declined");
     setVisible(false);
   }
 

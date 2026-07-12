@@ -289,6 +289,45 @@ services:
     profiles:
       - dev
 
+  # ============================================
+  # Self-hosted, cookieless web analytics (Umami)
+  # Replaces Vercel Analytics. Runs on an isolated Postgres so it never
+  # touches the app database. Wire the web app to it via
+  # NEXT_PUBLIC_ANALYTICS_SRC / NEXT_PUBLIC_ANALYTICS_WEBSITE_ID.
+  # ============================================
+  analytics:
+    image: ghcr.io/umami-software/umami:postgresql-latest
+    container_name: terraqura-analytics
+    ports:
+      - "3010:3000"
+    environment:
+      DATABASE_URL: postgresql://umami:${UMAMI_DB_PASSWORD:-umami}@analytics-db:5432/umami
+      DATABASE_TYPE: postgresql
+      # Generate a strong secret in real deployments: `openssl rand -base64 32`
+      APP_SECRET: ${UMAMI_APP_SECRET:-change-me-in-production}
+    depends_on:
+      - analytics-db
+    networks:
+      - terraqura-network
+    restart: unless-stopped
+    profiles:
+      - analytics
+
+  analytics-db:
+    image: postgres:15-alpine
+    container_name: terraqura-analytics-db
+    environment:
+      POSTGRES_DB: umami
+      POSTGRES_USER: umami
+      POSTGRES_PASSWORD: ${UMAMI_DB_PASSWORD:-umami}
+    volumes:
+      - umami_db_data:/var/lib/postgresql/data
+    networks:
+      - terraqura-network
+    restart: unless-stopped
+    profiles:
+      - analytics
+
 # ============================================
 # NETWORKS
 # ============================================
@@ -307,3 +346,4 @@ volumes:
   ipfs_data:
   prometheus_data:
   grafana_data:
+  umami_db_data:

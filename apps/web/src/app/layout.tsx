@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import "./globals.css";
 import { Providers } from "./providers";
 import { CookieBanner } from "@/components/ui/CookieBanner";
+import { SelfHostedAnalytics } from "@/components/analytics/SelfHostedAnalytics";
 import { JsonLd } from "@/components/shared/JsonLd";
 import { organizationSchema } from "@/lib/jsonld";
 
@@ -136,6 +137,7 @@ export default function RootLayout({
         <JsonLd id="ld-organization" data={organizationSchema()} />
         <Providers>{children}</Providers>
         <CookieBanner />
+        <SelfHostedAnalytics />
       </body>
     </html>
   );

@@ -63,8 +63,9 @@ const nextConfig = {
     // Flip the header key to "Content-Security-Policy" once confirmed clean.
     const cspDirectives = [
       "default-src 'self'",
-      // 'unsafe-inline' for Next.js inlined RSC/runtime; Sumsub for KYC SDK.
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.sumsub.com",
+      // 'unsafe-inline' for Next.js inlined RSC/runtime; Sumsub for KYC SDK;
+      // self-hosted (cookieless) analytics under the aethelred.network domain.
+      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.sumsub.com https://analytics.aethelred.network",
       "style-src 'self' 'unsafe-inline'",
       "img-src 'self' data: blob: https://*.aethelred.network https://*.walletconnect.com https://explorer-api.walletconnect.com",
       "font-src 'self' data:",

@@ -122,6 +122,7 @@ pnpm test:all       # All of the above
 | Web3 | wagmi v2, viem, RainbowKit |
 | State | TanStack React Query v5 |
 | Auth | NextAuth v4 (SIWE provider) |
+| Analytics | Self-hosted Umami (cookieless, consent-gated) |
 
 ### SSR Strategy
 
