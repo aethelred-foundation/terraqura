@@ -19,6 +19,23 @@ const requiredContractKeys = [
   "timelock",
   "circuitBreaker",
   "nativeIoTOracle",
+  // Consultant P0.7: the gate previously omitted the contracts that justify
+  // the platform's Aethelred positioning and complete the golden workflow.
+  "riskOracle",
+  "sealProofOfPhysics",
+  "carbonRetirement",
+  "retirementCertificate",
+];
+
+// Enforcement facts the deploy pipeline must record from LIVE chain reads of
+// the deployed contracts. A release cannot pass by deploying the seal
+// registry but leaving enforcement off (consultant P0.4/P0.7).
+const requiredEnforcementFlags = [
+  "sealAnchorRequired", // CarbonCredit.sealAnchorRequired() == true
+  "sealEnforcementLocked", // CarbonCredit.sealEnforcementLocked() == true
+  "kycRegistryConfigured", // CarbonMarketplace.kycRegistry() != zero
+  "circuitBreakerWired", // CarbonCredit.circuitBreaker() != zero
+  "retirementWiredAsApprovedRetirer", // CarbonCredit.approvedRetirers(CarbonRetirement) == true
 ];
 
 const requiredArtifacts = [
@@ -225,6 +242,15 @@ if (manifest && deploymentKey) {
       if (!address || address.toLowerCase() === ZERO_ADDRESS) {
         errors.push(
           `Deployment "${deploymentKey}" is missing nonzero ${contractKey} address.`,
+        );
+      }
+    }
+
+    for (const flag of requiredEnforcementFlags) {
+      if (deployment.enforcement?.[flag] !== true) {
+        errors.push(
+          `Deployment "${deploymentKey}" does not attest enforcement.${flag} === true ` +
+            `(must be recorded from a live chain read of the deployed contracts).`,
         );
       }
     }

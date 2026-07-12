@@ -76,13 +76,22 @@
         "circuitBreaker": "0x0000000000000000000000000000000000000000",
         "riskOracle": "0x0000000000000000000000000000000000000000",
         "nativeIoTOracle": "0x0000000000000000000000000000000000000000",
-        "sealProofOfPhysics": "0x0000000000000000000000000000000000000000"
+        "sealProofOfPhysics": "0x0000000000000000000000000000000000000000",
+        "carbonRetirement": "0x0000000000000000000000000000000000000000",
+        "retirementCertificate": "0x0000000000000000000000000000000000000000"
       },
       "implementations": {},
       "verifiedUrls": {},
       "platformFeeBps": 250,
       "owner": null,
-      "provenance": "Aethelred mainnet is the primary production target. No checked-in deployment manifest exists yet."
+      "provenance": "Aethelred mainnet is the primary production target. No checked-in deployment manifest exists yet.",
+      "enforcement": {
+        "sealAnchorRequired": false,
+        "sealEnforcementLocked": false,
+        "kycRegistryConfigured": false,
+        "circuitBreakerWired": false,
+        "retirementWiredAsApprovedRetirer": false
+      }
     },
     "aethelredTestnetPending": {
       "key": "aethelredTestnetPending",
@@ -102,13 +111,22 @@
         "circuitBreaker": "0x0000000000000000000000000000000000000000",
         "riskOracle": "0x0000000000000000000000000000000000000000",
         "nativeIoTOracle": "0x0000000000000000000000000000000000000000",
-        "sealProofOfPhysics": "0x0000000000000000000000000000000000000000"
+        "sealProofOfPhysics": "0x0000000000000000000000000000000000000000",
+        "carbonRetirement": "0x0000000000000000000000000000000000000000",
+        "retirementCertificate": "0x0000000000000000000000000000000000000000"
       },
       "implementations": {},
       "verifiedUrls": {},
       "platformFeeBps": 250,
       "owner": null,
-      "provenance": "Aethelred testnet is the primary pre-production target. Contract addresses must come from a fresh Aethelred deployment manifest or explicit environment overrides."
+      "provenance": "Aethelred testnet is the primary pre-production target. Contract addresses must come from a fresh Aethelred deployment manifest or explicit environment overrides.",
+      "enforcement": {
+        "sealAnchorRequired": false,
+        "sealEnforcementLocked": false,
+        "kycRegistryConfigured": false,
+        "circuitBreakerWired": false,
+        "retirementWiredAsApprovedRetirer": false
+      }
     },
     "polygonAmoyV3Final": {
       "key": "polygonAmoyV3Final",
@@ -128,7 +146,9 @@
         "circuitBreaker": "0x24192ecf06aA782F1dF69878413D217d9319e257",
         "riskOracle": "0x0000000000000000000000000000000000000000",
         "nativeIoTOracle": "0x0000000000000000000000000000000000000000",
-        "sealProofOfPhysics": "0x0000000000000000000000000000000000000000"
+        "sealProofOfPhysics": "0x0000000000000000000000000000000000000000",
+        "carbonRetirement": "0x0000000000000000000000000000000000000000",
+        "retirementCertificate": "0x0000000000000000000000000000000000000000"
       },
       "implementations": {
         "accessControl": "0x7e3bf0EBAF28bcC9A7d96a54Ad6FFEfA0b4Ebc17",
@@ -150,7 +170,14 @@
       },
       "platformFeeBps": 250,
       "owner": "0x7F6A87fE3191FFBFa06D37939F3a3a4341159ABc",
-      "provenance": "Legacy validation deployment. These addresses are proven by checked-in Polygon Amoy manifests and must not be described as Aethelred deployments."
+      "provenance": "Legacy validation deployment. These addresses are proven by checked-in Polygon Amoy manifests and must not be described as Aethelred deployments.",
+      "enforcement": {
+        "sealAnchorRequired": false,
+        "sealEnforcementLocked": false,
+        "kycRegistryConfigured": false,
+        "circuitBreakerWired": false,
+        "retirementWiredAsApprovedRetirer": false
+      }
     }
   },
   "platform": {

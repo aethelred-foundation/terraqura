@@ -20,7 +20,9 @@ export type ContractAddressKey =
   | "circuitBreaker"
   | "riskOracle"
   | "nativeIoTOracle"
-  | "sealProofOfPhysics";
+  | "sealProofOfPhysics"
+  | "carbonRetirement"
+  | "retirementCertificate";
 
 export type ContractAddresses = Record<ContractAddressKey, EvmAddress>;
 
@@ -44,6 +46,25 @@ export interface NetworkDefinition {
   readonly role: "primary-target" | "legacy-validation";
 }
 
+/**
+ * Enforcement facts a deployment must attest from LIVE chain reads of the
+ * deployed contracts (consultant P0.4/P0.7): the production launch gate
+ * requires every flag to be true. A deploy pipeline records these after
+ * reading the deployed contract state — never by hand.
+ */
+export interface DeploymentEnforcement {
+  /** CarbonCredit.sealAnchorRequired() === true */
+  readonly sealAnchorRequired: boolean;
+  /** CarbonCredit.sealEnforcementLocked() === true (one-way lock engaged) */
+  readonly sealEnforcementLocked: boolean;
+  /** CarbonMarketplace.kycRegistry() !== zero address */
+  readonly kycRegistryConfigured: boolean;
+  /** CarbonCredit.circuitBreaker() !== zero address */
+  readonly circuitBreakerWired: boolean;
+  /** CarbonCredit.approvedRetirers(CarbonRetirement) === true */
+  readonly retirementWiredAsApprovedRetirer: boolean;
+}
+
 export interface DeploymentDefinition {
   readonly key: DeploymentKey;
   readonly network: NetworkKey;
@@ -59,6 +80,7 @@ export interface DeploymentDefinition {
   readonly platformFeeBps: number;
   readonly owner: EvmAddress | null;
   readonly provenance: string;
+  readonly enforcement: DeploymentEnforcement;
 }
 
 export interface PortableNetworkManifest {
@@ -140,7 +162,18 @@ const EMPTY_CONTRACTS = {
   riskOracle: ZERO_ADDRESS,
   nativeIoTOracle: ZERO_ADDRESS,
   sealProofOfPhysics: ZERO_ADDRESS,
+  carbonRetirement: ZERO_ADDRESS,
+  retirementCertificate: ZERO_ADDRESS,
 } as const satisfies ContractAddresses;
+
+/** Enforcement attestation for deployments that have not proven anything. */
+const UNPROVEN_ENFORCEMENT = {
+  sealAnchorRequired: false,
+  sealEnforcementLocked: false,
+  kycRegistryConfigured: false,
+  circuitBreakerWired: false,
+  retirementWiredAsApprovedRetirer: false,
+} as const satisfies DeploymentEnforcement;
 
 export const CONTRACT_ADDRESS_ENV_KEYS = {
   accessControl: "ACCESS_CONTROL",
@@ -154,6 +187,8 @@ export const CONTRACT_ADDRESS_ENV_KEYS = {
   riskOracle: "RISK_ORACLE",
   nativeIoTOracle: "NATIVE_IOT_ORACLE",
   sealProofOfPhysics: "SEAL_PROOF_OF_PHYSICS",
+  carbonRetirement: "CARBON_RETIREMENT",
+  retirementCertificate: "RETIREMENT_CERTIFICATE",
 } as const satisfies Record<ContractAddressKey, string>;
 
 export const DEPLOYMENTS = {
@@ -171,6 +206,7 @@ export const DEPLOYMENTS = {
     owner: null,
     provenance:
       "Aethelred mainnet is the primary production target. No checked-in deployment manifest exists yet.",
+    enforcement: UNPROVEN_ENFORCEMENT,
   },
   aethelredTestnetPending: {
     key: "aethelredTestnetPending",
@@ -186,6 +222,7 @@ export const DEPLOYMENTS = {
     owner: null,
     provenance:
       "Aethelred testnet is the primary pre-production target. Contract addresses must come from a fresh Aethelred deployment manifest or explicit environment overrides.",
+    enforcement: UNPROVEN_ENFORCEMENT,
   },
   polygonAmoyV3Final: {
     key: "polygonAmoyV3Final",
@@ -208,6 +245,9 @@ export const DEPLOYMENTS = {
       // Aethelred-only: anchors claims via the ISeal precompile (0x0900);
       // structurally absent on the Polygon legacy-validation deployment.
       sealProofOfPhysics: ZERO_ADDRESS,
+      // Not part of the checked-in Amoy v3 address set.
+      carbonRetirement: ZERO_ADDRESS,
+      retirementCertificate: ZERO_ADDRESS,
     },
     implementations: {
       accessControl: "0x7e3bf0EBAF28bcC9A7d96a54Ad6FFEfA0b4Ebc17",
@@ -239,6 +279,9 @@ export const DEPLOYMENTS = {
     owner: "0x7F6A87fE3191FFBFa06D37939F3a3a4341159ABc",
     provenance:
       "Legacy validation deployment. These addresses are proven by checked-in Polygon Amoy manifests and must not be described as Aethelred deployments.",
+    // The Amoy legacy stack predates seal anchoring, the KYC registry wiring,
+    // and the retirement burn authority — truthfully unproven.
+    enforcement: UNPROVEN_ENFORCEMENT,
   },
 } as const satisfies Record<DeploymentKey, DeploymentDefinition>;
 
@@ -473,7 +516,8 @@ export function validateDeploymentManifest(): string[] {
         contractKey !== "nativeIoTOracle" &&
         contractKey !== "riskOracle" &&
         contractKey !== "sealProofOfPhysics" && // Aethelred-only, absent on legacy Polygon
-
+        contractKey !== "carbonRetirement" && // not in the checked-in Amoy v3 address set
+        contractKey !== "retirementCertificate" && // not in the checked-in Amoy v3 address set
         isZeroAddress(address)
       ) {
         errors.push(`Validated deployment "${key}" has zero address for "${contractKey}".`);

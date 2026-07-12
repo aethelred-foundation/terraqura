@@ -19,6 +19,12 @@ const ignoredPathParts = new Set([
   "__pycache__",
   ".pytest_cache",
   "typechain-types",
+  // Local Python virtualenvs: vendored numpy/scipy/pandas test fixtures
+  // contain numeric strings (e.g. "0.123457") that false-positive the stale
+  // chain-id scan. Environments are not repo source.
+  ".venv",
+  "venv",
+  "site-packages",
 ]);
 
 const scanRoots = ["apps", "packages", "docs", "infrastructure"];
