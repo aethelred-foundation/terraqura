@@ -7,7 +7,7 @@ async function main() {
   console.log(
     "Account balance:",
     ethers.formatEther(await ethers.provider.getBalance(deployer.address)),
-    "POL",
+    "AETHEL",
   );
 
   // Get the contract factories
@@ -219,7 +219,7 @@ async function main() {
   console.log("========================================");
 
   const finalBalance = await ethers.provider.getBalance(deployer.address);
-  console.log("\nFinal balance:", ethers.formatEther(finalBalance), "POL");
+  console.log("\nFinal balance:", ethers.formatEther(finalBalance), "AETHEL");
 
   // Return addresses for verification script
   return {

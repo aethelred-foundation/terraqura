@@ -180,3 +180,69 @@ node scripts/production-launch-gate.mjs          # expected to FAIL until you de
 ```
 
 > Note: run `hardhat coverage` on its own. Running it concurrently with other test suites contaminates its private hardhat network and produces a falsely low number (we hit 55.7% under parallel load vs 97.3% clean — same 1,611 tests passing in both).
+
+---
+
+## Addendum (2026-07-13) — exact deployment parameters & frontend env
+
+Per integrator feedback, the precise contract deployment and `.env` composition:
+
+### Deployment command & parameters
+
+Hardhat reads its environment from the **repo-root `.env.local`**
+(`apps/contracts/hardhat.config.ts` loads `dotenv` with `path: "../../.env.local"`);
+plain exported env vars work identically.
+
+```
+# repo-root .env.local
+PRIVATE_KEY=0x<funded-64-hex-key>
+AETHELRED_TESTNET_RPC_URL=http://<your-node>:8545   # EVM JSON-RPC
+#AETHELRED_TESTNET_CHAIN_ID=7332                    # default from @terraqura/network-manifest
+```
+
+```
+cd apps/contracts
+npx hardhat run scripts/deploy.ts --network aethelredTestnet
+```
+
+- `PRIVATE_KEY` — 0x-prefixed, funded. **There are no other key or constructor
+  parameters to choose:** the deployer becomes admin/owner/governance of every
+  contract (`deploy.ts` passes `deployer.address` to each UUPS initializer and
+  to `SealProofOfPhysics(governance)`). Move governance later via each
+  contract's own transfer path.
+- Chain id is pinned to **7332**; the network entry refuses other chains.
+- One hardcoded value to be aware of: `deploy.ts` initializes CarbonCredit's
+  metadata base URI to `https://api.terraqura.aethelred.network/metadata/` —
+  adjust post-deploy (`setURI`) if your metadata hosting differs.
+- The script ends by printing a JSON block of all addresses. For the UUPS
+  contracts record the **proxy** addresses (the `implementation` entries are
+  for audit provenance only); `sealProofOfPhysics.address` is a plain
+  (non-upgradeable) deployment.
+- Seal enforcement is deployed **OFF** (§3 of this handoff): turn it on with
+  `carbonCredit.setSealAnchorRequired(true)` only after the ISeal precompile
+  is confirmed live.
+
+### Frontend `.env.local` (apps/web)
+
+`apps/web/.env.example` is the authoritative template. For a testnet
+deployment, set:
+
+```
+NEXT_PUBLIC_TERRAQURA_NETWORK=aethelredTestnet
+NEXT_PUBLIC_USE_TESTNET=true
+NEXT_PUBLIC_AETHELRED_TESTNET_CHAIN_ID=7332
+NEXT_PUBLIC_AETHELRED_TESTNET_RPC_URL=<your public EVM RPC>
+NEXT_PUBLIC_AETHELRED_TESTNET_EXPLORER_URL=<your explorer, if any>
+NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID=<real 32-hex project id>
+
+# proxy addresses from the deploy JSON:
+NEXT_PUBLIC_TERRAQURA_CONTRACT_ACCESS_CONTROL=0x…
+NEXT_PUBLIC_TERRAQURA_CONTRACT_VERIFICATION_ENGINE=0x…
+NEXT_PUBLIC_TERRAQURA_CONTRACT_CARBON_CREDIT=0x…
+NEXT_PUBLIC_TERRAQURA_CONTRACT_CARBON_MARKETPLACE=0x…
+# (+ GASLESS_MARKETPLACE / MULTISIG / TIMELOCK / CIRCUIT_BREAKER /
+#    NATIVE_IOT_ORACLE if you deploy those periphery contracts)
+```
+
+The example file's placeholder hostnames (`evm-rpc-testnet.aethelred.network`)
+predate the final DNS decision — use your actual endpoints.
