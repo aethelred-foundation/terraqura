@@ -189,6 +189,16 @@ async function main() {
   const carbonMarketplaceImpl = await upgrades.erc1967.getImplementationAddress(
     carbonMarketplaceAddress,
   );
+  const carbonRetirementImpl = await upgrades.erc1967.getImplementationAddress(
+    carbonRetirementAddress,
+  );
+  const retirementCertificateImpl =
+    await upgrades.erc1967.getImplementationAddress(
+      retirementCertificateAddress,
+    );
+  const circuitBreakerImpl = await upgrades.erc1967.getImplementationAddress(
+    circuitBreakerAddress,
+  );
 
   // Deployment summary
   console.log("\n========================================");
@@ -212,11 +222,39 @@ async function main() {
   console.log("----------------------------------------");
   console.log("SealProofOfPhysics:", sealRegistryAddress);
   console.log("----------------------------------------");
+  console.log("CarbonRetirement Proxy:", carbonRetirementAddress);
+  console.log("CarbonRetirement Impl:", carbonRetirementImpl);
+  console.log("----------------------------------------");
+  console.log("RetirementCertificate Proxy:", retirementCertificateAddress);
+  console.log("RetirementCertificate Impl:", retirementCertificateImpl);
+  console.log("----------------------------------------");
+  console.log("CircuitBreaker Proxy:", circuitBreakerAddress);
+  console.log("CircuitBreaker Impl:", circuitBreakerImpl);
+  console.log("----------------------------------------");
   console.log("Platform Fee:", platformFeeBps / 100, "%");
   console.log("Fee Recipient:", deployer.address);
   console.log("Owner:", deployer.address);
   console.log("Test DAC ID:", testDacId);
   console.log("========================================");
+
+  // Enforcement attestations (testnet handoff §4) — read back from the live
+  // chain, never assumed, so the printed block can be pasted straight into
+  // the deployment manifest the production launch gate checks.
+  const attestations = {
+    sealAnchorRequired: await carbonCredit.sealAnchorRequired(),
+    sealEnforcementLocked: await carbonCredit.sealEnforcementLocked(),
+    kycRegistryConfigured:
+      (await carbonMarketplace.kycRegistry()) !== ethers.ZeroAddress,
+    circuitBreakerWired:
+      (await carbonCredit.circuitBreaker()) !== ethers.ZeroAddress,
+    retirementWiredAsApprovedRetirer: await carbonCredit.approvedRetirers(
+      carbonRetirementAddress,
+    ),
+  };
+  console.log("\nEnforcement attestations (live chain reads):");
+  for (const [key, value] of Object.entries(attestations)) {
+    console.log(`  enforcement.${key} = ${value}`);
+  }
 
   const finalBalance = await ethers.provider.getBalance(deployer.address);
   console.log("\nFinal balance:", ethers.formatEther(finalBalance), "AETHEL");
@@ -242,6 +280,19 @@ async function main() {
     sealProofOfPhysics: {
       address: sealRegistryAddress,
     },
+    carbonRetirement: {
+      proxy: carbonRetirementAddress,
+      implementation: carbonRetirementImpl,
+    },
+    retirementCertificate: {
+      proxy: retirementCertificateAddress,
+      implementation: retirementCertificateImpl,
+    },
+    circuitBreaker: {
+      proxy: circuitBreakerAddress,
+      implementation: circuitBreakerImpl,
+    },
+    enforcement: attestations,
     testDacId,
     owner: deployer.address,
   };
