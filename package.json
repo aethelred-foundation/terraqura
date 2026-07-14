@@ -39,7 +39,11 @@
     "validate:enterprise": "corepack pnpm@9.0.0 validate:network && cd packages/subgraph && node ./scripts/validate-manifest.cjs && cd ../.. && corepack pnpm@9.0.0 test:api-golden && corepack pnpm@9.0.0 test:database-domain && corepack pnpm@9.0.0 test:security-sim && corepack pnpm@9.0.0 test:production-launch-gate && corepack pnpm@9.0.0 validate:production-artifacts && node scripts/enterprise-readiness-check.mjs",
     "clean": "turbo clean && rm -rf node_modules",
     "typecheck": "turbo typecheck",
-    "prepare": "husky"
+    "prepare": "husky",
+    "build:web": "turbo build --filter=@aethelred/terraqura-web",
+    "start:web": "pnpm --filter @aethelred/terraqura-web start",
+    "build:api": "turbo build --filter=@terraqura/api",
+    "start:api": "pnpm --filter @terraqura/api start"
   },
   "devDependencies": {
     "@changesets/cli": "^2.27.1",
@@ -89,6 +93,7 @@
       "defu": ">=6.1.7",
       "drizzle-orm": ">=0.45.2",
       "path-to-regexp": ">=8.2.0",
+      "react-router@5>path-to-regexp": "1.9.0",
       "immutable": ">=5.0.0",
       "@openzeppelin/contracts-upgradeable": ">=4.8.3",
       "parse-duration": ">=2.1.3",
