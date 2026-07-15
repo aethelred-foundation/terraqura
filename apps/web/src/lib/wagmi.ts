@@ -138,18 +138,16 @@ function createEnterpriseTransport(
     batch = { batchSize: 20, wait: 50 },
   } = options;
 
+  // No custom headers here: a non-standard header (the old "X-Client") forces
+  // the CORS preflight to request it, and a node running cosmos/evm's default
+  // CORS policy (enabled-unsafe-cors=false → rs/cors Default(), standard
+  // headers only) answers 204 WITHOUT Access-Control-Allow-*, so the browser
+  // blocks every RPC call. viem already sends Content-Type: application/json.
   return http(endpoint.url, {
     batch,
     retryCount,
     retryDelay,
     timeout,
-    // Custom fetch with headers for better provider handling
-    fetchOptions: {
-      headers: {
-        "Content-Type": "application/json",
-        "X-Client": "TerraQura-Dashboard",
-      },
-    },
   });
 }
 
