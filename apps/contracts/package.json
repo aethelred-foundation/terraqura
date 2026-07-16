@@ -9,6 +9,7 @@
     "test": "hardhat test",
     "test:security-sim": "hardhat test test/SabotagePathTests.test.ts test/MultisigFaultInjection.test.ts test/GaslessMetaTransaction.test.ts test/CircuitBreaker.test.ts",
     "test:coverage": "hardhat coverage",
+    "audit:slither": "hardhat compile && slither . --ignore-compile --exclude-dependencies --fail-none",
     "lint": "NO_UPDATE_NOTIFIER=1 SOLHINT_DISABLE_UPDATE_CHECK=true solhint --disc 'contracts/**/*.sol' && eslint 'scripts/**/*.ts' 'test/**/*.ts'",
     "lint:fix": "NO_UPDATE_NOTIFIER=1 SOLHINT_DISABLE_UPDATE_CHECK=true solhint --disc 'contracts/**/*.sol' --fix && eslint 'scripts/**/*.ts' 'test/**/*.ts' --fix",
     "typecheck": "tsc --noEmit",
