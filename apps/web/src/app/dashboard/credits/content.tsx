@@ -14,6 +14,12 @@ import {
   useVerificationThresholds,
 } from '@/hooks/useContractData';
 import {
+  usePortfolio,
+  useRetireCredit,
+  useTransferCredit,
+  useBatchRetireCredits,
+} from '@/hooks/useCreditActions';
+import {
   TopNav,
   DAppFooter,
   ToastContainer,
@@ -587,29 +593,61 @@ function OverviewTab({ totalMinted, totalRetired, netActive }: {
 // Portfolio Tab (enhanced)
 // ============================================
 
+function shortTokenId(id: bigint): string {
+  const s = id.toString();
+  return s.length > 12 ? `${s.slice(0, 6)}…${s.slice(-4)}` : s;
+}
+
+function shortHash(hash: string): string {
+  return hash.length > 14 ? `${hash.slice(0, 8)}…${hash.slice(-6)}` : hash;
+}
+
+function cleanRevertReason(err: unknown): string {
+  const msg = err instanceof Error ? err.message : String(err);
+  const match = msg.match(/reason:\s*(.+)/i) ?? msg.match(/reverted[^:]*:\s*(.+)/i);
+  const firstLine = (match?.[1] ?? msg).split('\n')[0] ?? msg;
+  return firstLine.slice(0, 140);
+}
+
 function PortfolioTab() {
-  const { wallet } = useApp();
+  const { wallet, addNotification } = useApp();
+  const address = wallet.connected ? (wallet.address as Address) : undefined;
+
+  const { credits, isLoading, error, refetch } = usePortfolio(address);
+  const { retire, isPending: retiring } = useRetireCredit();
+  const { transfer, isPending: transferring } = useTransferCredit();
+  const { batchRetire, isPending: batchRetiring } = useBatchRetireCredits();
+  const busy = retiring || transferring || batchRetiring;
+
   const [lookupId, setLookupId] = useState('');
-  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
-  const [retireFormOpen, setRetireFormOpen] = useState<number | null>(null);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [retireFormOpen, setRetireFormOpen] = useState<string | null>(null);
   const [retireQuantity, setRetireQuantity] = useState('1');
   const [retireReason, setRetireReason] = useState('');
   const [retireBeneficiary, setRetireBeneficiary] = useState('');
-  const [transferModalOpen, setTransferModalOpen] = useState<number | null>(null);
+  const [transferModalOpen, setTransferModalOpen] = useState<string | null>(null);
   const [transferAddress, setTransferAddress] = useState('');
   const [transferQuantity, setTransferQuantity] = useState('1');
 
-  const tokenIdBigInt = useMemo(() => {
-    const n = parseInt(lookupId, 10);
-    return isNaN(n) || n < 0 ? undefined : BigInt(n);
+  const lookupTokenId = useMemo(() => {
+    const t = lookupId.trim();
+    if (!t) return undefined;
+    try {
+      const v = BigInt(t);
+      return v >= 0n ? v : undefined;
+    } catch {
+      return undefined;
+    }
   }, [lookupId]);
 
-  const { balance, isLoading: balanceLoading } = useCreditBalance(
-    wallet.connected ? (wallet.address as Address) : undefined,
-    tokenIdBigInt ?? 0n
+  const { balance, isLoading: balanceLoading } = useCreditBalance(address, lookupTokenId ?? 0n);
+
+  const activeCredits = useMemo(
+    () => credits.filter(c => !c.isRetired && c.balance > 0),
+    [credits]
   );
 
-  const toggleSelect = useCallback((id: number) => {
+  const toggleSelect = useCallback((id: string) => {
     setSelectedIds(prev => {
       const next = new Set(prev);
       if (next.has(id)) next.delete(id);
@@ -619,13 +657,139 @@ function PortfolioTab() {
   }, []);
 
   const selectAll = useCallback(() => {
-    const active = MOCK_PORTFOLIO.filter(c => !c.isRetired);
-    if (selectedIds.size === active.length) {
+    setSelectedIds(prev =>
+      prev.size === activeCredits.length
+        ? new Set()
+        : new Set(activeCredits.map(c => c.tokenId.toString()))
+    );
+  }, [activeCredits]);
+
+  const resolveReason = useCallback(() => {
+    const r = retireReason.trim();
+    const b = retireBeneficiary.trim();
+    if (r && b) return `${r} (beneficiary: ${b})`;
+    if (r) return r;
+    if (b) return `Retired on behalf of ${b}`;
+    return 'Voluntary retirement';
+  }, [retireReason, retireBeneficiary]);
+
+  const afterWrite = useCallback(
+    (title: string, hash: string) => {
+      addNotification({ type: 'success', title, message: `Tx ${shortHash(hash)}` });
+      setRetireFormOpen(null);
+      setTransferModalOpen(null);
       setSelectedIds(new Set());
-    } else {
-      setSelectedIds(new Set(active.map(c => c.tokenId)));
+      setTimeout(() => refetch(), 2500);
+    },
+    [addNotification, refetch]
+  );
+
+  const onError = useCallback(
+    (title: string, err: unknown) => {
+      addNotification({ type: 'error', title, message: cleanRevertReason(err) });
+    },
+    [addNotification]
+  );
+
+  const parseAmount = useCallback((raw: string): bigint | null => {
+    try {
+      const v = BigInt(raw || '0');
+      return v > 0n ? v : null;
+    } catch {
+      return null;
     }
-  }, [selectedIds.size]);
+  }, []);
+
+  const handleRetire = useCallback(
+    async (tokenId: bigint, maxBalance: number) => {
+      const amount = parseAmount(retireQuantity);
+      if (!amount || Number(amount) > maxBalance) {
+        onError('Invalid quantity', `Enter a whole number between 1 and ${maxBalance}`);
+        return;
+      }
+      try {
+        const hash = await retire(tokenId, amount, resolveReason());
+        afterWrite('Retirement submitted', hash as string);
+      } catch (e) {
+        onError('Retirement failed', e);
+      }
+    },
+    [retireQuantity, parseAmount, retire, resolveReason, afterWrite, onError]
+  );
+
+  const handleBulkRetire = useCallback(async () => {
+    const amount = parseAmount(retireQuantity);
+    if (!amount) {
+      onError('Invalid quantity', 'Enter a positive whole number');
+      return;
+    }
+    const chosen = activeCredits.filter(c => selectedIds.has(c.tokenId.toString()));
+    if (chosen.length === 0) return;
+    const overflow = chosen.find(c => Number(amount) > c.balance);
+    if (overflow) {
+      onError('Quantity exceeds balance', `#${shortTokenId(overflow.tokenId)} holds ${overflow.balance}`);
+      return;
+    }
+    try {
+      const hash = await batchRetire(
+        chosen.map(c => c.tokenId),
+        chosen.map(() => amount),
+        resolveReason()
+      );
+      afterWrite(`Retired ${chosen.length} batch${chosen.length > 1 ? 'es' : ''}`, hash as string);
+    } catch (e) {
+      onError('Bulk retirement failed', e);
+    }
+  }, [retireQuantity, parseAmount, activeCredits, selectedIds, batchRetire, resolveReason, afterWrite, onError]);
+
+  const handleTransfer = useCallback(
+    async (tokenId: bigint, maxBalance: number) => {
+      const amount = parseAmount(transferQuantity);
+      if (!amount || Number(amount) > maxBalance) {
+        onError('Invalid quantity', `Enter a whole number between 1 and ${maxBalance}`);
+        return;
+      }
+      if (!/^0x[a-fA-F0-9]{40}$/.test(transferAddress.trim())) {
+        onError('Invalid address', 'Enter a valid 0x… recipient address');
+        return;
+      }
+      try {
+        const hash = await transfer(transferAddress.trim() as Address, tokenId, amount);
+        afterWrite('Transfer submitted', hash as string);
+      } catch (e) {
+        onError('Transfer failed', e);
+      }
+    },
+    [transferQuantity, transferAddress, parseAmount, transfer, afterWrite, onError]
+  );
+
+  const handleBulkTransfer = useCallback(async () => {
+    const amount = parseAmount(transferQuantity);
+    if (!amount) {
+      onError('Invalid quantity', 'Enter a positive whole number');
+      return;
+    }
+    if (!/^0x[a-fA-F0-9]{40}$/.test(transferAddress.trim())) {
+      onError('Invalid address', 'Enter a valid 0x… recipient address');
+      return;
+    }
+    const chosen = activeCredits.filter(
+      c => selectedIds.has(c.tokenId.toString()) && c.balance >= Number(amount)
+    );
+    if (chosen.length === 0) {
+      onError('Nothing to transfer', 'No selected batch holds enough balance');
+      return;
+    }
+    try {
+      let last = '';
+      for (const c of chosen) {
+        last = (await transfer(transferAddress.trim() as Address, c.tokenId, amount)) as string;
+      }
+      afterWrite(`Transferred ${chosen.length} batch${chosen.length > 1 ? 'es' : ''}`, last);
+    } catch (e) {
+      onError('Bulk transfer failed', e);
+    }
+  }, [transferQuantity, transferAddress, parseAmount, activeCredits, selectedIds, transfer, afterWrite, onError]);
 
   if (!wallet.connected) {
     return <ConnectWalletPrompt message="Connect your wallet to view your carbon credit portfolio and balances." />;
@@ -638,14 +802,14 @@ function PortfolioTab() {
         <p className="text-white/50 text-xs font-mono uppercase tracking-widest mb-3">Check Balance for Token ID</p>
         <div className="flex gap-3 items-center">
           <input
-            type="number"
-            min="0"
+            type="text"
+            inputMode="numeric"
             placeholder="Token ID..."
             value={lookupId}
             onChange={(e) => setLookupId(e.target.value)}
             className="px-4 py-2 rounded-lg bg-white/[0.04] border border-white/[0.08] text-white placeholder-white/30 text-sm font-mono focus:outline-none focus:border-emerald-500/40 transition-all w-40"
           />
-          {tokenIdBigInt !== undefined && (
+          {lookupTokenId !== undefined && (
             <span className="text-white/60 text-sm font-mono">
               Balance: {balanceLoading ? (
                 <Skeleton className="inline-block h-4 w-12" />
@@ -664,7 +828,8 @@ function PortfolioTab() {
           <div className="flex-1" />
           <button
             onClick={() => {
-              setRetireFormOpen(-1);
+              setRetireFormOpen('bulk');
+              setTransferModalOpen(null);
               setRetireQuantity('1');
               setRetireReason('');
               setRetireBeneficiary('');
@@ -675,16 +840,14 @@ function PortfolioTab() {
           </button>
           <button
             onClick={() => {
-              setTransferModalOpen(-1);
+              setTransferModalOpen('bulk');
+              setRetireFormOpen(null);
               setTransferAddress('');
               setTransferQuantity('1');
             }}
             className="px-3 py-1.5 text-xs font-medium rounded-lg bg-cyan-500/10 text-cyan-400 border border-cyan-500/20 hover:bg-cyan-500/20 transition-all"
           >
             Transfer Selected
-          </button>
-          <button className="px-3 py-1.5 text-xs font-medium rounded-lg bg-purple-500/10 text-purple-400 border border-purple-500/20 hover:bg-purple-500/20 transition-all">
-            List on Marketplace
           </button>
           <button onClick={() => setSelectedIds(new Set())} className="px-2 py-1.5 text-xs text-white/40 hover:text-white/60 transition">
             Clear
@@ -693,7 +856,7 @@ function PortfolioTab() {
       )}
 
       {/* Bulk retire form */}
-      {retireFormOpen === -1 && (
+      {retireFormOpen === 'bulk' && (
         <GlassCard className="p-5 mb-6 border-red-500/20">
           <p className="text-white/70 text-sm font-medium mb-3">Retire {selectedIds.size} Selected Credits</p>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-3">
@@ -714,8 +877,12 @@ function PortfolioTab() {
             </div>
           </div>
           <div className="flex gap-2">
-            <button className="px-4 py-2 text-sm font-medium rounded-lg bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-all">
-              Confirm Retirement
+            <button
+              onClick={handleBulkRetire}
+              disabled={busy}
+              className="px-4 py-2 text-sm font-medium rounded-lg bg-red-500/20 text-red-400 border border-red-500/30 hover:bg-red-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {batchRetiring ? 'Submitting…' : 'Confirm Retirement'}
             </button>
             <button onClick={() => setRetireFormOpen(null)} className="px-4 py-2 text-sm text-white/40 hover:text-white/60 transition">Cancel</button>
           </div>
@@ -723,7 +890,7 @@ function PortfolioTab() {
       )}
 
       {/* Bulk transfer modal */}
-      {transferModalOpen === -1 && (
+      {transferModalOpen === 'bulk' && (
         <GlassCard className="p-5 mb-6 border-cyan-500/20">
           <p className="text-white/70 text-sm font-medium mb-3">Transfer {selectedIds.size} Selected Credits</p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-3">
@@ -739,8 +906,12 @@ function PortfolioTab() {
             </div>
           </div>
           <div className="flex gap-2">
-            <button className="px-4 py-2 text-sm font-medium rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 transition-all">
-              Confirm Transfer
+            <button
+              onClick={handleBulkTransfer}
+              disabled={busy}
+              className="px-4 py-2 text-sm font-medium rounded-lg bg-cyan-500/20 text-cyan-400 border border-cyan-500/30 hover:bg-cyan-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {transferring ? 'Submitting…' : 'Confirm Transfer'}
             </button>
             <button onClick={() => setTransferModalOpen(null)} className="px-4 py-2 text-sm text-white/40 hover:text-white/60 transition">Cancel</button>
           </div>
@@ -749,34 +920,68 @@ function PortfolioTab() {
 
       {/* Portfolio header with select all */}
       <div className="flex items-center justify-between mb-3">
-        <p className="text-white/50 text-xs font-mono uppercase tracking-widest">Portfolio Overview</p>
-        <button onClick={selectAll} className="text-xs text-white/40 hover:text-white/60 transition">
-          {selectedIds.size === MOCK_PORTFOLIO.filter(c => !c.isRetired).length ? 'Deselect All' : 'Select All Active'}
-        </button>
+        <p className="text-white/50 text-xs font-mono uppercase tracking-widest">
+          Portfolio Overview{credits.length > 0 ? ` · ${credits.length}` : ''}
+        </p>
+        <div className="flex items-center gap-3">
+          <button onClick={() => refetch()} className="text-xs text-white/40 hover:text-white/60 transition">Refresh</button>
+          {activeCredits.length > 0 && (
+            <button onClick={selectAll} className="text-xs text-white/40 hover:text-white/60 transition">
+              {selectedIds.size === activeCredits.length ? 'Deselect All' : 'Select All Active'}
+            </button>
+          )}
+        </div>
       </div>
 
+      {error ? (
+        <GlassCard className="p-8 text-center border-red-500/20">
+          <p className="text-red-400 text-sm font-medium mb-1">Couldn&apos;t load your portfolio</p>
+          <p className="text-white/40 text-xs font-mono break-all">{cleanRevertReason(error)}</p>
+          <button onClick={() => refetch()} className="mt-4 px-4 py-2 text-xs font-medium rounded-lg bg-white/[0.06] text-white/70 hover:bg-white/[0.1] transition">Retry</button>
+        </GlassCard>
+      ) : isLoading && credits.length === 0 ? (
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[0, 1, 2].map((i) => (
+            <GlassCard key={i} className="p-5">
+              <Skeleton className="h-5 w-24 mb-3" />
+              <Skeleton className="h-3 w-32 mb-4" />
+              <Skeleton className="h-24 w-full" />
+            </GlassCard>
+          ))}
+        </div>
+      ) : credits.length === 0 ? (
+        <GlassCard className="p-10 text-center">
+          <p className="text-white/70 text-sm font-medium mb-1">No carbon credits yet</p>
+          <p className="text-white/40 text-xs max-w-md mx-auto">
+            This wallet holds no CarbonCredit tokens on the connected network. Credits you are minted or receive by transfer will appear here automatically.
+          </p>
+        </GlassCard>
+      ) : (
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-        {MOCK_PORTFOLIO.map((credit) => (
-          <GlassCard key={credit.tokenId} className={`p-5 transition-all ${selectedIds.has(credit.tokenId) ? 'border-emerald-500/30 bg-emerald-500/[0.02]' : 'hover:border-white/[0.12]'}`}>
+        {credits.map((credit) => {
+          const idKey = credit.tokenId.toString();
+          const actionable = !credit.isRetired && credit.balance > 0;
+          return (
+          <GlassCard key={idKey} className={`p-5 transition-all ${selectedIds.has(idKey) ? 'border-emerald-500/30 bg-emerald-500/[0.02]' : 'hover:border-white/[0.12]'}`}>
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2">
-                {!credit.isRetired && (
+                {actionable && (
                   <button
-                    onClick={() => toggleSelect(credit.tokenId)}
+                    onClick={() => toggleSelect(idKey)}
                     className={`w-4 h-4 rounded border transition-all flex items-center justify-center ${
-                      selectedIds.has(credit.tokenId)
+                      selectedIds.has(idKey)
                         ? 'bg-emerald-500/30 border-emerald-500/50'
                         : 'border-white/20 hover:border-white/40'
                     }`}
                   >
-                    {selectedIds.has(credit.tokenId) && (
+                    {selectedIds.has(idKey) && (
                       <svg className="w-3 h-3 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
                       </svg>
                     )}
                   </button>
                 )}
-                <span className="text-white font-mono font-bold">#{credit.tokenId}</span>
+                <span className="text-white font-mono font-bold" title={idKey}>#{shortTokenId(credit.tokenId)}</span>
               </div>
               <StatusBadge status={credit.isRetired ? 'retired' : 'active'} />
             </div>
@@ -808,11 +1013,12 @@ function PortfolioTab() {
             </div>
 
             {/* Action buttons */}
-            {!credit.isRetired && (
+            {actionable && (
               <div className="flex gap-2">
                 <button
                   onClick={() => {
-                    setRetireFormOpen(retireFormOpen === credit.tokenId ? null : credit.tokenId);
+                    setRetireFormOpen(retireFormOpen === idKey ? null : idKey);
+                    setTransferModalOpen(null);
                     setRetireQuantity('1');
                     setRetireReason('');
                     setRetireBeneficiary('');
@@ -823,7 +1029,8 @@ function PortfolioTab() {
                 </button>
                 <button
                   onClick={() => {
-                    setTransferModalOpen(transferModalOpen === credit.tokenId ? null : credit.tokenId);
+                    setTransferModalOpen(transferModalOpen === idKey ? null : idKey);
+                    setRetireFormOpen(null);
                     setTransferAddress('');
                     setTransferQuantity('1');
                   }}
@@ -835,7 +1042,7 @@ function PortfolioTab() {
             )}
 
             {/* Inline retire form */}
-            {retireFormOpen === credit.tokenId && (
+            {retireFormOpen === idKey && (
               <div className="mt-3 pt-3 border-t border-white/[0.06] space-y-2">
                 <p className="text-[10px] text-white/50 font-mono uppercase tracking-widest">Retire Credits</p>
                 <input type="number" min="1" max={credit.balance} value={retireQuantity} onChange={e => setRetireQuantity(e.target.value)}
@@ -845,14 +1052,20 @@ function PortfolioTab() {
                 <input type="text" value={retireReason} onChange={e => setRetireReason(e.target.value)}
                   placeholder="Reason..." className="w-full px-2.5 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-white placeholder-white/20 text-xs focus:outline-none focus:border-emerald-500/40 transition-all" />
                 <div className="flex gap-2">
-                  <button className="flex-1 px-2 py-1.5 text-[10px] font-medium rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-all">Confirm</button>
+                  <button
+                    onClick={() => handleRetire(credit.tokenId, credit.balance)}
+                    disabled={busy}
+                    className="flex-1 px-2 py-1.5 text-[10px] font-medium rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {retiring ? 'Submitting…' : 'Confirm'}
+                  </button>
                   <button onClick={() => setRetireFormOpen(null)} className="px-2 py-1.5 text-[10px] text-white/40 hover:text-white/60 transition">Cancel</button>
                 </div>
               </div>
             )}
 
             {/* Inline transfer modal */}
-            {transferModalOpen === credit.tokenId && (
+            {transferModalOpen === idKey && (
               <div className="mt-3 pt-3 border-t border-white/[0.06] space-y-2">
                 <p className="text-[10px] text-white/50 font-mono uppercase tracking-widest">Transfer Credits</p>
                 <input type="text" value={transferAddress} onChange={e => setTransferAddress(e.target.value)}
@@ -860,14 +1073,22 @@ function PortfolioTab() {
                 <input type="number" min="1" max={credit.balance} value={transferQuantity} onChange={e => setTransferQuantity(e.target.value)}
                   placeholder="Quantity" className="w-full px-2.5 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.08] text-white text-xs font-mono focus:outline-none focus:border-emerald-500/40 transition-all" />
                 <div className="flex gap-2">
-                  <button className="flex-1 px-2 py-1.5 text-[10px] font-medium rounded-lg bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-all">Confirm</button>
+                  <button
+                    onClick={() => handleTransfer(credit.tokenId, credit.balance)}
+                    disabled={busy}
+                    className="flex-1 px-2 py-1.5 text-[10px] font-medium rounded-lg bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/30 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {transferring ? 'Submitting…' : 'Confirm'}
+                  </button>
                   <button onClick={() => setTransferModalOpen(null)} className="px-2 py-1.5 text-[10px] text-white/40 hover:text-white/60 transition">Cancel</button>
                 </div>
               </div>
             )}
           </GlassCard>
-        ))}
+          );
+        })}
       </div>
+      )}
     </div>
   );
 }

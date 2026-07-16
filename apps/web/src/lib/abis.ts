@@ -159,6 +159,73 @@ export const CarbonCreditABI = [
       { name: "value", type: "uint256", indexed: false },
     ],
   },
+  // ERC-1155 approval view — needed before a delegated transfer/retire.
+  {
+    name: "isApprovedForAll",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "account", type: "address" },
+      { name: "operator", type: "address" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
+  {
+    name: "balanceOfBatch",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "accounts", type: "address[]" },
+      { name: "ids", type: "uint256[]" },
+    ],
+    outputs: [{ type: "uint256[]" }],
+  },
+  // State-changing functions
+  {
+    name: "retireCredits",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "tokenId", type: "uint256" },
+      { name: "amount", type: "uint256" },
+      { name: "reason", type: "string" },
+    ],
+    outputs: [],
+  },
+  {
+    name: "batchRetireCredits",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "tokenIds", type: "uint256[]" },
+      { name: "amounts", type: "uint256[]" },
+      { name: "reason", type: "string" },
+    ],
+    outputs: [],
+  },
+  {
+    name: "safeTransferFrom",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "from", type: "address" },
+      { name: "to", type: "address" },
+      { name: "id", type: "uint256" },
+      { name: "amount", type: "uint256" },
+      { name: "data", type: "bytes" },
+    ],
+    outputs: [],
+  },
+  {
+    name: "setApprovalForAll",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "operator", type: "address" },
+      { name: "approved", type: "bool" },
+    ],
+    outputs: [],
+  },
 ] as const;
 
 // ============================================
