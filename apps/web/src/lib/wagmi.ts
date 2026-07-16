@@ -18,10 +18,11 @@
 "use client";
 
 import { NETWORKS } from "@terraqura/network-manifest";
-import { getDefaultConfig } from "@rainbow-me/rainbowkit";
+import { getDefaultConfig, getDefaultWallets } from "@rainbow-me/rainbowkit";
 import { defineChain } from "viem";
 import { http, fallback, type Transport } from "wagmi";
 import { reportClientError } from "./errors";
+import { aethelredWallet } from "./wallets";
 
 // ============================================
 // Environment Configuration
@@ -174,12 +175,15 @@ function createFallbackTransport(configs: RPCEndpoint[]): Transport {
   });
 }
 
-// NOTE: We intentionally omit a custom `wallets` array here.
-// RainbowKit's getDefaultConfig provides sensible wallet defaults.
-// Importing individual wallet factories (e.g., injectedWallet) at module
+// NOTE on the `wallets` array: importing individual wallet factories
+// (e.g., injectedWallet) from "@rainbow-me/rainbowkit/wallets" at module
 // scope caused "originalFactory.call" errors during SSR because those
 // factories attempt to access browser APIs (window.ethereum) that don't
-// exist in Node.js.
+// exist in Node.js. The curated list passed to getDefaultConfig below
+// therefore only composes getDefaultWallets() — from the already-imported
+// main package, the exact factories getDefaultConfig instantiates
+// internally anyway — plus our own aethelredWallet, which touches
+// `window` strictly inside functions, never at import time.
 
 // ============================================
 // Aethelred RPC Configuration
@@ -282,6 +286,15 @@ if (projectId) {
       chains: activeChains,
       transports: buildTransports() as Record<number, Transport>,
       ssr: true,
+      // Aethelred Wallet leads; RainbowKit's defaults (Rainbow, Coinbase,
+      // MetaMask, WalletConnect) follow. When the extension is installed
+      // its EIP-6963 announcement is merged with this entry by rdns, so
+      // exactly one "Aethelred Wallet" appears; when it is not installed
+      // the entry carries the download link instead.
+      wallets: [
+        { groupName: "Recommended", wallets: [aethelredWallet] },
+        ...getDefaultWallets().wallets,
+      ],
     });
   } catch (err) {
     _configError = err instanceof Error ? err : new Error(String(err));
