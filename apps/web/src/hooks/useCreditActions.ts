@@ -232,6 +232,344 @@ export function usePortfolio(address?: Address): {
   };
 }
 
+/** One step in a credit's real, on-chain lifecycle. */
+export interface ProvenanceEntry {
+  event:
+    | "CAPTURE_STARTED"
+    | "SOURCE_VERIFIED"
+    | "LOGIC_VERIFIED"
+    | "MINT_VERIFIED"
+    | "MINTED"
+    | "TRANSFERRED"
+    | "RETIRED";
+  timestamp: number;
+  /** Transaction hash for event-derived steps; empty for contract-state steps. */
+  txHash: string;
+  /** Acting address for event-derived steps; empty for contract-state steps. */
+  actor: string;
+  detail: string;
+}
+
+const ZERO_ADDR = "0x0000000000000000000000000000000000000000";
+
+/**
+ * The complete, real lifecycle of one credit batch: capture + three-phase
+ * verification from contract state (getMetadata / getVerificationResult) and
+ * mint / transfer / retirement from the contract's own events. Everything
+ * shown is read from chain — nothing is invented.
+ */
+export function useProvenance(tokenId?: bigint): {
+  entries: ProvenanceEntry[] | null;
+  meta: PortfolioCredit | null;
+  isLoading: boolean;
+  error: Error | null;
+  notFound: boolean;
+} {
+  const publicClient = usePublicClient({ chainId: CHAIN_ID });
+  const [entries, setEntries] = useState<ProvenanceEntry[] | null>(null);
+  const [meta, setMeta] = useState<PortfolioCredit | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const [notFound, setNotFound] = useState(false);
+
+  useEffect(() => {
+    if (tokenId === undefined || !publicClient) {
+      setEntries(null);
+      setMeta(null);
+      setNotFound(false);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setIsLoading(true);
+      setError(null);
+      setNotFound(false);
+      try {
+        const [rawMeta, rawVerify] = await Promise.all([
+          publicClient.readContract({
+            address: CARBON_CREDIT,
+            abi: CarbonCreditABI,
+            functionName: "getMetadata",
+            args: [tokenId],
+          }) as Promise<RawMetadata>,
+          publicClient.readContract({
+            address: CARBON_CREDIT,
+            abi: CarbonCreditABI,
+            functionName: "getVerificationResult",
+            args: [tokenId],
+          }) as Promise<RawVerification & { efficiencyFactor: bigint; verifiedAt: bigint }>,
+        ]);
+        if (rawMeta.captureTimestamp === 0n) {
+          if (!cancelled) {
+            setEntries(null);
+            setMeta(null);
+            setNotFound(true);
+          }
+          return;
+        }
+
+        const [mintLogs, retireLogs, transferLogs] = await Promise.all([
+          publicClient.getContractEvents({
+            address: CARBON_CREDIT,
+            abi: CarbonCreditABI,
+            eventName: "CreditMinted",
+            args: { tokenId },
+            fromBlock: 0n,
+            toBlock: "latest",
+          }),
+          publicClient.getContractEvents({
+            address: CARBON_CREDIT,
+            abi: CarbonCreditABI,
+            eventName: "CreditRetired",
+            args: { tokenId },
+            fromBlock: 0n,
+            toBlock: "latest",
+          }),
+          // TransferSingle's id is not indexed, so fetch and filter client-side.
+          publicClient.getContractEvents({
+            address: CARBON_CREDIT,
+            abi: CarbonCreditABI,
+            eventName: "TransferSingle",
+            fromBlock: 0n,
+            toBlock: "latest",
+          }),
+        ]);
+
+        const wanted = transferLogs.filter((l) => {
+          const a = l.args as { id?: bigint; from?: string; to?: string };
+          // Mint and burn emit TransferSingle from/to the zero address; those
+          // lifecycle steps are already covered by MINTED / RETIRED entries.
+          return a.id === tokenId && a.from !== ZERO_ADDR && a.to !== ZERO_ADDR;
+        });
+
+        const blockNumbers = new Set<bigint>();
+        for (const l of [...mintLogs, ...retireLogs, ...wanted]) blockNumbers.add(l.blockNumber);
+        const blockTimes = new Map<bigint, number>();
+        await Promise.all(
+          [...blockNumbers].map(async (bn) => {
+            const b = await publicClient.getBlock({ blockNumber: bn });
+            blockTimes.set(bn, Number(b.timestamp));
+          }),
+        );
+
+        const dacLabel = decodeDacUnitId(rawMeta.dacUnitId);
+        const out: ProvenanceEntry[] = [];
+
+        out.push({
+          event: "CAPTURE_STARTED",
+          timestamp: Number(rawMeta.captureTimestamp),
+          txHash: "",
+          actor: "",
+          detail: `DAC unit ${dacLabel} captured ${Number(rawMeta.co2AmountKg).toLocaleString()} kg CO2 using ${Number(rawMeta.energyConsumedKwh).toLocaleString()} kWh (purity ${Number(rawMeta.purityPercentage)}%).`,
+        });
+
+        const verifiedAt = Number(rawVerify.verifiedAt);
+        if (rawVerify.sourceVerified) {
+          out.push({
+            event: "SOURCE_VERIFIED",
+            timestamp: verifiedAt,
+            txHash: "",
+            actor: "",
+            detail: `Phase 1 passed: ${dacLabel} is whitelisted and the sensor data hash is unused.`,
+          });
+        }
+        if (rawVerify.logicVerified) {
+          out.push({
+            event: "LOGIC_VERIFIED",
+            timestamp: verifiedAt,
+            txHash: "",
+            actor: "",
+            detail: `Phase 2 passed: Net-Negative proof-of-physics check, efficiency factor ${(Number(rawVerify.efficiencyFactor) / 10_000).toFixed(4)}.`,
+          });
+        }
+        if (rawVerify.mintVerified) {
+          out.push({
+            event: "MINT_VERIFIED",
+            timestamp: verifiedAt,
+            txHash: "",
+            actor: "",
+            detail: "Phase 3 passed: no duplicate mint for this source data hash.",
+          });
+        }
+
+        for (const l of mintLogs) {
+          const a = l.args as { operator?: string; recipient?: string; creditsAmount?: bigint };
+          const to = a.recipient ?? a.operator ?? "";
+          out.push({
+            event: "MINTED",
+            timestamp: blockTimes.get(l.blockNumber) ?? 0,
+            txHash: l.transactionHash,
+            actor: to,
+            detail: `${Number(a.creditsAmount ?? 0n).toLocaleString()} credits minted to ${to.slice(0, 10)}…`,
+          });
+        }
+        for (const l of wanted) {
+          const a = l.args as { from?: string; to?: string; value?: bigint };
+          out.push({
+            event: "TRANSFERRED",
+            timestamp: blockTimes.get(l.blockNumber) ?? 0,
+            txHash: l.transactionHash,
+            actor: a.from ?? "",
+            detail: `${Number(a.value ?? 0n).toLocaleString()} credits transferred ${a.from?.slice(0, 10)}… → ${a.to?.slice(0, 10)}…`,
+          });
+        }
+        for (const l of retireLogs) {
+          const a = l.args as { retiree?: string; amount?: bigint; reason?: string };
+          out.push({
+            event: "RETIRED",
+            timestamp: blockTimes.get(l.blockNumber) ?? 0,
+            txHash: l.transactionHash,
+            actor: a.retiree ?? "",
+            detail: `${Number(a.amount ?? 0n).toLocaleString()} credits permanently retired${a.reason ? ` — "${a.reason}"` : ""}.`,
+          });
+        }
+
+        out.sort((x, y) => x.timestamp - y.timestamp);
+
+        if (!cancelled) {
+          setEntries(out);
+          setMeta({
+            tokenId,
+            dacUnitId: dacLabel,
+            co2AmountKg: Number(rawMeta.co2AmountKg),
+            energyConsumedKwh: Number(rawMeta.energyConsumedKwh),
+            purityPercentage: Number(rawMeta.purityPercentage),
+            captureTimestamp: Number(rawMeta.captureTimestamp),
+            isRetired: rawMeta.isRetired,
+            sourceVerified: rawVerify.sourceVerified,
+            logicVerified: rawVerify.logicVerified,
+            mintVerified: rawVerify.mintVerified,
+            balance: 0,
+          });
+        }
+      } catch (err) {
+        if (!cancelled) {
+          // A revert here means the token does not exist on this contract.
+          const msg = err instanceof Error ? err.message : String(err);
+          if (/revert/i.test(msg)) {
+            setNotFound(true);
+            setEntries(null);
+            setMeta(null);
+          } else {
+            setError(err as Error);
+          }
+        }
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [tokenId, publicClient]);
+
+  return { entries, meta, isLoading, error, notFound };
+}
+
+/** A real retirement certificate, built from the CreditRetired event. */
+export interface RetirementCertificate {
+  tokenId: bigint;
+  amountRetired: number;
+  reason: string;
+  beneficiary: string;
+  txHash: string;
+  retiredAt: number;
+  dacUnit: string;
+  vintageYear: number;
+}
+
+/** Extract the beneficiary the retire form embeds as "… (beneficiary: X)". */
+function splitReason(reason: string): { reason: string; beneficiary: string } {
+  const m = reason.match(/^(.*?)\s*\(beneficiary:\s*(.+?)\)\s*$/);
+  if (m && m[1] !== undefined && m[2] !== undefined) {
+    return { reason: m[1] || "Voluntary retirement", beneficiary: m[2] };
+  }
+  const alt = reason.match(/^Retired on behalf of\s+(.+)$/);
+  if (alt && alt[1] !== undefined) {
+    return { reason, beneficiary: alt[1] };
+  }
+  return { reason, beneficiary: "" };
+}
+
+/**
+ * The connected wallet's retirement certificates — one per CreditRetired
+ * event it emitted, enriched with the batch's real metadata.
+ */
+export function useRetirementCertificates(address?: Address): {
+  certificates: RetirementCertificate[];
+  isLoading: boolean;
+  error: Error | null;
+  refetch: () => void;
+} {
+  const publicClient = usePublicClient({ chainId: CHAIN_ID });
+  const [certificates, setCertificates] = useState<RetirementCertificate[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+  const [nonce, setNonce] = useState(0);
+
+  useEffect(() => {
+    if (!address || !publicClient) {
+      setCertificates([]);
+      return;
+    }
+    let cancelled = false;
+    (async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const logs = await publicClient.getContractEvents({
+          address: CARBON_CREDIT,
+          abi: CarbonCreditABI,
+          eventName: "CreditRetired",
+          args: { retiree: address },
+          fromBlock: 0n,
+          toBlock: "latest",
+        });
+
+        const certs = await Promise.all(
+          logs.map(async (l) => {
+            const a = l.args as { tokenId?: bigint; amount?: bigint; reason?: string };
+            const tokenId = a.tokenId ?? 0n;
+            const [block, rawMeta] = await Promise.all([
+              publicClient.getBlock({ blockNumber: l.blockNumber }),
+              publicClient.readContract({
+                address: CARBON_CREDIT,
+                abi: CarbonCreditABI,
+                functionName: "getMetadata",
+                args: [tokenId],
+              }) as Promise<RawMetadata>,
+            ]);
+            const { reason, beneficiary } = splitReason(a.reason ?? "");
+            return {
+              tokenId,
+              amountRetired: Number(a.amount ?? 0n),
+              reason,
+              beneficiary,
+              txHash: l.transactionHash,
+              retiredAt: Number(block.timestamp),
+              dacUnit: decodeDacUnitId(rawMeta.dacUnitId),
+              vintageYear: new Date(Number(rawMeta.captureTimestamp) * 1000).getFullYear(),
+            } satisfies RetirementCertificate;
+          }),
+        );
+        certs.sort((x, y) => y.retiredAt - x.retiredAt);
+        if (!cancelled) setCertificates(certs);
+      } catch (err) {
+        if (!cancelled) setError(err as Error);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [address, publicClient, nonce]);
+
+  const refetch = useCallback(() => setNonce((n) => n + 1), []);
+
+  return { certificates, isLoading, error, refetch };
+}
+
 /** Retire (burn) a quantity of one credit batch, recording an on-chain reason. */
 export function useRetireCredit() {
   const { writeContractAsync, isPending, ...rest } = useSafeWriteContract();

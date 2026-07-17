@@ -15,7 +15,9 @@ import {
 } from '@/hooks/useContractData';
 import {
   usePortfolio,
+  useProvenance,
   useRetireCredit,
+  useRetirementCertificates,
   useTransferCredit,
   useBatchRetireCredits,
 } from '@/hooks/useCreditActions';
@@ -60,36 +62,10 @@ function seededAddress(seed: number): string {
   return '0x' + seededHex(seed, 40);
 }
 
-function seededTxHash(seed: number): string {
-  return '0x' + seededHex(seed * 31, 64);
-}
-
 // ============================================
 // Mock data (deterministic, seeded)
 // ============================================
 
-interface MockCredit {
-  tokenId: number;
-  dacUnitId: string;
-  co2AmountKg: number;
-  energyConsumedKwh: number;
-  purityPercentage: number;
-  captureTimestamp: number;
-  isRetired: boolean;
-  sourceVerified: boolean;
-  logicVerified: boolean;
-  mintVerified: boolean;
-  balance: number;
-}
-
-const MOCK_PORTFOLIO: MockCredit[] = [
-  { tokenId: 1, dacUnitId: 'DAC-AUH-001', co2AmountKg: 1250, energyConsumedKwh: 420, purityPercentage: 97, captureTimestamp: 1770000000, isRetired: false, sourceVerified: true, logicVerified: true, mintVerified: true, balance: 15 },
-  { tokenId: 2, dacUnitId: 'DAC-AUH-002', co2AmountKg: 980, energyConsumedKwh: 340, purityPercentage: 95, captureTimestamp: 1770086400, isRetired: false, sourceVerified: true, logicVerified: true, mintVerified: true, balance: 8 },
-  { tokenId: 3, dacUnitId: 'DAC-DXB-001', co2AmountKg: 2100, energyConsumedKwh: 680, purityPercentage: 99, captureTimestamp: 1770172800, isRetired: true, sourceVerified: true, logicVerified: true, mintVerified: true, balance: 0 },
-  { tokenId: 5, dacUnitId: 'DAC-AUH-003', co2AmountKg: 750, energyConsumedKwh: 260, purityPercentage: 93, captureTimestamp: 1770259200, isRetired: false, sourceVerified: true, logicVerified: true, mintVerified: false, balance: 22 },
-  { tokenId: 8, dacUnitId: 'DAC-RYD-001', co2AmountKg: 1800, energyConsumedKwh: 590, purityPercentage: 96, captureTimestamp: 1770345600, isRetired: false, sourceVerified: true, logicVerified: true, mintVerified: true, balance: 5 },
-  { tokenId: 13, dacUnitId: 'DAC-DXB-002', co2AmountKg: 3200, energyConsumedKwh: 1050, purityPercentage: 98, captureTimestamp: 1770432000, isRetired: false, sourceVerified: true, logicVerified: true, mintVerified: true, balance: 40 },
-];
 
 // Weekly minted data (12 weeks)
 const WEEKLY_MINTED = Array.from({ length: 12 }, (_, i) => ({
@@ -122,90 +98,6 @@ const DAC_LEADERBOARD = [
 // Provenance event types
 type ProvenanceEventType = 'CAPTURE_STARTED' | 'SOURCE_VERIFIED' | 'LOGIC_VERIFIED' | 'MINT_VERIFIED' | 'MINTED' | 'TRANSFERRED' | 'RETIRED';
 
-interface ProvenanceEvent {
-  event: ProvenanceEventType;
-  timestamp: number;
-  txHash: string;
-  actor: string;
-  detail: string;
-}
-
-function generateProvenance(tokenId: number): ProvenanceEvent[] {
-  const base = 1769900000 + tokenId * 86400;
-  const seed = tokenId * 1000;
-  const events: ProvenanceEvent[] = [
-    {
-      event: 'CAPTURE_STARTED',
-      timestamp: base,
-      txHash: seededTxHash(seed + 1),
-      actor: seededAddress(seed + 2),
-      detail: `DAC unit ${MOCK_PORTFOLIO.find(c => c.tokenId === tokenId)?.dacUnitId || 'DAC-AUH-001'} initiated CO2 capture cycle`,
-    },
-    {
-      event: 'SOURCE_VERIFIED',
-      timestamp: base + seededInt(seed + 3, 3600, 7200),
-      txHash: seededTxHash(seed + 4),
-      actor: seededAddress(seed + 5),
-      detail: `IoT sensor data validated. Device identity confirmed, data freshness: ${seededInt(seed + 6, 12, 58)}s`,
-    },
-    {
-      event: 'LOGIC_VERIFIED',
-      timestamp: base + seededInt(seed + 7, 10800, 18000),
-      txHash: seededTxHash(seed + 8),
-      actor: seededAddress(seed + 9),
-      detail: `Thermodynamic consistency check passed. Efficiency factor: ${(seededInt(seed + 10, 280, 420) / 100).toFixed(2)}`,
-    },
-    {
-      event: 'MINT_VERIFIED',
-      timestamp: base + seededInt(seed + 11, 21600, 28800),
-      txHash: seededTxHash(seed + 12),
-      actor: seededAddress(seed + 13),
-      detail: 'Governance multisig approval confirmed (3/5 signers)',
-    },
-    {
-      event: 'MINTED',
-      timestamp: base + seededInt(seed + 14, 32400, 43200),
-      txHash: seededTxHash(seed + 15),
-      actor: CONTRACTS.carbonCredit,
-      detail: `ERC-1155 token minted. Amount: ${seededInt(seed + 16, 5, 50)} credits`,
-    },
-  ];
-
-  // Some tokens have transfers
-  if (tokenId % 3 === 0 || tokenId === 8) {
-    events.push({
-      event: 'TRANSFERRED',
-      timestamp: base + seededInt(seed + 17, 50000, 72000),
-      txHash: seededTxHash(seed + 18),
-      actor: seededAddress(seed + 19),
-      detail: `Transferred ${seededInt(seed + 20, 2, 15)} credits to ${seededAddress(seed + 21).slice(0, 10)}...`,
-    });
-  }
-
-  // Token 3 is retired
-  if (tokenId === 3) {
-    events.push({
-      event: 'RETIRED',
-      timestamp: base + seededInt(seed + 22, 86400, 172800),
-      txHash: seededTxHash(seed + 23),
-      actor: seededAddress(seed + 24),
-      detail: 'Credits permanently retired. Beneficiary: Aethelred Climate Fund',
-    });
-  }
-
-  return events;
-}
-
-// Pre-generate provenance for tokens 1-13
-const PROVENANCE_DATA: Record<number, ProvenanceEvent[]> = {};
-[1, 2, 3, 5, 8, 13].forEach(id => {
-  PROVENANCE_DATA[id] = generateProvenance(id);
-});
-// Fill in 4, 6, 7, 9, 10, 11, 12
-[4, 6, 7, 9, 10, 11, 12].forEach(id => {
-  PROVENANCE_DATA[id] = generateProvenance(id);
-});
-
 // Analytics data: total supply over 90 days
 const SUPPLY_OVER_TIME = Array.from({ length: 90 }, (_, i) => {
   const base = 120;
@@ -236,80 +128,6 @@ const VINTAGES = [
 ];
 const VINTAGE_MAX = Math.max(...VINTAGES.map(v => v.credits));
 
-// Mock certificates
-interface MockCertificate {
-  tokenId: number;
-  co2AmountKg: number;
-  retirementDate: string;
-  beneficiary: string;
-  reason: string;
-  dacUnit: string;
-  vintageYear: number;
-  verificationHash: string;
-}
-
-const MOCK_CERTIFICATES: MockCertificate[] = [
-  {
-    tokenId: 3,
-    co2AmountKg: 2100,
-    retirementDate: '2026-02-14',
-    beneficiary: 'Aethelred Climate Fund',
-    reason: 'Corporate carbon neutrality pledge Q1 2026',
-    dacUnit: 'DAC-DXB-001',
-    vintageYear: 2025,
-    verificationHash: seededHex(700, 64),
-  },
-  {
-    tokenId: 14,
-    co2AmountKg: 1450,
-    retirementDate: '2026-01-28',
-    beneficiary: 'Gulf Sustainability Alliance',
-    reason: 'Voluntary offset for aviation emissions',
-    dacUnit: 'DAC-AUH-001',
-    vintageYear: 2025,
-    verificationHash: seededHex(701, 64),
-  },
-  {
-    tokenId: 19,
-    co2AmountKg: 3800,
-    retirementDate: '2026-03-02',
-    beneficiary: 'Abu Dhabi Green Initiative',
-    reason: 'Municipal building carbon offset program',
-    dacUnit: 'DAC-AUH-002',
-    vintageYear: 2026,
-    verificationHash: seededHex(702, 64),
-  },
-  {
-    tokenId: 22,
-    co2AmountKg: 920,
-    retirementDate: '2025-12-19',
-    beneficiary: 'Personal - Ahmed Al-Rashidi',
-    reason: 'Personal carbon footprint offset 2025',
-    dacUnit: 'DAC-RYD-001',
-    vintageYear: 2025,
-    verificationHash: seededHex(703, 64),
-  },
-  {
-    tokenId: 27,
-    co2AmountKg: 5200,
-    retirementDate: '2026-03-10',
-    beneficiary: 'Dubai Future Foundation',
-    reason: 'Event carbon neutrality - Future Summit 2026',
-    dacUnit: 'DAC-DXB-002',
-    vintageYear: 2026,
-    verificationHash: seededHex(704, 64),
-  },
-  {
-    tokenId: 31,
-    co2AmountKg: 1670,
-    retirementDate: '2026-02-22',
-    beneficiary: 'Riyadh Tech Campus',
-    reason: 'Data center emissions offset - Q4 2025',
-    dacUnit: 'DAC-RYD-001',
-    vintageYear: 2025,
-    verificationHash: seededHex(705, 64),
-  },
-];
 
 // ============================================
 // Verification check icon
@@ -1403,18 +1221,26 @@ const PROVENANCE_EVENT_LABELS: Record<ProvenanceEventType, string> = {
 };
 
 function ProvenanceTab() {
+  const { wallet } = useApp();
   const [tokenInput, setTokenInput] = useState('');
 
-  const events = useMemo(() => {
-    const id = parseInt(tokenInput, 10);
-    if (isNaN(id) || id < 1 || id > 13) return null;
-    return PROVENANCE_DATA[id] || null;
+  const tokenId = useMemo(() => {
+    const t = tokenInput.trim();
+    if (!t) return undefined;
+    try {
+      const v = BigInt(t);
+      return v >= 0n ? v : undefined;
+    } catch {
+      return undefined;
+    }
   }, [tokenInput]);
 
-  const tokenCredit = useMemo(() => {
-    const id = parseInt(tokenInput, 10);
-    return MOCK_PORTFOLIO.find(c => c.tokenId === id) || null;
-  }, [tokenInput]);
+  const { entries: events, meta: tokenCredit, isLoading, error, notFound } = useProvenance(tokenId);
+  // The wallet's own holdings double as one-click lookups (token IDs are
+  // hash-derived and impractical to type by hand).
+  const { credits: ownCredits } = usePortfolio(
+    wallet.connected ? (wallet.address as Address) : undefined
+  );
 
   return (
     <div>
@@ -1425,17 +1251,30 @@ function ProvenanceTab() {
             <p className="text-white/60 text-sm mb-3">
               Trace the complete lifecycle of any carbon credit from DAC capture to on-chain minting and beyond. This is TerraQura&apos;s core transparency layer.
             </p>
-            <div className="relative max-w-xs">
+            <div className="relative max-w-md">
               <input
-                type="number"
-                min="1"
-                max="13"
-                placeholder="Enter Token ID (1-13)..."
+                type="text"
+                inputMode="numeric"
+                placeholder="Paste a Token ID..."
                 value={tokenInput}
                 onChange={e => setTokenInput(e.target.value)}
                 className="w-full px-4 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white placeholder-white/30 text-sm font-mono focus:outline-none focus:border-emerald-500/40 focus:bg-white/[0.06] transition-all"
               />
             </div>
+            {ownCredits.length > 0 && (
+              <div className="flex flex-wrap gap-2 mt-3">
+                <span className="text-white/40 text-[10px] font-mono uppercase tracking-widest self-center">Your credits:</span>
+                {ownCredits.map((c) => (
+                  <button
+                    key={c.tokenId.toString()}
+                    onClick={() => setTokenInput(c.tokenId.toString())}
+                    className="px-2.5 py-1 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-[11px] font-mono hover:bg-emerald-500/20 transition-all"
+                  >
+                    {c.dacUnitId} · #{shortTokenId(c.tokenId)}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
           {tokenCredit && (
             <div className="flex gap-3">
@@ -1455,6 +1294,17 @@ function ProvenanceTab() {
           )}
         </div>
       </GlassCard>
+
+      {isLoading && (
+        <GlassCard className="p-8 text-center mb-6">
+          <p className="text-white/50 text-sm font-mono">Reading provenance from chain…</p>
+        </GlassCard>
+      )}
+      {error && (
+        <GlassCard className="p-8 text-center mb-6 border-red-500/20">
+          <p className="text-red-400 text-sm">Couldn&apos;t read provenance: {error.message.split('\n')[0]}</p>
+        </GlassCard>
+      )}
 
       {events ? (
         <div className="relative">
@@ -1497,18 +1347,24 @@ function ProvenanceTab() {
 
                     <p className="text-white/50 text-sm mb-3">{evt.detail}</p>
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                      <div className="flex items-center gap-2">
-                        <span className="text-white/60 text-[10px] font-mono uppercase shrink-0">TX</span>
-                        <span className="text-white/50 text-xs font-mono truncate">{evt.txHash.slice(0, 18)}...{evt.txHash.slice(-8)}</span>
-                        <CopyButton text={evt.txHash} />
+                    {evt.txHash ? (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div className="flex items-center gap-2">
+                          <span className="text-white/60 text-[10px] font-mono uppercase shrink-0">TX</span>
+                          <span className="text-white/50 text-xs font-mono truncate">{evt.txHash.slice(0, 18)}...{evt.txHash.slice(-8)}</span>
+                          <CopyButton text={evt.txHash} />
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-white/60 text-[10px] font-mono uppercase shrink-0">Actor</span>
+                          <span className="text-white/50 text-xs font-mono truncate">{evt.actor.slice(0, 10)}...{evt.actor.slice(-6)}</span>
+                          <CopyButton text={evt.actor} />
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-white/60 text-[10px] font-mono uppercase shrink-0">Actor</span>
-                        <span className="text-white/50 text-xs font-mono truncate">{evt.actor.slice(0, 10)}...{evt.actor.slice(-6)}</span>
-                        <CopyButton text={evt.actor} />
-                      </div>
-                    </div>
+                    ) : (
+                      <p className="text-white/40 text-[10px] font-mono uppercase tracking-widest">
+                        Read from verified contract state
+                      </p>
+                    )}
                   </GlassCard>
                 </div>
               );
@@ -1523,11 +1379,11 @@ function ProvenanceTab() {
             <p className="text-white/55 text-xs font-mono pt-1">End of provenance chain</p>
           </div>
         </div>
-      ) : tokenInput !== '' ? (
+      ) : tokenInput !== '' && notFound ? (
         <GlassCard className="p-8 text-center">
-          <p className="text-white/60 text-sm">No provenance data found for Token ID {tokenInput}. Try a value between 1 and 13.</p>
+          <p className="text-white/60 text-sm">No credit exists with this Token ID on the connected network.</p>
         </GlassCard>
-      ) : (
+      ) : tokenInput !== '' ? null : (
         <GlassCard className="p-12 text-center">
           <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-emerald-500/10 flex items-center justify-center">
             <svg className="w-8 h-8 text-emerald-400/40" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1689,6 +1545,8 @@ function AnalyticsTab() {
 
 function CertificatesTab() {
   const { wallet } = useApp();
+  const address = wallet.connected ? (wallet.address as Address) : undefined;
+  const { certificates, isLoading, error } = useRetirementCertificates(address);
 
   if (!wallet.connected) {
     return <ConnectWalletPrompt message="Connect your wallet to view your retirement certificates." />;
@@ -1701,10 +1559,29 @@ function CertificatesTab() {
         Each retired carbon credit generates a permanent, verifiable certificate. These certificates are proof that carbon has been permanently removed from the atmosphere and the corresponding credits can never be re-used.
       </p>
 
+      {error && (
+        <GlassCard className="p-8 text-center border-red-500/20 mb-6">
+          <p className="text-red-400 text-sm">Couldn&apos;t load certificates: {error.message.split('\n')[0]}</p>
+        </GlassCard>
+      )}
+      {isLoading && certificates.length === 0 && (
+        <GlassCard className="p-8 text-center mb-6">
+          <p className="text-white/50 text-sm font-mono">Reading retirements from chain…</p>
+        </GlassCard>
+      )}
+      {!isLoading && !error && certificates.length === 0 && (
+        <GlassCard className="p-10 text-center">
+          <p className="text-white/70 text-sm font-medium mb-1">No retirements yet</p>
+          <p className="text-white/40 text-xs max-w-md mx-auto">
+            Retire credits from your portfolio to mint a permanent, on-chain-verifiable retirement certificate.
+          </p>
+        </GlassCard>
+      )}
+
       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        {MOCK_CERTIFICATES.map((cert) => (
+        {certificates.map((cert) => (
           <div
-            key={cert.tokenId}
+            key={cert.txHash}
             className="relative rounded-2xl overflow-hidden"
           >
             {/* Decorative border - double border effect */}
@@ -1731,19 +1608,19 @@ function CertificatesTab() {
 
               {/* Main CO2 amount */}
               <div className="text-center mb-5">
-                <p className="text-3xl font-bold text-emerald-400 font-mono">{cert.co2AmountKg.toLocaleString()}</p>
-                <p className="text-white/40 text-xs font-mono uppercase tracking-widest mt-0.5">Kilograms of CO2 Permanently Retired</p>
+                <p className="text-3xl font-bold text-emerald-400 font-mono">{cert.amountRetired.toLocaleString()}</p>
+                <p className="text-white/40 text-xs font-mono uppercase tracking-widest mt-0.5">Verified Credits Permanently Retired</p>
               </div>
 
               {/* Certificate details grid */}
               <div className="grid grid-cols-2 gap-3 mb-4">
                 <div className="p-2.5 rounded-lg bg-white/[0.02]">
                   <p className="text-white/60 text-[9px] font-mono uppercase tracking-widest mb-0.5">Token ID</p>
-                  <p className="text-white/70 font-mono text-sm">#{cert.tokenId}</p>
+                  <p className="text-white/70 font-mono text-sm" title={cert.tokenId.toString()}>#{shortTokenId(cert.tokenId)}</p>
                 </div>
                 <div className="p-2.5 rounded-lg bg-white/[0.02]">
                   <p className="text-white/60 text-[9px] font-mono uppercase tracking-widest mb-0.5">Retirement Date</p>
-                  <p className="text-white/70 font-mono text-sm">{cert.retirementDate}</p>
+                  <p className="text-white/70 font-mono text-sm">{new Date(cert.retiredAt * 1000).toLocaleDateString()}</p>
                 </div>
                 <div className="p-2.5 rounded-lg bg-white/[0.02]">
                   <p className="text-white/60 text-[9px] font-mono uppercase tracking-widest mb-0.5">DAC Unit</p>
@@ -1759,7 +1636,7 @@ function CertificatesTab() {
               <div className="space-y-2 mb-4">
                 <div className="p-2.5 rounded-lg bg-white/[0.02]">
                   <p className="text-white/60 text-[9px] font-mono uppercase tracking-widest mb-0.5">Beneficiary</p>
-                  <p className="text-white/70 text-sm">{cert.beneficiary}</p>
+                  <p className="text-white/70 text-sm">{cert.beneficiary || '—'}</p>
                 </div>
                 <div className="p-2.5 rounded-lg bg-white/[0.02]">
                   <p className="text-white/60 text-[9px] font-mono uppercase tracking-widest mb-0.5">Retirement Reason</p>
@@ -1769,8 +1646,8 @@ function CertificatesTab() {
 
               {/* Verification chain hash */}
               <div className="p-2.5 rounded-lg bg-white/[0.02] mb-4">
-                <p className="text-white/60 text-[9px] font-mono uppercase tracking-widest mb-0.5">Verification Chain Hash</p>
-                <p className="text-white/40 text-[10px] font-mono break-all">{cert.verificationHash}</p>
+                <p className="text-white/60 text-[9px] font-mono uppercase tracking-widest mb-0.5">Retirement Transaction</p>
+                <p className="text-white/40 text-[10px] font-mono break-all">{cert.txHash}</p>
               </div>
 
               {/* Decorative line */}
@@ -1779,7 +1656,7 @@ function CertificatesTab() {
               {/* Verify link */}
               <div className="flex justify-center">
                 <a
-                  href={getExplorerTokenUrl(CONTRACTS.carbonCredit, String(cert.tokenId))}
+                  href={getExplorerTokenUrl(CONTRACTS.carbonCredit, cert.tokenId.toString())}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 text-xs font-mono hover:bg-emerald-500/20 transition-all"
