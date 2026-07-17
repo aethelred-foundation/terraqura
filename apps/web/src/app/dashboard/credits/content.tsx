@@ -14,6 +14,7 @@ import {
   useVerificationThresholds,
 } from '@/hooks/useContractData';
 import {
+  useCreditStats,
   usePortfolio,
   useProvenance,
   useRetireCredit,
@@ -36,98 +37,12 @@ import {
 } from '@/components/dapp/SharedComponents';
 
 // ============================================
-// Deterministic seeded random utilities
-// ============================================
-
-function seededRandom(seed: number): number {
-  let s = seed;
-  s = ((s * 1103515245 + 12345) & 0x7fffffff);
-  return (s % 10000) / 10000;
-}
-
-function seededInt(seed: number, min: number, max: number): number {
-  return Math.floor(seededRandom(seed) * (max - min + 1)) + min;
-}
-
-function seededHex(seed: number, length: number): string {
-  const chars = '0123456789abcdef';
-  let result = '';
-  for (let i = 0; i < length; i++) {
-    result += chars[seededInt(seed + i * 7, 0, 15)];
-  }
-  return result;
-}
-
-function seededAddress(seed: number): string {
-  return '0x' + seededHex(seed, 40);
-}
-
-// ============================================
 // Mock data (deterministic, seeded)
 // ============================================
 
 
-// Weekly minted data (12 weeks)
-const WEEKLY_MINTED = Array.from({ length: 12 }, (_, i) => ({
-  week: `W${i + 1}`,
-  label: `Week ${i + 1}`,
-  credits: seededInt(100 + i, 80, 340),
-}));
-
-const WEEKLY_MAX = Math.max(...WEEKLY_MINTED.map(w => w.credits));
-
-// Purity bracket distribution
-const PURITY_BRACKETS = [
-  { label: '90-93%', count: seededInt(200, 12, 35), color: 'bg-blue-400' },
-  { label: '93-96%', count: seededInt(201, 25, 55), color: 'bg-cyan-400' },
-  { label: '96-99%', count: seededInt(202, 30, 65), color: 'bg-emerald-400' },
-  { label: '99%+', count: seededInt(203, 8, 22), color: 'bg-purple-400' },
-];
-const PURITY_MAX = Math.max(...PURITY_BRACKETS.map(b => b.count));
-
-// DAC unit leaderboard
-const DAC_LEADERBOARD = [
-  { unit: 'DAC-DXB-002', co2Total: 32400, credits: 40, efficiency: 328 },
-  { unit: 'DAC-DXB-001', co2Total: 28100, credits: 34, efficiency: 324 },
-  { unit: 'DAC-AUH-001', co2Total: 22500, credits: 27, efficiency: 336 },
-  { unit: 'DAC-RYD-001', co2Total: 18900, credits: 21, efficiency: 328 },
-  { unit: 'DAC-AUH-002', co2Total: 15200, credits: 18, efficiency: 347 },
-  { unit: 'DAC-AUH-003', co2Total: 9800, credits: 12, efficiency: 347 },
-];
-
 // Provenance event types
 type ProvenanceEventType = 'CAPTURE_STARTED' | 'SOURCE_VERIFIED' | 'LOGIC_VERIFIED' | 'MINT_VERIFIED' | 'MINTED' | 'TRANSFERRED' | 'RETIRED';
-
-// Analytics data: total supply over 90 days
-const SUPPLY_OVER_TIME = Array.from({ length: 90 }, (_, i) => {
-  const base = 120;
-  const growth = Math.floor(seededRandom(300 + i) * 8);
-  return {
-    day: i + 1,
-    supply: base + i * 3 + growth,
-  };
-});
-const SUPPLY_MAX = Math.max(...SUPPLY_OVER_TIME.map(s => s.supply));
-
-// Top 5 holders
-const TOP_HOLDERS = [
-  { address: seededAddress(500), balance: seededInt(501, 120, 280), percentage: 0 },
-  { address: seededAddress(502), balance: seededInt(503, 80, 160), percentage: 0 },
-  { address: seededAddress(504), balance: seededInt(505, 50, 110), percentage: 0 },
-  { address: seededAddress(506), balance: seededInt(507, 30, 70), percentage: 0 },
-  { address: seededAddress(508), balance: seededInt(509, 15, 45), percentage: 0 },
-];
-const TOTAL_HOLDER_BALANCE = TOP_HOLDERS.reduce((a, b) => a + b.balance, 0);
-TOP_HOLDERS.forEach(h => { h.percentage = Math.round((h.balance / TOTAL_HOLDER_BALANCE) * 100); });
-
-// Vintage distribution
-const VINTAGES = [
-  { year: 2024, credits: seededInt(600, 40, 90), color: 'bg-blue-500' },
-  { year: 2025, credits: seededInt(601, 120, 240), color: 'bg-emerald-500' },
-  { year: 2026, credits: seededInt(602, 60, 150), color: 'bg-cyan-500' },
-];
-const VINTAGE_MAX = Math.max(...VINTAGES.map(v => v.credits));
-
 
 // ============================================
 // Verification check icon
@@ -288,6 +203,70 @@ function OverviewTab({ totalMinted, totalRetired, netActive }: {
   totalRetired: bigint | undefined;
   netActive: bigint | undefined;
 }) {
+  const { stats } = useCreditStats();
+
+  // Mint volume bucketed into the last 12 calendar weeks, from real events.
+  const weeklyMinted = useMemo(() => {
+    const now = Math.floor(Date.now() / 1000);
+    const WEEK = 7 * 86400;
+    const buckets = Array.from({ length: 12 }, (_, i) => ({
+      week: `W${i + 1}`,
+      credits: 0,
+    }));
+    for (const m of stats?.mints ?? []) {
+      const age = now - m.timestamp;
+      if (age < 0 || age >= 12 * WEEK) continue;
+      const idx = 11 - Math.floor(age / WEEK);
+      const bucket = buckets[idx];
+      if (bucket) bucket.credits += m.amount;
+    }
+    return buckets;
+  }, [stats]);
+  const weeklyMax = Math.max(1, ...weeklyMinted.map((w) => w.credits));
+
+  const purityBrackets = useMemo(() => {
+    const brackets = [
+      { label: '90-93%', min: 90, max: 93, count: 0, color: 'bg-blue-400' },
+      { label: '93-96%', min: 93, max: 96, count: 0, color: 'bg-cyan-400' },
+      { label: '96-99%', min: 96, max: 99, count: 0, color: 'bg-emerald-400' },
+      { label: '99%+', min: 99, max: 101, count: 0, color: 'bg-emerald-300' },
+    ];
+    for (const t of stats?.tokens ?? []) {
+      const b = brackets.find((x) => t.purity >= x.min && t.purity < x.max);
+      if (b) b.count += 1;
+    }
+    return brackets;
+  }, [stats]);
+  const purityMax = Math.max(1, ...purityBrackets.map((b) => b.count));
+
+  const leaderboard = useMemo(() => {
+    const byUnit = new Map<string, { unit: string; co2Total: number; credits: number; energy: number }>();
+    for (const t of stats?.tokens ?? []) {
+      const row = byUnit.get(t.dacUnit) ?? { unit: t.dacUnit, co2Total: 0, credits: 0, energy: 0 };
+      row.co2Total += t.co2Kg;
+      row.energy += t.energyKwh;
+      byUnit.set(t.dacUnit, row);
+    }
+    for (const m of stats?.mints ?? []) {
+      const row = byUnit.get(m.dacUnit);
+      if (row) row.credits += m.amount;
+    }
+    return [...byUnit.values()]
+      .map((r) => ({
+        ...r,
+        // kWh per tonne of CO2 captured.
+        efficiency: r.co2Total > 0 ? Math.round(r.energy / (r.co2Total / 1000)) : 0,
+      }))
+      .sort((a, b) => b.co2Total - a.co2Total);
+  }, [stats]);
+
+  const avgVerificationHours = useMemo(() => {
+    const tokens = stats?.tokens ?? [];
+    if (tokens.length === 0) return null;
+    const mean = tokens.reduce((acc, t) => acc + t.verificationSeconds, 0) / tokens.length;
+    return mean / 3600;
+  }, [stats]);
+
   return (
     <div>
       {/* Global stats */}
@@ -309,7 +288,7 @@ function OverviewTab({ totalMinted, totalRetired, netActive }: {
         />
         <MetricCard
           label="Avg Verification Time"
-          value="4.2"
+          value={avgVerificationHours !== null ? avgVerificationHours.toFixed(1) : '--'}
           unit="hours"
         />
       </div>
@@ -318,8 +297,8 @@ function OverviewTab({ totalMinted, totalRetired, netActive }: {
       <GlassCard className="p-6 mb-8">
         <p className="text-white/50 text-xs font-mono uppercase tracking-widest mb-4">Credits Minted Per Week (12 Weeks)</p>
         <div className="flex items-end gap-2 h-48">
-          {WEEKLY_MINTED.map((w) => {
-            const heightPct = WEEKLY_MAX > 0 ? (w.credits / WEEKLY_MAX) * 100 : 0;
+          {weeklyMinted.map((w) => {
+            const heightPct = (w.credits / weeklyMax) * 100;
             return (
               <div key={w.week} className="flex-1 flex flex-col items-center gap-1 group">
                 <span className="text-[10px] text-white/40 font-mono opacity-0 group-hover:opacity-100 transition-opacity">
@@ -342,8 +321,8 @@ function OverviewTab({ totalMinted, totalRetired, netActive }: {
       <GlassCard className="p-6 mb-8">
         <p className="text-white/50 text-xs font-mono uppercase tracking-widest mb-4">Distribution by Purity Bracket</p>
         <div className="space-y-3">
-          {PURITY_BRACKETS.map((b) => {
-            const widthPct = PURITY_MAX > 0 ? (b.count / PURITY_MAX) * 100 : 0;
+          {purityBrackets.map((b) => {
+            const widthPct = (b.count / purityMax) * 100;
             return (
               <div key={b.label} className="flex items-center gap-3">
                 <span className="text-xs text-white/50 font-mono w-16 shrink-0">{b.label}</span>
@@ -377,7 +356,7 @@ function OverviewTab({ totalMinted, totalRetired, netActive }: {
               </tr>
             </thead>
             <tbody>
-              {DAC_LEADERBOARD.map((row, idx) => (
+              {leaderboard.map((row, idx) => (
                 <tr key={row.unit} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
                   <td className="py-3 pr-4">
                     <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
@@ -1403,10 +1382,87 @@ function ProvenanceTab() {
 // ============================================
 
 function AnalyticsTab() {
-  const totalMintedNum = SUPPLY_OVER_TIME[SUPPLY_OVER_TIME.length - 1]?.supply ?? 0;
-  const totalRetiredNum = seededInt(400, 45, 85);
-  const retirementRate = ((totalRetiredNum / totalMintedNum) * 100).toFixed(1);
-  const avgTransfersPerCredit = (seededInt(401, 12, 28) / 10).toFixed(1);
+  const { stats } = useCreditStats();
+
+  const totalMintedNum = useMemo(
+    () => (stats?.mints ?? []).reduce((acc, m) => acc + m.amount, 0),
+    [stats],
+  );
+  const totalRetiredNum = useMemo(
+    () => (stats?.retires ?? []).reduce((acc, r) => acc + r.amount, 0),
+    [stats],
+  );
+  const retirementRate = totalMintedNum > 0
+    ? ((totalRetiredNum / totalMintedNum) * 100).toFixed(1)
+    : '0.0';
+  const avgTransfersPerCredit = (stats?.tokens.length ?? 0) > 0
+    ? ((stats?.transfers.length ?? 0) / (stats?.tokens.length ?? 1)).toFixed(1)
+    : '0.0';
+
+  // Cumulative net supply per day over the last 90 days, from real events.
+  const supplyOverTime = useMemo(() => {
+    const now = Math.floor(Date.now() / 1000);
+    const DAY = 86400;
+    const start = now - 89 * DAY;
+    const deltas = new Array<number>(90).fill(0);
+    let baseline = 0;
+    const bump = (timestamp: number, delta: number) => {
+      const idx = Math.min(89, Math.floor((timestamp - start) / DAY));
+      deltas[idx] = (deltas[idx] ?? 0) + delta;
+    };
+    for (const m of stats?.mints ?? []) {
+      if (m.timestamp < start) baseline += m.amount;
+      else bump(m.timestamp, m.amount);
+    }
+    for (const r of stats?.retires ?? []) {
+      if (r.timestamp < start) baseline -= r.amount;
+      else bump(r.timestamp, -r.amount);
+    }
+    let running = baseline;
+    return deltas.map((d, i) => {
+      running += d;
+      return { day: i + 1, supply: running };
+    });
+  }, [stats]);
+  const supplyMax = Math.max(1, ...supplyOverTime.map((d) => d.supply));
+
+  const topHolders = useMemo(() => {
+    const holders = (stats?.holders ?? []).slice(0, 5);
+    const total = (stats?.holders ?? []).reduce((acc, h) => acc + h.balance, 0);
+    return holders.map((h) => ({
+      ...h,
+      percentage: total > 0 ? Math.round((h.balance / total) * 100) : 0,
+    }));
+  }, [stats]);
+
+  const vintages = useMemo(() => {
+    const byYear = new Map<number, number>();
+    for (const m of stats?.mints ?? []) {
+      const token = stats?.tokens.find((t) => t.tokenId === m.tokenId);
+      if (!token) continue;
+      byYear.set(token.captureYear, (byYear.get(token.captureYear) ?? 0) + m.amount);
+    }
+    const palette = ['bg-emerald-500', 'bg-cyan-500', 'bg-blue-500', 'bg-purple-500'];
+    return [...byYear.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([year, credits], i) => ({
+        year,
+        credits,
+        color: palette[i % palette.length] ?? 'bg-emerald-500',
+      }));
+  }, [stats]);
+  const vintageMax = Math.max(1, ...vintages.map((v) => v.credits));
+
+  const funnel = useMemo(() => {
+    const tokenCount = stats?.tokens.length ?? 0;
+    const transferredTokens = new Set((stats?.transfers ?? []).map((t) => t.tokenId.toString())).size;
+    const retiredTokens = new Set((stats?.retires ?? []).map((r) => r.tokenId.toString())).size;
+    return [
+      { label: 'Batches minted', count: tokenCount, color: 'bg-emerald-500' },
+      { label: 'Transferred (at least once)', count: transferredTokens, color: 'bg-cyan-500' },
+      { label: 'Retired (at least once)', count: retiredTokens, color: 'bg-slate-500' },
+    ];
+  }, [stats]);
 
   return (
     <div>
@@ -1415,15 +1471,15 @@ function AnalyticsTab() {
         <MetricCard label="Total Supply" value={totalMintedNum.toLocaleString()} unit="credits" />
         <MetricCard label="Retirement Rate" value={retirementRate} unit="%" />
         <MetricCard label="Credit Velocity" value={avgTransfersPerCredit} unit="transfers/credit" />
-        <MetricCard label="Active Holders" value={seededInt(402, 38, 92).toString()} unit="wallets" />
+        <MetricCard label="Active Holders" value={(stats?.holders.length ?? 0).toString()} unit="wallets" />
       </div>
 
       {/* Supply over time (90 days) */}
       <GlassCard className="p-6 mb-8">
         <p className="text-white/50 text-xs font-mono uppercase tracking-widest mb-4">Total Supply Over 90 Days</p>
         <div className="flex items-end gap-px h-40">
-          {SUPPLY_OVER_TIME.map((d) => {
-            const heightPct = SUPPLY_MAX > 0 ? (d.supply / SUPPLY_MAX) * 100 : 0;
+          {supplyOverTime.map((d) => {
+            const heightPct = (d.supply / supplyMax) * 100;
             return (
               <div key={d.day} className="flex-1 group relative">
                 <div
@@ -1459,7 +1515,7 @@ function AnalyticsTab() {
               </tr>
             </thead>
             <tbody>
-              {TOP_HOLDERS.map((holder, idx) => (
+              {topHolders.map((holder, idx) => (
                 <tr key={idx} className="border-b border-white/[0.03] hover:bg-white/[0.02] transition-colors">
                   <td className="py-3 pr-4">
                     <span className={`inline-flex items-center justify-center w-6 h-6 rounded-full text-xs font-bold ${
@@ -1492,8 +1548,8 @@ function AnalyticsTab() {
       <GlassCard className="p-6 mb-8">
         <p className="text-white/50 text-xs font-mono uppercase tracking-widest mb-4">Vintage Distribution (by Capture Year)</p>
         <div className="space-y-4">
-          {VINTAGES.map((v) => {
-            const widthPct = VINTAGE_MAX > 0 ? (v.credits / VINTAGE_MAX) * 100 : 0;
+          {vintages.map((v) => {
+            const widthPct = (v.credits / vintageMax) * 100;
             return (
               <div key={v.year}>
                 <div className="flex items-center justify-between mb-1">
@@ -1515,12 +1571,7 @@ function AnalyticsTab() {
       <GlassCard className="p-6">
         <p className="text-white/50 text-xs font-mono uppercase tracking-widest mb-4">Credit Lifecycle Funnel</p>
         <div className="space-y-3">
-          {[
-            { label: 'Minted', count: totalMintedNum, color: 'bg-emerald-500', percentage: 100 },
-            { label: 'Transferred (at least once)', count: seededInt(403, 120, 250), color: 'bg-cyan-500', percentage: 0 },
-            { label: 'Listed on Marketplace', count: seededInt(404, 60, 130), color: 'bg-purple-500', percentage: 0 },
-            { label: 'Retired', count: totalRetiredNum, color: 'bg-slate-500', percentage: 0 },
-          ].map((step, idx, arr) => {
+          {funnel.map((step, idx, arr) => {
             const baseCount = arr[0]?.count ?? 1;
             const pct = idx === 0 ? 100 : Math.round((step.count / baseCount) * 100);
             return (

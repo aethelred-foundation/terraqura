@@ -570,6 +570,168 @@ export function useRetirementCertificates(address?: Address): {
   return { certificates, isLoading, error, refetch };
 }
 
+/** Aggregated, chain-derived statistics for the credit dashboards. */
+export interface CreditStats {
+  /** Every mint: when, how much, to whom, from which facility. */
+  mints: { tokenId: bigint; dacUnit: string; amount: number; timestamp: number; recipient: string }[];
+  /** Every retirement: when and how much. */
+  retires: { tokenId: bigint; amount: number; timestamp: number }[];
+  /** Wallet-to-wallet transfers (mint/burn legs excluded). */
+  transfers: { tokenId: bigint; amount: number; timestamp: number }[];
+  /** Current holders with a positive balance, from the event ledger. */
+  holders: { address: string; balance: number }[];
+  /** Per-batch physical metadata for distribution charts. */
+  tokens: {
+    tokenId: bigint;
+    dacUnit: string;
+    co2Kg: number;
+    energyKwh: number;
+    purity: number;
+    captureYear: number;
+    /** Seconds between capture and on-chain verification. */
+    verificationSeconds: number;
+  }[];
+}
+
+/**
+ * Chain-wide credit statistics computed from the CarbonCredit contract's own
+ * events and per-token state. Every number is derived from chain data — on a
+ * young network the charts are sparse, and that is the honest picture.
+ */
+export function useCreditStats(): {
+  stats: CreditStats | null;
+  isLoading: boolean;
+  error: Error | null;
+} {
+  const publicClient = usePublicClient({ chainId: CHAIN_ID });
+  const [stats, setStats] = useState<CreditStats | null>(null);
+  const [isLoading, setIsLoading] = useState(false);
+  const [error, setError] = useState<Error | null>(null);
+
+  useEffect(() => {
+    if (!publicClient) return;
+    let cancelled = false;
+    (async () => {
+      setIsLoading(true);
+      setError(null);
+      try {
+        const [mintLogs, retireLogs, transferLogs] = await Promise.all([
+          publicClient.getContractEvents({
+            address: CARBON_CREDIT,
+            abi: CarbonCreditABI,
+            eventName: "CreditMinted",
+            fromBlock: 0n,
+            toBlock: "latest",
+          }),
+          publicClient.getContractEvents({
+            address: CARBON_CREDIT,
+            abi: CarbonCreditABI,
+            eventName: "CreditRetired",
+            fromBlock: 0n,
+            toBlock: "latest",
+          }),
+          publicClient.getContractEvents({
+            address: CARBON_CREDIT,
+            abi: CarbonCreditABI,
+            eventName: "TransferSingle",
+            fromBlock: 0n,
+            toBlock: "latest",
+          }),
+        ]);
+
+        const blockNumbers = new Set<bigint>();
+        for (const l of [...mintLogs, ...retireLogs, ...transferLogs]) blockNumbers.add(l.blockNumber);
+        const blockTimes = new Map<bigint, number>();
+        await Promise.all(
+          [...blockNumbers].map(async (bn) => {
+            const b = await publicClient.getBlock({ blockNumber: bn });
+            blockTimes.set(bn, Number(b.timestamp));
+          }),
+        );
+        const ts = (l: { blockNumber: bigint }) => blockTimes.get(l.blockNumber) ?? 0;
+
+        const mints = mintLogs.map((l) => {
+          const a = l.args as { tokenId?: bigint; dacUnitId?: string; recipient?: string; creditsAmount?: bigint };
+          return {
+            tokenId: a.tokenId ?? 0n,
+            dacUnit: decodeDacUnitId(a.dacUnitId),
+            amount: Number(a.creditsAmount ?? 0n),
+            timestamp: ts(l),
+            recipient: a.recipient ?? "",
+          };
+        });
+        const retires = retireLogs.map((l) => {
+          const a = l.args as { tokenId?: bigint; amount?: bigint };
+          return { tokenId: a.tokenId ?? 0n, amount: Number(a.amount ?? 0n), timestamp: ts(l) };
+        });
+
+        // Event ledger over TransferSingle covers mints (from=0) and burns
+        // (to=0), so it reconstructs every current balance.
+        const ledger = new Map<string, number>();
+        const transfers: CreditStats["transfers"] = [];
+        for (const l of transferLogs) {
+          const a = l.args as { from?: string; to?: string; id?: bigint; value?: bigint };
+          const value = Number(a.value ?? 0n);
+          const from = (a.from ?? ZERO_ADDR).toLowerCase();
+          const to = (a.to ?? ZERO_ADDR).toLowerCase();
+          if (from !== ZERO_ADDR) ledger.set(from, (ledger.get(from) ?? 0) - value);
+          if (to !== ZERO_ADDR) ledger.set(to, (ledger.get(to) ?? 0) + value);
+          if (from !== ZERO_ADDR && to !== ZERO_ADDR) {
+            transfers.push({ tokenId: a.id ?? 0n, amount: value, timestamp: ts(l) });
+          }
+        }
+        const holders = [...ledger.entries()]
+          .filter(([, balance]) => balance > 0)
+          .map(([address, balance]) => ({ address, balance }))
+          .sort((x, y) => y.balance - x.balance);
+
+        const uniqueTokenIds = [...new Set(mints.map((m) => m.tokenId))];
+        const tokens = await Promise.all(
+          uniqueTokenIds.map(async (tokenId) => {
+            const [rawMeta, rawVerify] = await Promise.all([
+              publicClient.readContract({
+                address: CARBON_CREDIT,
+                abi: CarbonCreditABI,
+                functionName: "getMetadata",
+                args: [tokenId],
+              }) as Promise<RawMetadata>,
+              publicClient.readContract({
+                address: CARBON_CREDIT,
+                abi: CarbonCreditABI,
+                functionName: "getVerificationResult",
+                args: [tokenId],
+              }) as Promise<RawVerification & { verifiedAt: bigint }>,
+            ]);
+            return {
+              tokenId,
+              dacUnit: decodeDacUnitId(rawMeta.dacUnitId),
+              co2Kg: Number(rawMeta.co2AmountKg),
+              energyKwh: Number(rawMeta.energyConsumedKwh),
+              purity: Number(rawMeta.purityPercentage),
+              captureYear: new Date(Number(rawMeta.captureTimestamp) * 1000).getFullYear(),
+              verificationSeconds: Math.max(
+                0,
+                Number(rawVerify.verifiedAt) - Number(rawMeta.captureTimestamp),
+              ),
+            };
+          }),
+        );
+
+        if (!cancelled) setStats({ mints, retires, transfers, holders, tokens });
+      } catch (err) {
+        if (!cancelled) setError(err as Error);
+      } finally {
+        if (!cancelled) setIsLoading(false);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [publicClient]);
+
+  return { stats, isLoading, error };
+}
+
 /** Retire (burn) a quantity of one credit batch, recording an on-chain reason. */
 export function useRetireCredit() {
   const { writeContractAsync, isPending, ...rest } = useSafeWriteContract();

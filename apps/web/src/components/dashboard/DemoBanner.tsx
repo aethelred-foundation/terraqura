@@ -49,7 +49,7 @@ export function DemoBanner() {
           </span>{" "}
           {isLive
             ? "Synthetic feed injection is disabled. Any remaining seeded panels must be replaced with live API or chain data before production launch."
-            : "All numbers, addresses, and orders shown on the dashboard are deterministic mock data for UX review. Mainnet has not launched and no value is at risk."}
+            : "Credits data (portfolio, provenance, certificates, analytics) is read live from the connected network; remaining dashboards show deterministic sample data for UX review. Mainnet has not launched and no value is at risk."}
         </p>
       </div>
     </div>
