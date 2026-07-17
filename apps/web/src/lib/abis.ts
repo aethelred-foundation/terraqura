@@ -87,6 +87,9 @@ export const CarbonCreditABI = [
     outputs: [{ type: "bool" }],
   },
   {
+    // Must mirror ICarbonCredit.CreditMetadata exactly (v3 added
+    // gridIntensityGCO2PerKwh + the two archival URI fields); a shorter
+    // tuple makes viem mis-decode every getMetadata call.
     name: "getMetadata",
     type: "function",
     stateMutability: "view",
@@ -103,7 +106,10 @@ export const CarbonCreditABI = [
           { name: "latitude", type: "int256" },
           { name: "longitude", type: "int256" },
           { name: "purityPercentage", type: "uint8" },
+          { name: "gridIntensityGCO2PerKwh", type: "uint256" },
           { name: "isRetired", type: "bool" },
+          { name: "ipfsMetadataUri", type: "string" },
+          { name: "arweaveBackupTxId", type: "string" },
         ],
       },
     ],
