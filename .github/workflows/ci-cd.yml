@@ -30,7 +30,7 @@ jobs:
       - name: Verify Production Dependency Boundary
         run: pnpm --filter @terraqura/subgraph security:production-boundary
       - name: NPM Security Audit
-        run: pnpm audit --audit-level=critical --prod
+        run: pnpm audit --audit-level=high --prod
 
   lint-format:
     name: Lint & Format
