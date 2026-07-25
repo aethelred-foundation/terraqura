@@ -591,13 +591,13 @@ importers:
 
   packages/subgraph:
     dependencies:
-      '@graphprotocol/graph-cli':
-        specifier: ^0.98.1
-        version: 0.98.1(@types/node@20.19.30)(bufferutil@4.1.0)(typescript@5.3.3)(utf-8-validate@5.0.10)(zod@3.25.76)
       '@graphprotocol/graph-ts':
         specifier: ^0.32.0
         version: 0.32.0
     devDependencies:
+      '@graphprotocol/graph-cli':
+        specifier: ^0.98.1
+        version: 0.98.1(@types/node@20.19.30)(bufferutil@4.1.0)(typescript@5.3.3)(utf-8-validate@5.0.10)(zod@3.25.76)
       matchstick-as:
         specifier: ^0.6.0
         version: 0.6.0
