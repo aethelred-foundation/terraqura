@@ -55,9 +55,6 @@
     ]
   },
   "pnpm": {
-    "patchedDependencies": {
-      "@graphprotocol/graph-cli@0.67.4": "patches/@graphprotocol__graph-cli@0.67.4.patch"
-    },
     "overrides": {
       "@openzeppelin/contracts": "4.9.6",
       "@openzeppelin/contracts-upgradeable": "4.9.6",

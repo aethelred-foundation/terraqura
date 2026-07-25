@@ -5,7 +5,7 @@
 # USER ENTITY
 # ============================================
 
-type User @entity {
+type User @entity(immutable: false) {
   id: ID! # Wallet address
 
   # Portfolio
@@ -39,7 +39,7 @@ type User @entity {
 # CARBON CREDIT ENTITY
 # ============================================
 
-type CarbonCredit @entity {
+type CarbonCredit @entity(immutable: false) {
   id: ID! # tokenId
   tokenId: BigInt!
 
@@ -84,7 +84,7 @@ enum CreditStatus {
   RETIRED
 }
 
-type ProvenanceEvent @entity {
+type ProvenanceEvent @entity(immutable: true) {
   id: ID! # txHash + logIndex
   credit: CarbonCredit!
 
@@ -102,7 +102,7 @@ type ProvenanceEvent @entity {
 # VERIFICATION ENTITIES
 # ============================================
 
-type VerificationBatch @entity {
+type VerificationBatch @entity(immutable: false) {
   id: ID! # batchId (bytes32)
 
   # Operator
@@ -144,7 +144,7 @@ enum VerificationStatus {
   FAILED
 }
 
-type VerificationPhase @entity {
+type VerificationPhase @entity(immutable: true) {
   id: ID! # batchId + phase
   batch: VerificationBatch!
 
@@ -158,7 +158,7 @@ type VerificationPhase @entity {
 # MARKETPLACE ENTITIES
 # ============================================
 
-type Listing @entity {
+type Listing @entity(immutable: false) {
   id: ID! # listingId
   listingId: BigInt!
 
@@ -196,7 +196,7 @@ enum ListingStatus {
   EXPIRED
 }
 
-type Offer @entity {
+type Offer @entity(immutable: false) {
   id: ID! # offerId
   offerId: BigInt!
 
@@ -230,7 +230,7 @@ enum OfferStatus {
   EXPIRED
 }
 
-type Purchase @entity {
+type Purchase @entity(immutable: true) {
   id: ID! # txHash + logIndex
 
   # Parties
@@ -257,7 +257,7 @@ type Purchase @entity {
 # ANALYTICS ENTITIES
 # ============================================
 
-type DailyStats @entity {
+type DailyStats @entity(immutable: false) {
   id: ID! # date string (YYYY-MM-DD)
   date: Int! # Unix timestamp for start of day
 
@@ -290,7 +290,7 @@ type DailyStats @entity {
   verificationsPassed: Int!
 }
 
-type MarketStats @entity {
+type MarketStats @entity(immutable: false) {
   id: ID! # "global"
 
   # Totals
@@ -335,7 +335,7 @@ type MarketStats @entity {
 # PROTOCOL CONFIGURATION
 # ============================================
 
-type ProtocolConfig @entity {
+type ProtocolConfig @entity(immutable: false) {
   id: ID! # "config"
 
   # Contract addresses
