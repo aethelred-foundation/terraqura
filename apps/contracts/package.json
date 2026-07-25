@@ -25,6 +25,7 @@
     "@openzeppelin/contracts": "^4.9.6",
     "@openzeppelin/contracts-upgradeable": "^4.9.6",
     "@openzeppelin/hardhat-upgrades": "^3.0.2",
+    "@chainlink/contracts": "^1.5.0",
     "@terraqura/eslint-config": "workspace:*",
     "@terraqura/typescript-config": "workspace:*",
     "@typechain/ethers-v6": "^0.5.1",
@@ -45,8 +46,5 @@
     "ts-node": "^10.9.2",
     "typechain": "^8.3.2",
     "typescript": "^5.3.3"
-  },
-  "dependencies": {
-    "@chainlink/contracts": "^1.5.0"
   }
 }

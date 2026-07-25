@@ -9,15 +9,13 @@
     "next.js",
     "node.js"
   ],
-  "dependencies": {
+  "devDependencies": {
     "@typescript-eslint/eslint-plugin": "^7.0.0",
     "@typescript-eslint/parser": "^7.0.0",
+    "eslint": "^8.0.0",
     "eslint-config-prettier": "^9.1.0",
     "eslint-plugin-import": "^2.29.1",
-    "eslint-plugin-only-warn": "^1.1.0"
-  },
-  "peerDependencies": {
-    "eslint": "^8.0.0",
+    "eslint-plugin-only-warn": "^1.1.0",
     "typescript": "^5.0.0"
   }
 }
