@@ -1,5 +1,7 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
 import jwt from "@fastify/jwt";
+import rateLimit from "@fastify/rate-limit";
+import Fastify from "fastify";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 
 // ---------------------------------------------------------------------------
 // Mock relayer service before importing the route
@@ -32,7 +34,6 @@ vi.mock("../../lib/runtime-env.js", () => ({
   }),
 }));
 
-import Fastify from "fastify";
 import { gaslessRoutes } from "./gasless.js";
 
 const ADDRESS = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -41,6 +42,10 @@ const JWT_SECRET = "gasless-test-secret-that-is-at-least-32-characters";
 
 async function buildApp() {
   const app = Fastify({ logger: false });
+  await app.register(rateLimit, {
+    max: 100,
+    timeWindow: "1 minute",
+  });
   await app.register(jwt, { secret: JWT_SECRET });
   await app.register(gaslessRoutes, { prefix: "/v1/gasless" });
   await app.ready();
@@ -221,7 +226,9 @@ describe("gasless routes", () => {
   });
 
   it("returns 500 when build-request throws", async () => {
-    mockBuildForwardRequest.mockRejectedValue(new Error("Contract call failed"));
+    mockBuildForwardRequest.mockRejectedValue(
+      new Error("Contract call failed"),
+    );
     const token = signToken(app);
 
     const res = await app.inject({
@@ -380,7 +387,8 @@ describe("gasless routes", () => {
   // ---------- GET /status ----------
 
   it("returns relayer status when enabled", async () => {
-    process.env.FORWARDER_CONTRACT = "0x1234567890abcdef1234567890abcdef12345678";
+    process.env.FORWARDER_CONTRACT =
+      "0x1234567890abcdef1234567890abcdef12345678";
     process.env.CHAIN_ID = "78432";
     const token = signToken(app);
 
@@ -407,6 +415,26 @@ describe("gasless routes", () => {
     });
     expect(res.statusCode).toBe(200);
     expect(res.json().data.enabled).toBe(false);
+  });
+
+  it("rate-limits authenticated gasless requests", async () => {
+    const token = signToken(app);
+
+    for (let requestNumber = 0; requestNumber < 20; requestNumber += 1) {
+      const allowedResponse = await app.inject({
+        method: "GET",
+        url: "/v1/gasless/status",
+        headers: { authorization: `Bearer ${token}` },
+      });
+      expect(allowedResponse.statusCode).toBe(200);
+    }
+
+    const limitedResponse = await app.inject({
+      method: "GET",
+      url: "/v1/gasless/status",
+      headers: { authorization: `Bearer ${token}` },
+    });
+    expect(limitedResponse.statusCode).toBe(429);
   });
 
   it("returns 403 when the requested nonce belongs to another wallet", async () => {

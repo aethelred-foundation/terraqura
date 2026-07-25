@@ -2,12 +2,19 @@
  * Integration test: end-to-end carbon credit lifecycle
  *
  * Flow: register DAC unit -> submit sensor readings -> verify ->
- *       mint credits -> list on marketplace -> purchase -> retire
+ *       mint credits -> list on marketplace -> purchase ->
+ *       reject unsigned server-side retirement
  */
 import jwt from "@fastify/jwt";
 import rateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance } from "fastify";
 import { beforeAll, describe, expect, it, vi } from "vitest";
+
+const { mockWhitelistDacUnitOnChain, mockMintVerifiedCreditsOnChain } =
+  vi.hoisted(() => ({
+    mockWhitelistDacUnitOnChain: vi.fn(),
+    mockMintVerifiedCreditsOnChain: vi.fn(),
+  }));
 
 // ---------------------------------------------------------------------------
 // Shared in-memory store used across all route modules
@@ -50,6 +57,13 @@ vi.mock("../../src/services/gasless/relayer.service.js", () => ({
   getGaslessRelayer: () => null,
 }));
 
+vi.mock("../../src/services/blockchain/contracts.js", () => ({
+  getExplorerTxLink: (txHash: string) =>
+    `https://explorer-testnet.aethelred.network/tx/${txHash}`,
+  whitelistDacUnitOnChain: mockWhitelistDacUnitOnChain,
+  mintVerifiedCreditsOnChain: mockMintVerifiedCreditsOnChain,
+}));
+
 // Set env for sensor API key mapping before importing routes
 process.env.SENSOR_API_KEYS = "sensor-key-001:__DAC_UNIT_ID__";
 
@@ -64,7 +78,9 @@ const OPERATOR_WALLET = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const BUYER_WALLET = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
 function sign(app: FastifyInstance, payload: object): string {
-  return (app as unknown as { jwt: { sign: (p: object) => string } }).jwt.sign(payload);
+  return (app as unknown as { jwt: { sign: (p: object) => string } }).jwt.sign(
+    payload,
+  );
 }
 
 async function buildApp() {
@@ -94,6 +110,13 @@ describe("full lifecycle integration", () => {
 
   beforeAll(async () => {
     store.clear();
+    mockWhitelistDacUnitOnChain.mockResolvedValue({
+      txHash: `0x${"1".repeat(64)}`,
+    });
+    mockMintVerifiedCreditsOnChain.mockResolvedValue({
+      txHash: `0x${"2".repeat(64)}`,
+      tokenId: "1",
+    });
     app = await buildApp();
   });
 
@@ -102,7 +125,10 @@ describe("full lifecycle integration", () => {
   // ---------------------------------------------------------------
 
   it("step 1: register a DAC unit", async () => {
-    const token = sign(app, { address: OPERATOR_WALLET });
+    const token = sign(app, {
+      address: OPERATOR_WALLET,
+      kycStatus: "approved",
+    });
     const res = await app.inject({
       method: "POST",
       url: "/v1/dac-units",
@@ -114,6 +140,7 @@ describe("full lifecycle integration", () => {
         countryCode: "AE",
         capacityTonnesPerYear: 500,
         technologyType: "Solid Sorbent",
+        gridIntensityGco2PerKwh: 400,
       },
     });
 
@@ -128,7 +155,10 @@ describe("full lifecycle integration", () => {
   // ---------------------------------------------------------------
 
   it("step 2: whitelist the DAC unit", async () => {
-    const adminToken = sign(app, { address: OPERATOR_WALLET, userType: "admin" });
+    const adminToken = sign(app, {
+      address: OPERATOR_WALLET,
+      userType: "admin",
+    });
     const res = await app.inject({
       method: "POST",
       url: `/v1/dac-units/${dacUnitId}/whitelist`,
@@ -185,7 +215,10 @@ describe("full lifecycle integration", () => {
     const startTime = new Date(Math.min(...times) - 1000).toISOString();
     const endTime = new Date(Math.max(...times) + 1000).toISOString();
 
-    const token = sign(app, { address: OPERATOR_WALLET });
+    const token = sign(app, {
+      address: OPERATOR_WALLET,
+      kycStatus: "approved",
+    });
     const res = await app.inject({
       method: "POST",
       url: "/v1/verification/initiate",
@@ -224,7 +257,10 @@ describe("full lifecycle integration", () => {
   // ---------------------------------------------------------------
 
   it("step 6: mint carbon credits from verification", async () => {
-    const token = sign(app, { address: OPERATOR_WALLET });
+    const token = sign(app, {
+      address: OPERATOR_WALLET,
+      kycStatus: "approved",
+    });
     const res = await app.inject({
       method: "POST",
       url: "/v1/credits/mint",
@@ -327,10 +363,10 @@ describe("full lifecycle integration", () => {
   });
 
   // ---------------------------------------------------------------
-  // 11. Retire credits
+  // 11. Reject unsigned server-side retirement
   // ---------------------------------------------------------------
 
-  it("step 11: operator retires remaining credits", async () => {
+  it("step 11: server refuses to retire credits without a user signature", async () => {
     // Get current credit balance
     const creditRes = await app.inject({
       method: "GET",
@@ -339,7 +375,10 @@ describe("full lifecycle integration", () => {
     const currentBalance = creditRes.json().data.creditsIssued;
     expect(currentBalance).toBeGreaterThan(0);
 
-    const token = sign(app, { address: OPERATOR_WALLET });
+    const token = sign(app, {
+      address: OPERATOR_WALLET,
+      kycStatus: "approved",
+    });
     const res = await app.inject({
       method: "POST",
       url: `/v1/credits/${creditId}/retire`,
@@ -350,44 +389,43 @@ describe("full lifecycle integration", () => {
       },
     });
 
-    expect(res.statusCode).toBe(200);
-    expect(res.json().data.amountRetired).toBe(currentBalance);
-    expect(res.json().data.certificateUrl).toContain(creditId);
+    expect(res.statusCode).toBe(503);
+    expect(res.json().error).toContain("user-signed on-chain retirement flow");
   });
 
   // ---------------------------------------------------------------
-  // 12. Verify retirement
+  // 12. Verify rejected retirement did not mutate credit state
   // ---------------------------------------------------------------
 
-  it("step 12: credit is fully retired", async () => {
+  it("step 12: credit remains active after rejected retirement", async () => {
     const res = await app.inject({
       method: "GET",
       url: `/v1/credits/${creditId}`,
     });
     expect(res.statusCode).toBe(200);
     const data = res.json().data;
-    expect(data.isRetired).toBe(true);
-    expect(data.verificationStatus).toBe("retired");
-    expect(data.creditsIssued).toBe(0);
+    expect(data.isRetired).toBe(false);
+    expect(data.verificationStatus).toBe("minted");
+    expect(data.creditsIssued).toBeGreaterThan(0);
   });
 
   // ---------------------------------------------------------------
-  // 13. Check provenance after full lifecycle
+  // 13. Verify provenance contains no fabricated retirement event
   // ---------------------------------------------------------------
 
-  it("step 13: provenance includes full lifecycle events", async () => {
+  it("step 13: provenance excludes unconfirmed retirement", async () => {
     const res = await app.inject({
       method: "GET",
       url: `/v1/credits/${creditId}/provenance`,
     });
     expect(res.statusCode).toBe(200);
     const timeline = res.json().data.timeline;
-    expect(timeline).toHaveLength(4); // CAPTURE_STARTED, CAPTURE_COMPLETED, MINTED, RETIRED
+    expect(timeline).toHaveLength(3);
     const types = timeline.map((e: { type: string }) => e.type);
     expect(types).toContain("CAPTURE_STARTED");
     expect(types).toContain("CAPTURE_COMPLETED");
     expect(types).toContain("MINTED");
-    expect(types).toContain("RETIRED");
+    expect(types).not.toContain("RETIRED");
   });
 
   // ---------------------------------------------------------------
@@ -411,7 +449,10 @@ describe("full lifecycle integration", () => {
   // ---------------------------------------------------------------
 
   it("step 15: cannot re-mint the same verification", async () => {
-    const token = sign(app, { address: OPERATOR_WALLET });
+    const token = sign(app, {
+      address: OPERATOR_WALLET,
+      kycStatus: "approved",
+    });
     const res = await app.inject({
       method: "POST",
       url: "/v1/credits/mint",

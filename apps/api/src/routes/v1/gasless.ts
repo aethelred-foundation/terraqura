@@ -4,7 +4,10 @@
 import { FastifyInstance, FastifyReply } from "fastify";
 
 import { getAuthenticatedAddress, isAdmin } from "../../lib/auth-context.js";
-import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
+import {
+  bearerAuthRateLimit,
+  verifyBearerAuth,
+} from "../../lib/bearer-auth.js";
 import { getGaslessRelayer } from "../../services/gasless/relayer.service.js";
 
 interface BuildRequestBody {
@@ -146,8 +149,11 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
           },
         },
       },
-      config: bearerAuthRateLimit,
-      preHandler: verifyBearerAuth,
+      config: { rateLimit: false },
+      preHandler: [
+        fastify.rateLimit(bearerAuthRateLimit.rateLimit),
+        verifyBearerAuth,
+      ],
     },
     async (request, reply) => {
       if (!ensureAuthorizedAddress(request, reply, request.params.address)) {
@@ -183,7 +189,7 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
           },
         });
       }
-    }
+    },
   );
 
   // ============================================
@@ -286,8 +292,11 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
           },
         },
       },
-      config: bearerAuthRateLimit,
-      preHandler: verifyBearerAuth,
+      config: { rateLimit: false },
+      preHandler: [
+        fastify.rateLimit(bearerAuthRateLimit.rateLimit),
+        verifyBearerAuth,
+      ],
     },
     async (request, reply) => {
       if (!ensureAuthorizedAddress(request, reply, request.body.from)) {
@@ -307,12 +316,13 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
       const { from, to, data, gasLimit } = request.body;
 
       try {
-        const { request: forwardRequest, domain } = await relayer.buildForwardRequest(
-          from,
-          to,
-          data,
-          gasLimit ? BigInt(gasLimit) : undefined
-        );
+        const { request: forwardRequest, domain } =
+          await relayer.buildForwardRequest(
+            from,
+            to,
+            data,
+            gasLimit ? BigInt(gasLimit) : undefined,
+          );
 
         return {
           success: true,
@@ -340,7 +350,7 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
           },
         });
       }
-    }
+    },
   );
 
   // ============================================
@@ -359,7 +369,15 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
           properties: {
             request: {
               type: "object",
-              required: ["from", "to", "value", "gas", "nonce", "deadline", "data"],
+              required: [
+                "from",
+                "to",
+                "value",
+                "gas",
+                "nonce",
+                "deadline",
+                "data",
+              ],
               properties: {
                 from: { type: "string" },
                 to: { type: "string" },
@@ -453,8 +471,11 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
           },
         },
       },
-      config: bearerAuthRateLimit,
-      preHandler: verifyBearerAuth,
+      config: { rateLimit: false },
+      preHandler: [
+        fastify.rateLimit(bearerAuthRateLimit.rateLimit),
+        verifyBearerAuth,
+      ],
     },
     async (request, reply) => {
       if (!ensureAuthorizedAddress(request, reply, request.body.request.from)) {
@@ -516,7 +537,7 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
           },
         });
       }
-    }
+    },
   );
 
   // ============================================
@@ -559,8 +580,11 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
           },
         },
       },
-      config: bearerAuthRateLimit,
-      preHandler: verifyBearerAuth,
+      config: { rateLimit: false },
+      preHandler: [
+        fastify.rateLimit(bearerAuthRateLimit.rateLimit),
+        verifyBearerAuth,
+      ],
     },
     async (_request, _reply) => {
       return {
@@ -571,7 +595,7 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
           chainId: parseInt(process.env.CHAIN_ID || "137", 10),
         },
       };
-    }
+    },
   );
 }
 
