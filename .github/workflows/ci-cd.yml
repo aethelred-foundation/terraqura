@@ -28,9 +28,7 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
       - name: NPM Security Audit
-        # Advisory: upstream transitive dep vulnerabilities (OpenZeppelin, picomatch)
-        # are tracked via Dependabot; don't block CI on unpatched upstreams.
-        run: pnpm audit --audit-level=critical --prod || true
+        run: pnpm audit --audit-level=critical --prod
 
   lint-format:
     name: Lint & Format
@@ -120,7 +118,7 @@ jobs:
           cache: 'pnpm'
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @terraqura/contracts test
-      - run: pnpm --filter @terraqura/contracts coverage
+      - run: pnpm --filter @terraqura/contracts test:coverage
 
   build:
     name: Build
