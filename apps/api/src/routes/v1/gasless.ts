@@ -4,10 +4,7 @@
 import { FastifyInstance, FastifyReply } from "fastify";
 
 import { getAuthenticatedAddress, isAdmin } from "../../lib/auth-context.js";
-import {
-  bearerAuthRateLimit,
-  verifyBearerAuth,
-} from "../../lib/bearer-auth.js";
+import { verifyBearerAuth } from "../../lib/bearer-auth.js";
 import { getGaslessRelayer } from "../../services/gasless/relayer.service.js";
 
 interface BuildRequestBody {
@@ -149,11 +146,13 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
           },
         },
       },
-      config: { rateLimit: false },
-      preHandler: [
-        fastify.rateLimit(bearerAuthRateLimit.rateLimit),
-        verifyBearerAuth,
-      ],
+      config: {
+        rateLimit: {
+          max: 20,
+          timeWindow: "1 minute",
+        },
+      },
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       if (!ensureAuthorizedAddress(request, reply, request.params.address)) {
@@ -292,11 +291,13 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
           },
         },
       },
-      config: { rateLimit: false },
-      preHandler: [
-        fastify.rateLimit(bearerAuthRateLimit.rateLimit),
-        verifyBearerAuth,
-      ],
+      config: {
+        rateLimit: {
+          max: 20,
+          timeWindow: "1 minute",
+        },
+      },
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       if (!ensureAuthorizedAddress(request, reply, request.body.from)) {
@@ -471,11 +472,13 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
           },
         },
       },
-      config: { rateLimit: false },
-      preHandler: [
-        fastify.rateLimit(bearerAuthRateLimit.rateLimit),
-        verifyBearerAuth,
-      ],
+      config: {
+        rateLimit: {
+          max: 20,
+          timeWindow: "1 minute",
+        },
+      },
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       if (!ensureAuthorizedAddress(request, reply, request.body.request.from)) {
@@ -580,11 +583,13 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
           },
         },
       },
-      config: { rateLimit: false },
-      preHandler: [
-        fastify.rateLimit(bearerAuthRateLimit.rateLimit),
-        verifyBearerAuth,
-      ],
+      config: {
+        rateLimit: {
+          max: 20,
+          timeWindow: "1 minute",
+        },
+      },
+      preHandler: verifyBearerAuth,
     },
     async (_request, _reply) => {
       return {
