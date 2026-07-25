@@ -5,6 +5,7 @@
   "scripts": {
     "codegen": "node ./scripts/run-codegen.cjs",
     "build": "node ./scripts/run-build.cjs",
+    "security:production-boundary": "node ./scripts/verify-production-boundary.cjs",
     "deploy": "graph deploy --node https://api.studio.thegraph.com/deploy/ terraqura/carbon-credits",
     "deploy:hosted": "graph deploy --product hosted-service terraqura/carbon-credits",
     "create-local": "graph create --node http://localhost:8020/ terraqura/carbon-credits",

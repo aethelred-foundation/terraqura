@@ -65,50 +65,6 @@ function resolveGraphCliRunEntry(rootDir) {
   });
 }
 
-function resolveGraphAbiCodegenFile(rootDir) {
-  return require.resolve(
-    "@graphprotocol/graph-cli/dist/protocols/ethereum/codegen/abi.js",
-    { paths: [rootDir] },
-  );
-}
-
-function ensureGraphCliCodegenPatched(rootDir) {
-  const abiCodegenFile = resolveGraphAbiCodegenFile(rootDir);
-  const content = fs.readFileSync(abiCodegenFile, "utf8");
-
-  const hasLegacyImport = content.includes(
-    'const sync_request_1 = __importDefault(require("sync-request"));',
-  );
-  const hasLegacyUsage = content.includes(
-    "const resp = (0, sync_request_1.default)('GET', url);",
-  );
-
-  if (!hasLegacyImport && !hasLegacyUsage) {
-    return;
-  }
-
-  const patched = content
-    .replace(
-      'const sync_request_1 = __importDefault(require("sync-request"));',
-      "",
-    )
-    .replace(
-      "const resp = (0, sync_request_1.default)('GET', url);",
-      "const syncRequest = require('sync-request');\n                const resp = syncRequest('GET', url);",
-    );
-
-  if (patched === content) {
-    throw new Error(
-      "Unable to apply Graph CLI runtime patch for sync-request lazy loading.",
-    );
-  }
-
-  fs.writeFileSync(abiCodegenFile, patched);
-  process.stdout.write(
-    "[subgraph] Applied Graph CLI runtime patch to avoid sync-rpc bind failures.\n",
-  );
-}
-
 function runCommand(command, args, options = {}) {
   const result = spawnSync(command, args, {
     cwd: options.cwd,
@@ -133,11 +89,6 @@ function isTransientNetworkError(output) {
   );
 }
 
-function isSyncRpcBindError(output) {
-  return /listen EPERM: operation not permitted 0\.0\.0\.0/i.test(output) &&
-    /sync-rpc/i.test(output);
-}
-
 function runCommandWithRetries(command, args, options = {}) {
   const attempts = options.attempts ?? 1;
   let lastResult = null;
@@ -152,13 +103,6 @@ function runCommandWithRetries(command, args, options = {}) {
 
     const output = `${result.stdout || ""}\n${result.stderr || ""}`;
     const retryable = isTransientNetworkError(output);
-
-    if (isSyncRpcBindError(output)) {
-      process.stderr.write(
-        "[subgraph] Graph CLI failed with sync-rpc EPERM bind. Ensure pnpm patchedDependencies are applied by running `pnpm install`.\n",
-      );
-      return result;
-    }
 
     if (attempt < attempts && retryable) {
       process.stderr.write(
@@ -177,7 +121,6 @@ function runGraphCli(args, options = {}) {
   const rootDir = options.rootDir || getSubgraphRoot();
   const layout = ensureRuntimeLayout(rootDir);
   const env = createRuntimeEnv(layout, options.env || {});
-  ensureGraphCliCodegenPatched(rootDir);
 
   const entrypoint = resolveGraphCliRunEntry(rootDir);
   return runCommandWithRetries(process.execPath, [entrypoint, ...args], {
@@ -352,9 +295,7 @@ function downloadFile(url, destination, redirectCount = 0) {
 
         if (statusCode < 200 || statusCode >= 300) {
           response.resume();
-          reject(
-            new Error(`Download failed (${statusCode}) for ${url}`),
-          );
+          reject(new Error(`Download failed (${statusCode}) for ${url}`));
           return;
         }
 
@@ -388,7 +329,10 @@ function downloadFile(url, destination, redirectCount = 0) {
 }
 
 async function ensureMatchstickBinary(rootDir) {
-  if (process.env.MATCHSTICK_BINARY && fs.existsSync(process.env.MATCHSTICK_BINARY)) {
+  if (
+    process.env.MATCHSTICK_BINARY &&
+    fs.existsSync(process.env.MATCHSTICK_BINARY)
+  ) {
     return process.env.MATCHSTICK_BINARY;
   }
 
@@ -528,7 +472,9 @@ function ensureAssemblyScriptForMatchstick(rootDir) {
           continue;
         }
 
-        const versionMatch = entry.name.match(/^assemblyscript@(\d+\.\d+\.\d+)/);
+        const versionMatch = entry.name.match(
+          /^assemblyscript@(\d+\.\d+\.\d+)/,
+        );
         const version = versionMatch ? versionMatch[1] : "0.0.0";
         const candidatePackageJson = path.join(
           storePath,
@@ -542,7 +488,10 @@ function ensureAssemblyScriptForMatchstick(rootDir) {
           continue;
         }
 
-        if (bestVersion === null || version.localeCompare(bestVersion, undefined, { numeric: true }) > 0) {
+        if (
+          bestVersion === null ||
+          version.localeCompare(bestVersion, undefined, { numeric: true }) > 0
+        ) {
           bestVersion = version;
           bestPackageJsonPath = candidatePackageJson;
         }
@@ -591,7 +540,9 @@ function readSubgraphManifestAbiFiles(rootDir) {
   }
 
   const matches = manifest.match(/file:\s+\.\/abis\/([^\s]+)/g) || [];
-  const abiFiles = matches.map((entry) => entry.replace(/file:\s+\.\/abis\//, ""));
+  const abiFiles = matches.map((entry) =>
+    entry.replace(/file:\s+\.\/abis\//, ""),
+  );
   return abiFiles;
 }
 
@@ -604,7 +555,9 @@ function validateAbiFiles(rootDir) {
   for (const abiFile of abiFiles) {
     const abiPath = path.join(rootDir, "abis", abiFile);
     if (!fs.existsSync(abiPath)) {
-      throw new Error(`Missing ABI file referenced by subgraph.yaml: ${abiPath}`);
+      throw new Error(
+        `Missing ABI file referenced by subgraph.yaml: ${abiPath}`,
+      );
     }
 
     const content = fs.readFileSync(abiPath, "utf8");
@@ -621,7 +574,6 @@ module.exports = {
   collectFilesByPattern,
   createRuntimeEnv,
   ensureAssemblyScriptForMatchstick,
-  ensureGraphCliCodegenPatched,
   ensureMatchstickBinary,
   ensureRuntimeLayout,
   getMatchstickBinaryPath,
