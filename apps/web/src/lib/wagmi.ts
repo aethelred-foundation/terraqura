@@ -18,15 +18,22 @@
 "use client";
 
 import { getDefaultConfig } from "@rainbow-me/rainbowkit";
+import {
+  coinbaseWallet,
+  metaMaskWallet,
+  walletConnectWallet,
+} from "@rainbow-me/rainbowkit/wallets";
 import { defineChain } from "viem";
 import { http, fallback, type Transport } from "wagmi";
+import { aethelredWallet } from "./aethelredWallet";
 
 // ============================================
 // Environment Configuration
 // ============================================
 
-const isDevelopment = process.env.NODE_ENV === "development";
-const isTestnet = process.env.NEXT_PUBLIC_USE_TESTNET === "true" || isDevelopment;
+const isTestnet = process.env.NEXT_PUBLIC_USE_TESTNET !== "false";
+const walletConnectProjectId =
+  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim() ?? "";
 
 // ============================================
 // Aethelred Sovereign Network Definition
@@ -43,13 +50,18 @@ export const aethelred = defineChain({
   },
   rpcUrls: {
     default: {
-      http: [process.env.NEXT_PUBLIC_AETHELRED_RPC_URL || "https://rpc.aethelred.network"],
+      http: [
+        process.env.NEXT_PUBLIC_AETHELRED_RPC_URL ||
+          "https://rpc.aethelred.network",
+      ],
     },
   },
   blockExplorers: {
     default: {
       name: "Aethelred Explorer",
-      url: process.env.NEXT_PUBLIC_AETHELRED_EXPLORER_URL || "https://explorer.aethelred.network",
+      url:
+        process.env.NEXT_PUBLIC_AETHELRED_EXPLORER_URL ||
+        "https://explorer.aethelred.network",
     },
   },
   contracts: {
@@ -59,7 +71,7 @@ export const aethelred = defineChain({
 });
 
 export const aethelredTestnet = defineChain({
-  id: parseInt(process.env.NEXT_PUBLIC_AETHELRED_TESTNET_CHAIN_ID || "123457"),
+  id: parseInt(process.env.NEXT_PUBLIC_AETHELRED_TESTNET_CHAIN_ID || "78432"),
   name: "Aethelred Testnet",
   nativeCurrency: {
     decimals: 18,
@@ -68,13 +80,18 @@ export const aethelredTestnet = defineChain({
   },
   rpcUrls: {
     default: {
-      http: [process.env.NEXT_PUBLIC_AETHELRED_TESTNET_RPC_URL || "https://testnet-rpc.aethelred.network"],
+      http: [
+        process.env.NEXT_PUBLIC_AETHELRED_TESTNET_RPC_URL ||
+          "https://rpc-testnet.aethelred.network",
+      ],
     },
   },
   blockExplorers: {
     default: {
       name: "Aethelred Testnet Explorer",
-      url: process.env.NEXT_PUBLIC_AETHELRED_TESTNET_EXPLORER_URL || "https://testnet-explorer.aethelred.network",
+      url:
+        process.env.NEXT_PUBLIC_AETHELRED_TESTNET_EXPLORER_URL ||
+        "https://explorer-testnet.aethelred.network",
     },
   },
   testnet: true,
@@ -113,7 +130,7 @@ interface TransportOptions {
  */
 function createEnterpriseTransport(
   endpoint: RPCEndpoint,
-  options: TransportOptions = {}
+  options: TransportOptions = {},
 ): ReturnType<typeof http> {
   const {
     retryCount = 3,
@@ -150,7 +167,7 @@ function createFallbackTransport(configs: RPCEndpoint[]): Transport {
       retryCount: config.priority === 1 ? 5 : 3, // More retries for premium providers
       retryDelay: config.priority === 1 ? 300 : 500,
       timeout: config.timeout,
-    })
+    }),
   );
 
   return fallback(transports, {
@@ -175,13 +192,15 @@ function createFallbackTransport(configs: RPCEndpoint[]): Transport {
 const AETHELRED_RPC_CONFIG: RPCEndpoint[] = [
   // Tier 1: Dedicated RPC (via env)
   ...(process.env.NEXT_PUBLIC_AETHELRED_RPC_URL
-    ? [{
-        url: process.env.NEXT_PUBLIC_AETHELRED_RPC_URL,
-        priority: 1,
-        provider: "Aethelred Dedicated",
-        rateLimit: 500,
-        timeout: 8000,
-      }]
+    ? [
+        {
+          url: process.env.NEXT_PUBLIC_AETHELRED_RPC_URL,
+          priority: 1,
+          provider: "Aethelred Dedicated",
+          rateLimit: 500,
+          timeout: 8000,
+        },
+      ]
     : []),
 
   // Tier 2: Default public RPC
@@ -196,7 +215,9 @@ const AETHELRED_RPC_CONFIG: RPCEndpoint[] = [
 
 const AETHELRED_TESTNET_RPC_CONFIG: RPCEndpoint[] = [
   {
-    url: process.env.NEXT_PUBLIC_AETHELRED_TESTNET_RPC_URL || "https://testnet-rpc.aethelred.network",
+    url:
+      process.env.NEXT_PUBLIC_AETHELRED_TESTNET_RPC_URL ||
+      "https://rpc-testnet.aethelred.network",
     priority: 1,
     provider: "Aethelred Testnet",
     rateLimit: 100,
@@ -211,8 +232,8 @@ const AETHELRED_TESTNET_RPC_CONFIG: RPCEndpoint[] = [
 
 function getActiveChains() {
   return isTestnet
-    ? [aethelredTestnet, aethelred] as const
-    : [aethelred, aethelredTestnet] as const;
+    ? ([aethelredTestnet, aethelred] as const)
+    : ([aethelred, aethelredTestnet] as const);
 }
 
 const activeChains = getActiveChains();
@@ -225,7 +246,9 @@ const activeChains = getActiveChains();
 function buildTransports(): Record<number, Transport> {
   return {
     [aethelred.id]: createFallbackTransport(AETHELRED_RPC_CONFIG),
-    [aethelredTestnet.id]: createFallbackTransport(AETHELRED_TESTNET_RPC_CONFIG),
+    [aethelredTestnet.id]: createFallbackTransport(
+      AETHELRED_TESTNET_RPC_CONFIG,
+    ),
   };
 }
 
@@ -239,7 +262,25 @@ let _configError: Error | null = null;
 try {
   _config = getDefaultConfig({
     appName: "TerraQura",
-    projectId: process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID || "YOUR_PROJECT_ID",
+    appDescription:
+      "Carbon project, MRV, verification, issuance, and retirement on Aethelred",
+    appUrl:
+      process.env.NEXT_PUBLIC_APP_URL || "https://terraqura.aethelred.network",
+    wallets: [
+      {
+        groupName: "Aethelred ecosystem",
+        wallets: [aethelredWallet],
+      },
+      {
+        groupName: "Other compatible wallets",
+        wallets: [
+          metaMaskWallet,
+          ...(walletConnectProjectId ? [walletConnectWallet] : []),
+          coinbaseWallet,
+        ],
+      },
+    ],
+    projectId: walletConnectProjectId,
     chains: activeChains,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     transports: buildTransports() as any,
@@ -247,7 +288,10 @@ try {
   });
 } catch (err) {
   _configError = err instanceof Error ? err : new Error(String(err));
-  console.warn("[TerraQura] Wagmi config creation failed:", _configError.message);
+  console.warn(
+    "[TerraQura] Wagmi config creation failed:",
+    _configError.message,
+  );
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -307,7 +351,7 @@ export function getExplorerTxUrl(txHash: string, chainId?: number): string {
 
 export function getExplorerAddressUrl(
   address: string,
-  chainId?: number
+  chainId?: number,
 ): string {
   const chain = resolveChain(chainId);
   return `${chain.explorerUrl}/address/${address}`;
@@ -316,7 +360,7 @@ export function getExplorerAddressUrl(
 export function getExplorerTokenUrl(
   address: string,
   tokenId?: string,
-  chainId?: number
+  chainId?: number,
 ): string {
   const chain = resolveChain(chainId);
   const url = new URL(`/token/${address}`, chain.explorerUrl);
@@ -392,7 +436,7 @@ async function checkRPCHealth(endpoint: RPCEndpoint): Promise<RPCHealthStatus> {
  * Useful for diagnostics and monitoring
  */
 export async function checkChainRPCHealth(
-  chainId: number
+  chainId: number,
 ): Promise<RPCHealthStatus[]> {
   let configs: RPCEndpoint[];
   switch (chainId) {
@@ -413,7 +457,7 @@ export async function checkChainRPCHealth(
  * Based on health check results
  */
 export async function getBestRPC(
-  chainId: number
+  chainId: number,
 ): Promise<RPCHealthStatus | null> {
   const healthStatuses = await checkChainRPCHealth(chainId);
   const healthyEndpoints = healthStatuses
@@ -427,8 +471,6 @@ export async function getBestRPC(
 // Type Exports
 // ============================================
 
-export type SupportedChainId =
-  | typeof aethelred.id
-  | typeof aethelredTestnet.id;
+export type SupportedChainId = typeof aethelred.id | typeof aethelredTestnet.id;
 
 export type { RPCHealthStatus, RPCEndpoint };

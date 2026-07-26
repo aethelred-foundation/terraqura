@@ -1,6 +1,10 @@
 import { createHash } from "crypto";
 
-import { DACStatus, VerificationStatus, calculateEfficiencyFactor } from "@terraqura/types";
+import {
+  DACStatus,
+  VerificationStatus,
+  calculateEfficiencyFactor,
+} from "@terraqura/types";
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
@@ -9,7 +13,10 @@ import {
   getAuthenticatedAddress,
   isAdmin,
 } from "../../lib/auth-context.js";
-import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
+import {
+  bearerAuthRateLimit,
+  verifyBearerAuth,
+} from "../../lib/bearer-auth.js";
 import { mutateState, readState } from "../../lib/state-store.js";
 
 const VerificationRequestSchema = z.object({
@@ -82,7 +89,9 @@ const DEFAULT_DAC_UNITS_STATE: DacUnitsState = {
   units: {},
 };
 
-function normalizeReadingHash(reading: SensorsState["readings"][number]): string {
+function normalizeReadingHash(
+  reading: SensorsState["readings"][number],
+): string {
   if (reading.dataHash) {
     return reading.dataHash.toLowerCase();
   }
@@ -95,7 +104,7 @@ function normalizeReadingHash(reading: SensorsState["readings"][number]): string
         co2CaptureRateKgHour: reading.co2CaptureRateKgHour,
         energyConsumptionKwh: reading.energyConsumptionKwh,
         co2PurityPercentage: reading.co2PurityPercentage,
-      })
+      }),
     )
     .digest("hex")}`;
 }
@@ -127,7 +136,13 @@ function computeVerificationResult(input: {
   existingSourceHashes: Set<string>;
 }): Omit<
   StoredVerification,
-  "id" | "requestedAt" | "completedAt" | "status" | "sourceCheck" | "logicCheck" | "mintCheck"
+  | "id"
+  | "requestedAt"
+  | "completedAt"
+  | "status"
+  | "sourceCheck"
+  | "logicCheck"
+  | "mintCheck"
 > & {
   status: VerificationStatus;
   sourceCheck: { status: VerificationStatus; completedAt: string | null };
@@ -183,24 +198,29 @@ function computeVerificationResult(input: {
 
   const totalCo2CapturedKg = scopedReadings.reduce(
     (sum, reading) => sum + reading.co2CaptureRateKgHour,
-    0
+    0,
   );
   const totalEnergyKwh = scopedReadings.reduce(
     (sum, reading) => sum + reading.energyConsumptionKwh,
-    0
+    0,
   );
   const avgPurity =
-    scopedReadings.reduce((sum, reading) => sum + reading.co2PurityPercentage, 0) /
-    scopedReadings.length;
+    scopedReadings.reduce(
+      (sum, reading) => sum + reading.co2PurityPercentage,
+      0,
+    ) / scopedReadings.length;
 
   const co2Tonnes = totalCo2CapturedKg / 1000;
   const kwhPerTonne = co2Tonnes > 0 ? totalEnergyKwh / co2Tonnes : 0;
   const logicResult = calculateEfficiencyFactor(kwhPerTonne, avgPurity);
   const logicPassed = logicResult.isValid;
-  const mintPassed = logicPassed && !input.existingSourceHashes.has(sourceDataHash);
+  const mintPassed =
+    logicPassed && !input.existingSourceHashes.has(sourceDataHash);
 
   const finalStatus =
-    sourcePassed && logicPassed && mintPassed ? VerificationStatus.PASSED : VerificationStatus.FAILED;
+    sourcePassed && logicPassed && mintPassed
+      ? VerificationStatus.PASSED
+      : VerificationStatus.FAILED;
   const creditsToMint = logicPassed
     ? Math.max(0, Math.floor((totalCo2CapturedKg * logicResult.factor) / 10000))
     : null;
@@ -222,13 +242,17 @@ function computeVerificationResult(input: {
       completedAt: nowIso,
     },
     logicCheck: {
-      status: logicPassed ? VerificationStatus.PASSED : VerificationStatus.FAILED,
+      status: logicPassed
+        ? VerificationStatus.PASSED
+        : VerificationStatus.FAILED,
       completedAt: nowIso,
       kwhPerTonne,
       efficiencyFactor: logicResult.factor,
     },
     mintCheck: {
-      status: mintPassed ? VerificationStatus.PASSED : VerificationStatus.FAILED,
+      status: mintPassed
+        ? VerificationStatus.PASSED
+        : VerificationStatus.FAILED,
       completedAt: nowIso,
     },
   };
@@ -236,15 +260,74 @@ function computeVerificationResult(input: {
 
 export async function verificationRoutes(
   fastify: FastifyInstance,
-  _options: FastifyPluginOptions
+  _options: FastifyPluginOptions,
 ) {
+  fastify.get(
+    "/",
+    {
+      schema: {
+        tags: ["Verification"],
+        summary: "List verification runs",
+        description:
+          "Returns persisted Proof-of-Physics verification runs, optionally filtered by DAC unit",
+        querystring: {
+          type: "object",
+          properties: {
+            dacUnitId: { type: "string" },
+            limit: { type: "integer", default: 50 },
+          },
+        },
+      },
+    },
+    async (request) => {
+      const query = request.query as {
+        dacUnitId?: string;
+        limit?: number;
+      };
+      const state = await readState(
+        VERIFICATIONS_STORE_KEY,
+        DEFAULT_VERIFICATIONS_STATE,
+      );
+      const limit = Math.min(Math.max(query.limit ?? 50, 1), 100);
+      const verifications = Object.values(state.verifications)
+        .filter(
+          (verification) =>
+            !query.dacUnitId || verification.dacUnitId === query.dacUnitId,
+        )
+        .sort(
+          (left, right) =>
+            new Date(right.requestedAt).getTime() -
+            new Date(left.requestedAt).getTime(),
+        )
+        .slice(0, limit);
+
+      return {
+        success: true,
+        data: verifications.map((verification) => ({
+          id: verification.id,
+          dacUnitId: verification.dacUnitId,
+          status: verification.status,
+          requestedAt: verification.requestedAt,
+          completedAt: verification.completedAt,
+          sourceDataHash: verification.sourceDataHash,
+          creditsToMint: verification.creditsToMint,
+          readingCount: verification.readingCount,
+          totalCo2CapturedKg: verification.totalCo2CapturedKg,
+          totalEnergyKwh: verification.totalEnergyKwh,
+          efficiencyFactor: verification.efficiencyFactor,
+        })),
+      };
+    },
+  );
+
   fastify.post(
     "/initiate",
     {
       schema: {
         tags: ["Verification"],
         summary: "Initiate verification",
-        description: "Start the Proof-of-Physics verification process for a capture period",
+        description:
+          "Start the Proof-of-Physics verification process for a capture period",
         security: [{ bearerAuth: [] }],
         body: {
           type: "object",
@@ -335,7 +418,10 @@ export async function verificationRoutes(
         return;
       }
 
-      const dacUnitsState = await readState(DAC_UNITS_STORE_KEY, DEFAULT_DAC_UNITS_STATE);
+      const dacUnitsState = await readState(
+        DAC_UNITS_STORE_KEY,
+        DEFAULT_DAC_UNITS_STATE,
+      );
       const dacUnit = dacUnitsState.units[body.dacUnitId];
       if (!dacUnit) {
         return reply.status(404).send({
@@ -351,14 +437,20 @@ export async function verificationRoutes(
         });
       }
 
-      if (!isAdmin(request) && dacUnit.operatorWallet.toLowerCase() !== callerWallet) {
+      if (
+        !isAdmin(request) &&
+        dacUnit.operatorWallet.toLowerCase() !== callerWallet
+      ) {
         return reply.status(403).send({
           success: false,
           error: "Only the DAC operator or an admin can initiate verification",
         });
       }
 
-      const sensorsState = await readState(SENSORS_STORE_KEY, DEFAULT_SENSORS_STATE);
+      const sensorsState = await readState(
+        SENSORS_STORE_KEY,
+        DEFAULT_SENSORS_STATE,
+      );
       const verification = await mutateState(
         VERIFICATIONS_STORE_KEY,
         DEFAULT_VERIFICATIONS_STATE,
@@ -366,7 +458,7 @@ export async function verificationRoutes(
           const existingSourceHashes = new Set(
             Object.values(state.verifications)
               .filter((entry) => entry.status === VerificationStatus.PASSED)
-              .map((entry) => entry.sourceDataHash)
+              .map((entry) => entry.sourceDataHash),
           );
 
           const id = `ver_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
@@ -388,7 +480,7 @@ export async function verificationRoutes(
 
           state.verifications[id] = stored;
           return stored;
-        }
+        },
       );
 
       return reply.status(201).send({
@@ -396,10 +488,11 @@ export async function verificationRoutes(
         data: {
           verificationId: verification.id,
           status: verification.status,
-          estimatedCompletion: verification.completedAt || new Date().toISOString(),
+          estimatedCompletion:
+            verification.completedAt || new Date().toISOString(),
         },
       });
-    }
+    },
   );
 
   fastify.get(
@@ -451,7 +544,10 @@ export async function verificationRoutes(
     },
     async (request, reply) => {
       const params = request.params as { id: string };
-      const state = await readState(VERIFICATIONS_STORE_KEY, DEFAULT_VERIFICATIONS_STATE);
+      const state = await readState(
+        VERIFICATIONS_STORE_KEY,
+        DEFAULT_VERIFICATIONS_STATE,
+      );
       const verification = state.verifications[params.id];
 
       if (!verification) {
@@ -475,7 +571,7 @@ export async function verificationRoutes(
           completedAt: verification.completedAt,
         },
       };
-    }
+    },
   );
 
   fastify.get(
@@ -547,7 +643,10 @@ export async function verificationRoutes(
     },
     async (request, reply) => {
       const params = request.params as { id: string };
-      const state = await readState(VERIFICATIONS_STORE_KEY, DEFAULT_VERIFICATIONS_STATE);
+      const state = await readState(
+        VERIFICATIONS_STORE_KEY,
+        DEFAULT_VERIFICATIONS_STATE,
+      );
       const verification = state.verifications[params.id];
 
       if (!verification) {
@@ -594,6 +693,6 @@ export async function verificationRoutes(
           avgPurity: verification.avgPurity,
         },
       };
-    }
+    },
   );
 }

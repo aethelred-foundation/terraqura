@@ -3,18 +3,22 @@
  *
  * Flow: register DAC unit -> submit sensor readings -> verify ->
  *       mint credits -> list on marketplace -> purchase ->
- *       reject unsigned server-side retirement
+ *       finalize wallet-signed retirement
  */
 import jwt from "@fastify/jwt";
 import rateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance } from "fastify";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
-const { mockWhitelistDacUnitOnChain, mockMintVerifiedCreditsOnChain } =
-  vi.hoisted(() => ({
-    mockWhitelistDacUnitOnChain: vi.fn(),
-    mockMintVerifiedCreditsOnChain: vi.fn(),
-  }));
+const {
+  mockWhitelistDacUnitOnChain,
+  mockMintVerifiedCreditsOnChain,
+  mockVerifyRetirementOnChain,
+} = vi.hoisted(() => ({
+  mockWhitelistDacUnitOnChain: vi.fn(),
+  mockMintVerifiedCreditsOnChain: vi.fn(),
+  mockVerifyRetirementOnChain: vi.fn(),
+}));
 
 // ---------------------------------------------------------------------------
 // Shared in-memory store used across all route modules
@@ -62,6 +66,7 @@ vi.mock("../../src/services/blockchain/contracts.js", () => ({
     `https://explorer-testnet.aethelred.network/tx/${txHash}`,
   whitelistDacUnitOnChain: mockWhitelistDacUnitOnChain,
   mintVerifiedCreditsOnChain: mockMintVerifiedCreditsOnChain,
+  verifyRetirementOnChain: mockVerifyRetirementOnChain,
 }));
 
 // Set env for sensor API key mapping before importing routes
@@ -116,6 +121,10 @@ describe("full lifecycle integration", () => {
     mockMintVerifiedCreditsOnChain.mockResolvedValue({
       txHash: `0x${"2".repeat(64)}`,
       tokenId: "1",
+    });
+    mockVerifyRetirementOnChain.mockResolvedValue({
+      txHash: `0x${"3".repeat(64)}`,
+      blockNumber: 7332,
     });
     app = await buildApp();
   });
@@ -363,10 +372,10 @@ describe("full lifecycle integration", () => {
   });
 
   // ---------------------------------------------------------------
-  // 11. Reject unsigned server-side retirement
+  // 11. Finalize a wallet-signed retirement
   // ---------------------------------------------------------------
 
-  it("step 11: server refuses to retire credits without a user signature", async () => {
+  it("step 11: registry verifies and finalizes the wallet retirement", async () => {
     // Get current credit balance
     const creditRes = await app.inject({
       method: "GET",
@@ -386,46 +395,49 @@ describe("full lifecycle integration", () => {
       payload: {
         amount: currentBalance,
         reason: "Carbon offset commitment for 2026",
+        txHash: `0x${"3".repeat(64)}`,
       },
     });
 
-    expect(res.statusCode).toBe(503);
-    expect(res.json().error).toContain("user-signed on-chain retirement flow");
+    expect(res.statusCode).toBe(200);
+    expect(res.json().data.remainingAmount).toBe(0);
+    expect(res.json().data.blockNumber).toBe(7332);
   });
 
   // ---------------------------------------------------------------
-  // 12. Verify rejected retirement did not mutate credit state
+  // 12. Verify retirement mutated indexed state only after confirmation
   // ---------------------------------------------------------------
 
-  it("step 12: credit remains active after rejected retirement", async () => {
+  it("step 12: credit is retired after receipt verification", async () => {
     const res = await app.inject({
       method: "GET",
       url: `/v1/credits/${creditId}`,
     });
     expect(res.statusCode).toBe(200);
     const data = res.json().data;
-    expect(data.isRetired).toBe(false);
-    expect(data.verificationStatus).toBe("minted");
-    expect(data.creditsIssued).toBeGreaterThan(0);
+    expect(data.isRetired).toBe(true);
+    expect(data.verificationStatus).toBe("retired");
+    expect(data.creditsIssued).toBe(0);
   });
 
   // ---------------------------------------------------------------
-  // 13. Verify provenance contains no fabricated retirement event
+  // 13. Verify provenance contains the confirmed retirement event
   // ---------------------------------------------------------------
 
-  it("step 13: provenance excludes unconfirmed retirement", async () => {
+  it("step 13: provenance includes the confirmed retirement receipt", async () => {
     const res = await app.inject({
       method: "GET",
       url: `/v1/credits/${creditId}/provenance`,
     });
     expect(res.statusCode).toBe(200);
     const timeline = res.json().data.timeline;
-    expect(timeline).toHaveLength(3);
+    expect(timeline).toHaveLength(4);
     const types = timeline.map((e: { type: string }) => e.type);
     expect(types).toContain("CAPTURE_STARTED");
     expect(types).toContain("CAPTURE_COMPLETED");
     expect(types).toContain("MINTED");
-    expect(types).not.toContain("RETIRED");
+    expect(types).toContain("RETIRED");
+    expect(timeline[3].txHash).toBe(`0x${"3".repeat(64)}`);
   });
 
   // ---------------------------------------------------------------

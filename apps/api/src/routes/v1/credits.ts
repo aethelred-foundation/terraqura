@@ -1,4 +1,9 @@
-import { CreditStatus, DACStatus, ProvenanceEvent, VerificationStatus } from "@terraqura/types";
+import {
+  CreditStatus,
+  DACStatus,
+  ProvenanceEvent,
+  VerificationStatus,
+} from "@terraqura/types";
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
@@ -7,11 +12,15 @@ import {
   getAuthenticatedAddress,
   isAdmin,
 } from "../../lib/auth-context.js";
-import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
+import {
+  bearerAuthRateLimit,
+  verifyBearerAuth,
+} from "../../lib/bearer-auth.js";
 import { mutateState, readState } from "../../lib/state-store.js";
 import {
   getExplorerTxLink,
   mintVerifiedCreditsOnChain,
+  verifyRetirementOnChain,
 } from "../../services/blockchain/contracts.js";
 
 const MintCreditsSchema = z.object({
@@ -22,8 +31,9 @@ const MintCreditsSchema = z.object({
 });
 
 const RetireCreditsSchema = z.object({
-  amount: z.number().positive(),
+  amount: z.number().int().positive(),
   reason: z.string().min(1).max(500),
+  txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
 });
 
 interface StoredCredit {
@@ -49,6 +59,8 @@ interface StoredCredit {
   isRetired: boolean;
   retiredAt: string | null;
   retirementReason: string | null;
+  retirementTxHash?: string | null;
+  retirementTxHashes?: string[];
   createdAt: string;
   updatedAt: string;
 }
@@ -114,7 +126,7 @@ function normalizeIpfsMetadataUri(value: string): string {
 
 export async function creditsRoutes(
   fastify: FastifyInstance,
-  _options: FastifyPluginOptions
+  _options: FastifyPluginOptions,
 ) {
   fastify.get(
     "/",
@@ -147,11 +159,14 @@ export async function creditsRoutes(
                   properties: {
                     id: { type: "string" },
                     tokenId: { type: "string" },
+                    dacUnitId: { type: "string" },
                     co2CapturedKg: { type: "number" },
                     creditsIssued: { type: "number" },
+                    retiredAmount: { type: "number" },
                     verificationStatus: { type: "string" },
                     isRetired: { type: "boolean" },
                     mintTxHash: { type: "string", nullable: true },
+                    currentOwnerWallet: { type: "string", nullable: true },
                   },
                 },
               },
@@ -180,11 +195,15 @@ export async function creditsRoutes(
       let credits = Object.values(state.credits);
 
       if (query.ownerId) {
-        credits = credits.filter((credit) => credit.currentOwnerId === query.ownerId);
+        credits = credits.filter(
+          (credit) => credit.currentOwnerId === query.ownerId,
+        );
       }
 
       if (query.status) {
-        credits = credits.filter((credit) => credit.verificationStatus === query.status);
+        credits = credits.filter(
+          (credit) => credit.verificationStatus === query.status,
+        );
       }
 
       const total = credits.length;
@@ -197,11 +216,14 @@ export async function creditsRoutes(
         data: credits.map((credit) => ({
           id: credit.id,
           tokenId: credit.tokenId,
+          dacUnitId: credit.dacUnitId,
           co2CapturedKg: credit.co2CapturedKg,
           creditsIssued: credit.creditsIssued,
+          retiredAmount: credit.retiredAmount,
           verificationStatus: credit.verificationStatus,
           isRetired: credit.isRetired,
           mintTxHash: credit.mintTxHash,
+          currentOwnerWallet: credit.currentOwnerWallet,
         })),
         pagination: {
           total,
@@ -209,7 +231,7 @@ export async function creditsRoutes(
           offset,
         },
       };
-    }
+    },
   );
 
   fastify.get(
@@ -218,7 +240,8 @@ export async function creditsRoutes(
       schema: {
         tags: ["Credits"],
         summary: "Get credit details",
-        description: "Returns detailed information about a carbon credit with provenance",
+        description:
+          "Returns detailed information about a carbon credit with provenance",
         params: {
           type: "object",
           properties: {
@@ -241,6 +264,8 @@ export async function creditsRoutes(
                   co2CapturedKg: { type: "number" },
                   energyConsumedKwh: { type: "number" },
                   creditsIssued: { type: "number" },
+                  initialCreditsIssued: { type: "number" },
+                  retiredAmount: { type: "number" },
                   efficiencyFactor: { type: "number" },
                   verificationStatus: { type: "string" },
                   sourceDataHash: { type: "string" },
@@ -248,7 +273,13 @@ export async function creditsRoutes(
                   ipfsMetadataCid: { type: "string", nullable: true },
                   currentOwnerWallet: { type: "string", nullable: true },
                   isRetired: { type: "boolean" },
+                  retiredAt: { type: "string", nullable: true },
                   retirementReason: { type: "string", nullable: true },
+                  retirementTxHash: { type: "string", nullable: true },
+                  retirementTxHashes: {
+                    type: "array",
+                    items: { type: "string" },
+                  },
                 },
               },
             },
@@ -284,7 +315,7 @@ export async function creditsRoutes(
           captureEndTime: credit.captureEndTime,
         },
       };
-    }
+    },
   );
 
   fastify.get(
@@ -370,17 +401,22 @@ export async function creditsRoutes(
           txHash: credit.mintTxHash,
           details: {
             tokenId: credit.tokenId,
-            creditsIssued: credit.creditsIssued,
+            creditsIssued:
+              credit.initialCreditsIssued ??
+              credit.creditsIssued + credit.retiredAmount,
           },
         },
       ];
 
-      if (credit.isRetired && credit.retiredAt) {
+      if ((credit.isRetired || credit.retiredAmount > 0) && credit.retiredAt) {
         timeline.push({
           type: "RETIRED",
           timestamp: new Date(credit.retiredAt),
-          txHash: null,
-          details: { reason: credit.retirementReason },
+          txHash: credit.retirementTxHash ?? null,
+          details: {
+            reason: credit.retirementReason,
+            amount: credit.retiredAmount,
+          },
         });
       }
 
@@ -396,7 +432,7 @@ export async function creditsRoutes(
           })),
         },
       };
-    }
+    },
   );
 
   fastify.post(
@@ -405,7 +441,8 @@ export async function creditsRoutes(
       schema: {
         tags: ["Credits"],
         summary: "Mint verified credits",
-        description: "Mint carbon credits to the blockchain after successful verification",
+        description:
+          "Mint carbon credits to the blockchain after successful verification",
         security: [{ bearerAuth: [] }],
         body: {
           type: "object",
@@ -517,9 +554,10 @@ export async function creditsRoutes(
 
       const verificationsState = await readState(
         VERIFICATIONS_STORE_KEY,
-        DEFAULT_VERIFICATIONS_STATE
+        DEFAULT_VERIFICATIONS_STATE,
       );
-      const verification = verificationsState.verifications[body.verificationId];
+      const verification =
+        verificationsState.verifications[body.verificationId];
       if (!verification) {
         return reply.status(404).send({
           success: false,
@@ -542,7 +580,10 @@ export async function creditsRoutes(
       }
       const creditsToMint = verification.creditsToMint;
 
-      const dacUnitsState = await readState(DAC_UNITS_STORE_KEY, DEFAULT_DAC_UNITS_STATE);
+      const dacUnitsState = await readState(
+        DAC_UNITS_STORE_KEY,
+        DEFAULT_DAC_UNITS_STATE,
+      );
       const dacUnit = dacUnitsState.units[verification.dacUnitId];
       if (!dacUnit) {
         return reply.status(404).send({
@@ -558,7 +599,10 @@ export async function creditsRoutes(
         });
       }
 
-      if (!callerIsAdmin && dacUnit.operatorWallet.toLowerCase() !== callerWallet) {
+      if (
+        !callerIsAdmin &&
+        dacUnit.operatorWallet.toLowerCase() !== callerWallet
+      ) {
         return reply.status(403).send({
           success: false,
           error: "Only the DAC operator or an admin can mint credits",
@@ -591,7 +635,7 @@ export async function creditsRoutes(
 
           state.verificationToCredit[body.verificationId] = reservationId;
           return true;
-        }
+        },
       );
 
       if (!reserved) {
@@ -607,7 +651,9 @@ export async function creditsRoutes(
           recipient: recipientWallet,
           dacUnitId: dacUnit.unitId ?? verification.dacUnitId,
           sourceDataHash: verification.sourceDataHash,
-          captureTimestamp: Math.floor(new Date(verification.endTime).getTime() / 1000),
+          captureTimestamp: Math.floor(
+            new Date(verification.endTime).getTime() / 1000,
+          ),
           co2AmountKg: Math.round(verification.totalCo2CapturedKg),
           energyConsumedKwh: Math.round(verification.totalEnergyKwh),
           latitude: Math.round(dacUnit.latitude),
@@ -622,11 +668,17 @@ export async function creditsRoutes(
           { err: error, verificationId: verification.id },
           "Failed to mint credits on-chain",
         );
-        await mutateState(CREDITS_STORE_KEY, DEFAULT_CREDITS_STATE, async (state) => {
-          if (state.verificationToCredit[body.verificationId] === reservationId) {
-            delete state.verificationToCredit[body.verificationId];
-          }
-        });
+        await mutateState(
+          CREDITS_STORE_KEY,
+          DEFAULT_CREDITS_STATE,
+          async (state) => {
+            if (
+              state.verificationToCredit[body.verificationId] === reservationId
+            ) {
+              delete state.verificationToCredit[body.verificationId];
+            }
+          },
+        );
 
         return reply.status(503).send({
           success: false,
@@ -638,7 +690,9 @@ export async function creditsRoutes(
         CREDITS_STORE_KEY,
         DEFAULT_CREDITS_STATE,
         async (state) => {
-          if (state.verificationToCredit[body.verificationId] !== reservationId) {
+          if (
+            state.verificationToCredit[body.verificationId] !== reservationId
+          ) {
             return null;
           }
 
@@ -669,6 +723,8 @@ export async function creditsRoutes(
             isRetired: false,
             retiredAt: null,
             retirementReason: null,
+            retirementTxHash: null,
+            retirementTxHashes: [],
             createdAt: nowIso,
             updatedAt: nowIso,
           };
@@ -677,7 +733,7 @@ export async function creditsRoutes(
           state.credits = Object.fromEntries(credits);
           state.verificationToCredit[body.verificationId] = id;
           return credit;
-        }
+        },
       );
 
       if (!mintedCredit) {
@@ -687,7 +743,8 @@ export async function creditsRoutes(
         );
         return reply.status(500).send({
           success: false,
-          error: "Credit was minted on-chain but local state synchronization failed",
+          error:
+            "Credit was minted on-chain but local state synchronization failed",
         });
       }
 
@@ -701,7 +758,7 @@ export async function creditsRoutes(
           explorerUrl: getExplorerTxLink(mintedCredit.mintTxHash ?? ""),
         },
       });
-    }
+    },
   );
 
   fastify.post(
@@ -720,10 +777,11 @@ export async function creditsRoutes(
         },
         body: {
           type: "object",
-          required: ["amount", "reason"],
+          required: ["amount", "reason", "txHash"],
           properties: {
-            amount: { type: "number" },
+            amount: { type: "integer" },
             reason: { type: "string" },
+            txHash: { type: "string" },
           },
         },
         response: {
@@ -736,7 +794,9 @@ export async function creditsRoutes(
                 properties: {
                   creditId: { type: "string" },
                   amountRetired: { type: "number" },
+                  remainingAmount: { type: "number" },
                   txHash: { type: "string" },
+                  blockNumber: { type: "number" },
                   retiredAt: { type: "string" },
                   certificateUrl: { type: "string" },
                 },
@@ -765,6 +825,13 @@ export async function creditsRoutes(
             },
           },
           404: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
+          409: {
             type: "object",
             properties: {
               success: { type: "boolean" },
@@ -802,7 +869,10 @@ export async function creditsRoutes(
         return;
       }
 
-      const creditsState = await readState(CREDITS_STORE_KEY, DEFAULT_CREDITS_STATE);
+      const creditsState = await readState(
+        CREDITS_STORE_KEY,
+        DEFAULT_CREDITS_STATE,
+      );
       const credit = creditsState.credits[params.id];
       if (!credit) {
         return reply.status(404).send({
@@ -818,11 +888,12 @@ export async function creditsRoutes(
         });
       }
 
-      const ownedByCaller = credit.currentOwnerWallet?.toLowerCase() === callerWallet;
-      if (!ownedByCaller && !isAdmin(request)) {
+      const ownedByCaller =
+        credit.currentOwnerWallet?.toLowerCase() === callerWallet;
+      if (!ownedByCaller) {
         return reply.status(403).send({
           success: false,
-          error: "Only the credit owner or an admin can retire credits",
+          error: "Only the credit owner can retire credits",
         });
       }
 
@@ -833,11 +904,103 @@ export async function creditsRoutes(
         });
       }
 
-      return reply.status(503).send({
-        success: false,
-        error:
-          "Server-side retirement is disabled until a user-signed on-chain retirement flow is configured",
-      });
-    }
+      const submittedTxHash = body.txHash.toLowerCase();
+      const previouslyFinalizedHashes = new Set(
+        [
+          ...(credit.retirementTxHashes ?? []),
+          ...(credit.retirementTxHash ? [credit.retirementTxHash] : []),
+        ].map((txHash) => txHash.toLowerCase()),
+      );
+      if (previouslyFinalizedHashes.has(submittedTxHash)) {
+        return reply.status(409).send({
+          success: false,
+          error: "Retirement transaction has already been finalized",
+        });
+      }
+
+      let confirmedRetirement: { txHash: string; blockNumber: number };
+      try {
+        confirmedRetirement = await verifyRetirementOnChain({
+          txHash: body.txHash,
+          tokenId: credit.tokenId,
+          retiree: callerWallet,
+          amount: body.amount,
+          reason: body.reason,
+        });
+      } catch (error) {
+        request.log.warn(
+          { err: error, creditId: credit.id, txHash: body.txHash },
+          "Wallet-signed retirement could not be verified",
+        );
+        return reply.status(409).send({
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Retirement transaction could not be verified",
+        });
+      }
+
+      const retiredAt = new Date().toISOString();
+      const updatedCredit = await mutateState(
+        CREDITS_STORE_KEY,
+        DEFAULT_CREDITS_STATE,
+        async (state) => {
+          const stored = state.credits[params.id];
+          if (!stored) {
+            return null;
+          }
+
+          const knownRetirementHashes =
+            stored.retirementTxHashes ??
+            (stored.retirementTxHash ? [stored.retirementTxHash] : []);
+          const finalizedHashes = new Set(
+            knownRetirementHashes.map((txHash) => txHash.toLowerCase()),
+          );
+          if (finalizedHashes.has(confirmedRetirement.txHash.toLowerCase())) {
+            return null;
+          }
+          if (body.amount > stored.creditsIssued) {
+            return null;
+          }
+
+          stored.creditsIssued -= body.amount;
+          stored.retiredAmount += body.amount;
+          stored.isRetired = stored.creditsIssued === 0;
+          stored.verificationStatus = stored.isRetired
+            ? CreditStatus.RETIRED
+            : CreditStatus.MINTED;
+          stored.retiredAt = retiredAt;
+          stored.retirementReason = body.reason;
+          stored.retirementTxHashes = [
+            ...knownRetirementHashes,
+            confirmedRetirement.txHash,
+          ];
+          stored.retirementTxHash = confirmedRetirement.txHash;
+          stored.updatedAt = retiredAt;
+          return stored;
+        },
+      );
+
+      if (!updatedCredit) {
+        return reply.status(409).send({
+          success: false,
+          error: "Credit balance changed before retirement was finalized",
+        });
+      }
+
+      return {
+        success: true,
+        data: {
+          creditId: updatedCredit.id,
+          amountRetired: body.amount,
+          remainingAmount: updatedCredit.creditsIssued,
+          txHash: confirmedRetirement.txHash,
+          blockNumber: confirmedRetirement.blockNumber,
+          retiredAt,
+          certificateUrl: `/v1/credits/${updatedCredit.id}/provenance`,
+        },
+      };
+    },
   );
 }

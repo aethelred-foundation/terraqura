@@ -9,17 +9,27 @@ import { ethers } from "ethers";
 // Contract addresses on Aethelred Testnet (Chain ID: 78432) - Solidity 0.8.32 (Bug-free)
 export const CONTRACTS = {
   // Core Contracts (UUPS Proxies)
-  accessControl: "0x55695aAAEC30AB495074c57e85Ae2E1A4866B83b",
-  verificationEngine: "0x8dad7E87646e9607Fae225e3A7EAD17ce179dEA8",
-  carbonCredit: "0x29B58064fD95b175e5824767d3B18bACFafaF959",
-  carbonMarketplace: "0x5a4cb32709AB829E2918F0a914FBa1e0Dab2Fdec",
+  accessControl:
+    process.env.ACCESS_CONTROL_ADDRESS ||
+    "0x55695aAAEC30AB495074c57e85Ae2E1A4866B83b",
+  verificationEngine:
+    process.env.VERIFICATION_ENGINE_ADDRESS ||
+    "0x8dad7E87646e9607Fae225e3A7EAD17ce179dEA8",
+  carbonCredit:
+    process.env.CARBON_CREDIT_ADDRESS ||
+    "0x29B58064fD95b175e5824767d3B18bACFafaF959",
+  carbonMarketplace:
+    process.env.CARBON_MARKETPLACE_ADDRESS ||
+    "0x5a4cb32709AB829E2918F0a914FBa1e0Dab2Fdec",
 
   // Governance Contracts
   multisig: "0x0805E6ffDE71fd798F3Fe787D1dC907aABA65bAD",
   timelock: "0xb8b01581d61Bf2D58B8B8626Ebb7Ab959ccF6354",
 
   // Security Contracts
-  circuitBreaker: "0x24192ecf06aA782F1dF69878413D217d9319e257",
+  circuitBreaker:
+    process.env.CIRCUIT_BREAKER_ADDRESS ||
+    "0x24192ecf06aA782F1dF69878413D217d9319e257",
 
   // Gasless Marketplace
   gaslessMarketplace: "0x45a65e46e8C1D588702cB659b7d3786476Be0A80",
@@ -29,7 +39,8 @@ export const CONTRACTS = {
 export const NETWORK = {
   chainId: 78432,
   name: "Aethelred Testnet",
-  rpcUrl: process.env.AETHELRED_RPC_URL || "https://rpc-testnet.aethelred.network",
+  rpcUrl:
+    process.env.AETHELRED_RPC_URL || "https://rpc-testnet.aethelred.network",
   explorerUrl: "https://explorer-testnet.aethelred.network",
 };
 
@@ -93,6 +104,14 @@ export interface MintVerifiedCreditsParams {
   arweaveBackupTxId?: string | null;
 }
 
+export interface VerifyRetirementParams {
+  txHash: string;
+  tokenId: string;
+  retiree: string;
+  amount: number;
+  reason: string;
+}
+
 export function getProvider(): ethers.JsonRpcProvider {
   if (!provider) {
     provider = new ethers.JsonRpcProvider(NETWORK.rpcUrl);
@@ -101,35 +120,43 @@ export function getProvider(): ethers.JsonRpcProvider {
 }
 
 // Contract getters
-export function getCarbonCreditContract(signerOrProvider?: ethers.Signer | ethers.Provider) {
+export function getCarbonCreditContract(
+  signerOrProvider?: ethers.Signer | ethers.Provider,
+) {
   return new ethers.Contract(
     CONTRACTS.carbonCredit,
     ABIS.carbonCredit,
-    signerOrProvider || getProvider()
+    signerOrProvider || getProvider(),
   );
 }
 
-export function getMarketplaceContract(signerOrProvider?: ethers.Signer | ethers.Provider) {
+export function getMarketplaceContract(
+  signerOrProvider?: ethers.Signer | ethers.Provider,
+) {
   return new ethers.Contract(
     CONTRACTS.carbonMarketplace,
     ABIS.carbonMarketplace,
-    signerOrProvider || getProvider()
+    signerOrProvider || getProvider(),
   );
 }
 
-export function getVerificationEngineContract(signerOrProvider?: ethers.Signer | ethers.Provider) {
+export function getVerificationEngineContract(
+  signerOrProvider?: ethers.Signer | ethers.Provider,
+) {
   return new ethers.Contract(
     CONTRACTS.verificationEngine,
     ABIS.verificationEngine,
-    signerOrProvider || getProvider()
+    signerOrProvider || getProvider(),
   );
 }
 
-export function getCircuitBreakerContract(signerOrProvider?: ethers.Signer | ethers.Provider) {
+export function getCircuitBreakerContract(
+  signerOrProvider?: ethers.Signer | ethers.Provider,
+) {
   return new ethers.Contract(
     CONTRACTS.circuitBreaker,
     ABIS.circuitBreaker,
-    signerOrProvider || getProvider()
+    signerOrProvider || getProvider(),
   );
 }
 
@@ -168,7 +195,9 @@ export async function isSystemOperational(): Promise<boolean> {
     }
 
     const status = await cb.getStatus();
-    const isGloballyPaused = Array.isArray(status) ? status[0] : status.isGloballyPaused;
+    const isGloballyPaused = Array.isArray(status)
+      ? status[0]
+      : status.isGloballyPaused;
     return !isGloballyPaused;
   } catch (error) {
     console.error("Error checking system status:", error);
@@ -189,7 +218,9 @@ export async function whitelistDacUnitOnChain(
   assertBlockchainExecutionConfigured();
   await assertSystemOperationalOrThrow();
 
-  const contract = getVerificationEngineContract(getSigner()) as ethers.Contract & {
+  const contract = getVerificationEngineContract(
+    getSigner(),
+  ) as ethers.Contract & {
     whitelistDacUnit: (
       unitId: string,
       operator: string,
@@ -245,7 +276,10 @@ export async function mintVerifiedCreditsOnChain(
     params.metadataUri,
     params.arweaveBackupTxId || "",
   );
-  const receipt = assertSuccessfulReceipt(await tx.wait(), "Carbon credit mint");
+  const receipt = assertSuccessfulReceipt(
+    await tx.wait(),
+    "Carbon credit mint",
+  );
 
   for (const log of receipt.logs) {
     try {
@@ -262,6 +296,66 @@ export async function mintVerifiedCreditsOnChain(
   }
 
   throw new Error("Mint transaction confirmed without a CreditMinted event");
+}
+
+/**
+ * Verify a wallet-signed retirement before the API updates its indexed state.
+ *
+ * The API never holds the credit owner's key. The owner submits
+ * `retireCredits` from their wallet, then supplies the transaction hash. This
+ * verifier binds the confirmed receipt to the configured CarbonCredit
+ * contract, caller, token, amount, and reason so an unrelated transaction
+ * cannot be replayed as a retirement.
+ */
+export async function verifyRetirementOnChain(
+  params: VerifyRetirementParams,
+): Promise<{ txHash: string; blockNumber: number }> {
+  const chainProvider = getProvider();
+  const [transaction, receipt] = await Promise.all([
+    chainProvider.getTransaction(params.txHash),
+    chainProvider.getTransactionReceipt(params.txHash),
+  ]);
+
+  if (!transaction || !receipt || receipt.status !== 1) {
+    throw new Error("Retirement transaction is missing, pending, or reverted");
+  }
+
+  if (
+    transaction.to?.toLowerCase() !== CONTRACTS.carbonCredit.toLowerCase() ||
+    transaction.from.toLowerCase() !== params.retiree.toLowerCase()
+  ) {
+    throw new Error("Retirement transaction contract or signer does not match");
+  }
+
+  const contract = getCarbonCreditContract();
+  const expectedTokenId = BigInt(params.tokenId);
+  const expectedAmount = BigInt(params.amount);
+  const matchedEvent = receipt.logs.some((log) => {
+    try {
+      const parsed = contract.interface.parseLog(log);
+      return (
+        parsed?.name === "CreditRetired" &&
+        BigInt(parsed.args.tokenId) === expectedTokenId &&
+        String(parsed.args.retiredBy).toLowerCase() ===
+          params.retiree.toLowerCase() &&
+        BigInt(parsed.args.amount) === expectedAmount &&
+        String(parsed.args.retirementReason) === params.reason
+      );
+    } catch {
+      return false;
+    }
+  });
+
+  if (!matchedEvent) {
+    throw new Error(
+      "Confirmed transaction does not contain the expected retirement event",
+    );
+  }
+
+  return {
+    txHash: receipt.hash,
+    blockNumber: receipt.blockNumber,
+  };
 }
 
 // Get explorer link for transaction

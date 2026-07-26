@@ -20,7 +20,9 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (web3Ready) {
-      import("./content").then((m) => setComponent(() => m.DashboardContent));
+      import("./workbench/content").then((m) =>
+        setComponent(() => m.TerraQuraWorkbench),
+      );
     }
   }, [web3Ready]);
 
