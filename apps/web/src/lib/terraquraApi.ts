@@ -1,7 +1,10 @@
 "use client";
 
 export const TERRAQURA_API_URL = (
-  process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000"
+  process.env.NEXT_PUBLIC_API_URL ||
+  (process.env.NODE_ENV === "production"
+    ? "/api/terraqura"
+    : "http://localhost:4000")
 ).replace(/\/+$/, "");
 
 export class TerraQuraApiError extends Error {

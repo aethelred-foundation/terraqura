@@ -1,5 +1,6 @@
-# TerraQura Enterprise Stack
-# Complete development and production infrastructure
+# TerraQura local development stack.
+# Production uses docker-compose.production.yml, which has no development
+# secrets, public database ports, simulators, or mutable image tags.
 
 version: "3.9"
 
@@ -39,7 +40,8 @@ services:
     volumes:
       - redis_data:/data
     healthcheck:
-      test: ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-terraqura_dev}", "ping"]
+      test:
+        ["CMD", "redis-cli", "-a", "${REDIS_PASSWORD:-terraqura_dev}", "ping"]
       interval: 10s
       timeout: 5s
       retries: 5
@@ -117,21 +119,32 @@ services:
     environment:
       NODE_ENV: ${NODE_ENV:-development}
       API_PORT: 4000
+      API_HOST: 0.0.0.0
       DATABASE_URL: postgresql://terraqura:${DB_PASSWORD:-terraqura_dev}@timescaledb:5432/terraqura
       TIMESCALE_URL: postgresql://terraqura:${DB_PASSWORD:-terraqura_dev}@timescaledb:5432/terraqura
       REDIS_HOST: redis
       REDIS_PORT: 6379
       REDIS_PASSWORD: ${REDIS_PASSWORD:-terraqura_dev}
-      POLYGON_RPC_URL: ${POLYGON_RPC_URL}
+      CHAIN_ID: ${CHAIN_ID:-78432}
+      AETHELRED_RPC_URL: ${AETHELRED_RPC_URL:-https://rpc-testnet.aethelred.network}
       SUBGRAPH_URL: http://graph-node:8000/subgraphs/name/terraqura/carbon-credits
       SUMSUB_APP_TOKEN: ${SUMSUB_APP_TOKEN}
       SUMSUB_SECRET_KEY: ${SUMSUB_SECRET_KEY}
-      JWT_SECRET: ${JWT_SECRET:-dev_jwt_secret}
+      KYC_PROVIDER: ${KYC_PROVIDER:-disabled}
+      JWT_SECRET: ${JWT_SECRET:-terraqura_local_jwt_secret_change_before_deploy}
+      SIWE_DOMAIN: ${SIWE_DOMAIN:-localhost:3007}
+      CORS_ORIGIN: ${CORS_ORIGIN:-http://localhost:3007}
     depends_on:
       - timescaledb
       - redis
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:4000/v1/health"]
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4000/v1/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -156,6 +169,7 @@ services:
       VERIFICATION_ENGINE_CONTRACT: ${VERIFICATION_ENGINE_CONTRACT}
       SUMSUB_APP_TOKEN: ${SUMSUB_APP_TOKEN}
       SUMSUB_SECRET_KEY: ${SUMSUB_SECRET_KEY}
+      KYC_PROVIDER: ${KYC_PROVIDER:-disabled}
     depends_on:
       - timescaledb
       - redis
@@ -166,36 +180,19 @@ services:
   web:
     build:
       context: .
-      dockerfile: apps/web/Dockerfile
+      dockerfile: Dockerfile
     container_name: terraqura-web
     ports:
-      - "3000:3000"
+      - "3007:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://api:4000
+      TERRAQURA_API_ORIGIN: http://api:4000
+      TERRAQURA_ALLOW_INSECURE_UPSTREAM: "true"
       NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: ${WALLETCONNECT_PROJECT_ID}
       NEXT_PUBLIC_POLYGON_RPC_URL: ${POLYGON_RPC_URL}
     depends_on:
       - api
     networks:
       - terraqura-network
-
-  # IoT Simulator (development only)
-  iot-simulator:
-    build:
-      context: .
-      dockerfile: apps/api/Dockerfile
-    container_name: terraqura-iot-simulator
-    command: npm run simulate
-    environment:
-      API_URL: http://api:4000
-      SIMULATION_MODE: continuous
-      DAC_UNITS: 3
-    depends_on:
-      - api
-    networks:
-      - terraqura-network
-    profiles:
-      - dev
 
   # ============================================
   # MONITORING

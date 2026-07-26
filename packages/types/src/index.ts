@@ -7,3 +7,4 @@ export * from "./sensor.js";
 export * from "./verification.js";
 export * from "./compliance.js";
 export * from "./marketplace.js";
+export * from "./legal.js";

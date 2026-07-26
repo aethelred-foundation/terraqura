@@ -309,7 +309,9 @@ export function WalletButton() {
 
       {dropdownOpen && (
         <>
-          <div
+          <button
+            type="button"
+            aria-label="Close wallet menu"
             className="fixed inset-0 z-40"
             onClick={() => setDropdownOpen(false)}
           />

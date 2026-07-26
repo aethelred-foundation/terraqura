@@ -18,22 +18,25 @@
 "use client";
 
 import { getDefaultConfig } from "@rainbow-me/rainbowkit";
-import {
-  coinbaseWallet,
-  metaMaskWallet,
-  walletConnectWallet,
-} from "@rainbow-me/rainbowkit/wallets";
 import { defineChain } from "viem";
 import { http, fallback, type Transport } from "wagmi";
 import { aethelredWallet } from "./aethelredWallet";
+import { metaMaskInjectedWallet } from "./metaMaskWallet";
+import { TERRAQURA_PUBLIC_URL } from "./publicUrl";
 
 // ============================================
 // Environment Configuration
 // ============================================
 
 const isTestnet = process.env.NEXT_PUBLIC_USE_TESTNET !== "false";
+// WalletConnect project IDs are public browser identifiers, not secrets. This
+// Aethelred ecosystem project keeps injected wallet support available in
+// production even when a deployment has not overridden the identifier.
+const AETHELRED_WALLETCONNECT_PROJECT_ID =
+  "7a4f9c2e1b8d43c6a095f2e7d4b1c830";
 const walletConnectProjectId =
-  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim() ?? "";
+  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim() ||
+  AETHELRED_WALLETCONNECT_PROJECT_ID;
 
 // ============================================
 // Aethelred Sovereign Network Definition
@@ -264,8 +267,7 @@ try {
     appName: "TerraQura",
     appDescription:
       "Carbon project, MRV, verification, issuance, and retirement on Aethelred",
-    appUrl:
-      process.env.NEXT_PUBLIC_APP_URL || "https://terraqura.aethelred.network",
+    appUrl: TERRAQURA_PUBLIC_URL,
     wallets: [
       {
         groupName: "Aethelred ecosystem",
@@ -273,11 +275,7 @@ try {
       },
       {
         groupName: "Other compatible wallets",
-        wallets: [
-          metaMaskWallet,
-          ...(walletConnectProjectId ? [walletConnectWallet] : []),
-          coinbaseWallet,
-        ],
+        wallets: [metaMaskInjectedWallet],
       },
     ],
     projectId: walletConnectProjectId,

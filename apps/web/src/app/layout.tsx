@@ -1,41 +1,17 @@
 import type { Metadata, Viewport } from "next";
-import { Space_Grotesk, Inter, JetBrains_Mono } from "next/font/google";
 import { Analytics } from "@vercel/analytics/react";
 import { SpeedInsights } from "@vercel/speed-insights/next";
 import "./globals.css";
 import { Providers } from "./providers";
 import { CookieBanner } from "@/components/ui/CookieBanner";
-
-// Optimized font loading
-const spaceGrotesk = Space_Grotesk({
-  subsets: ["latin"],
-  variable: "--font-space-grotesk",
-  display: "swap",
-  preload: true,
-  weight: ["400", "500", "600", "700"],
-});
-
-const inter = Inter({
-  subsets: ["latin"],
-  variable: "--font-inter",
-  display: "swap",
-  preload: true,
-  weight: ["400", "500", "600"],
-});
-
-const jetbrains = JetBrains_Mono({
-  subsets: ["latin"],
-  variable: "--font-jetbrains",
-  display: "swap",
-  preload: true,
-  weight: ["400", "500"],
-});
+import { TERRAQURA_PUBLIC_URL } from "@/lib/publicUrl";
 
 // Enhanced SEO Metadata
 export const metadata: Metadata = {
-  metadataBase: new URL("https://terraqura.aethelred.network"),
+  metadataBase: new URL(TERRAQURA_PUBLIC_URL),
   title: {
-    default: "TerraQura | Engineered Carbon Truth | Decentralized Carbon Removal Platform",
+    default:
+      "TerraQura | Engineered Carbon Truth | Decentralized Carbon Removal Platform",
     template: "%s | TerraQura",
   },
   description:
@@ -66,7 +42,7 @@ export const metadata: Metadata = {
     "Abu Dhabi",
     "UAE",
   ],
-  authors: [{ name: "TerraQura", url: "https://terraqura.aethelred.network" }],
+  authors: [{ name: "TerraQura", url: TERRAQURA_PUBLIC_URL }],
   creator: "TerraQura",
   publisher: "TerraQura",
   category: "Technology",
@@ -74,7 +50,7 @@ export const metadata: Metadata = {
   openGraph: {
     type: "website",
     locale: "en_US",
-    url: "https://terraqura.aethelred.network",
+    url: TERRAQURA_PUBLIC_URL,
     siteName: "TerraQura",
     title: "TerraQura | Engineered Carbon Truth",
     description:
@@ -110,20 +86,15 @@ export const metadata: Metadata = {
     },
   },
   alternates: {
-    canonical: "https://terraqura.aethelred.network",
+    canonical: TERRAQURA_PUBLIC_URL,
     languages: {
-      "en-US": "https://terraqura.aethelred.network",
+      "en-US": TERRAQURA_PUBLIC_URL,
     },
   },
   manifest: "/site.webmanifest",
   icons: {
-    icon: [
-      { url: "/favicon.svg", type: "image/svg+xml" },
-    ],
+    icon: [{ url: "/favicon.svg", type: "image/svg+xml" }],
     shortcut: [{ url: "/favicon.svg" }],
-  },
-  verification: {
-    google: "google-site-verification-code",
   },
   other: {
     "msapplication-TileColor": "#050810",
@@ -148,10 +119,10 @@ const organizationJsonLd = {
   "@context": "https://schema.org",
   "@type": "Organization",
   name: "TerraQura",
-  url: "https://terraqura.aethelred.network",
+  url: TERRAQURA_PUBLIC_URL,
   logo: {
     "@type": "ImageObject",
-    url: "https://terraqura.aethelred.network/logo.png",
+    url: `${TERRAQURA_PUBLIC_URL}/logo.png`,
     width: 512,
     height: 512,
   },
@@ -194,12 +165,12 @@ const websiteJsonLd = {
   "@context": "https://schema.org",
   "@type": "WebSite",
   name: "TerraQura",
-  url: "https://terraqura.aethelred.network",
+  url: TERRAQURA_PUBLIC_URL,
   potentialAction: {
     "@type": "SearchAction",
     target: {
       "@type": "EntryPoint",
-      urlTemplate: "https://terraqura.aethelred.network/search?q={search_term_string}",
+      urlTemplate: `${TERRAQURA_PUBLIC_URL}/search?q={search_term_string}`,
     },
     "query-input": "required name=search_term_string",
   },
@@ -224,7 +195,7 @@ const productJsonLd = {
   operatingSystem: "Web-based",
   offers: {
     "@type": "Offer",
-    availability: "https://schema.org/ComingSoon",
+    availability: "https://schema.org/InStock",
     validFrom: "2026-07-01",
   },
 };
@@ -235,20 +206,14 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`dark ${spaceGrotesk.variable} ${inter.variable} ${jetbrains.variable}`}
-      suppressHydrationWarning
-    >
+    <html lang="en" className="dark" suppressHydrationWarning>
       <head>
-        {/* Preconnect to external domains for performance */}
-        <link rel="preconnect" href="https://fonts.googleapis.com" />
-        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
-        
         {/* Structured Data */}
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(organizationJsonLd) }}
+          dangerouslySetInnerHTML={{
+            __html: JSON.stringify(organizationJsonLd),
+          }}
         />
         <script
           type="application/ld+json"
@@ -258,12 +223,15 @@ export default function RootLayout({
           type="application/ld+json"
           dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
         />
-        
+
         {/* Performance hints */}
         <meta name="format-detection" content="telephone=no" />
         <meta name="mobile-web-app-capable" content="yes" />
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta
+          name="apple-mobile-web-app-status-bar-style"
+          content="black-translucent"
+        />
         <meta name="apple-mobile-web-app-title" content="TerraQura" />
       </head>
       <body className="font-sans bg-midnight-950 text-white antialiased overflow-x-hidden">

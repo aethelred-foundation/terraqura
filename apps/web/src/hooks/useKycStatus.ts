@@ -4,6 +4,8 @@
 import { useState, useEffect, useCallback } from "react";
 import { useAccount } from "wagmi";
 
+import { terraquraApi } from "@/lib/terraquraApi";
+
 export type KycState =
   | "disconnected"
   | "checking"
@@ -33,7 +35,24 @@ export interface UseKycStatusReturn {
   refetch: () => Promise<void>;
 }
 
-const API_URL = process.env.NEXT_PUBLIC_API_URL || "http://localhost:4000";
+interface KycStatusResponse {
+  status: string;
+  verified: boolean;
+  applicantId?: string;
+  rejectLabels?: string[];
+  verifiedAt?: string;
+}
+
+interface KycInitiationResponse {
+  applicantId: string;
+  accessToken: string;
+  expiresAt: string;
+}
+
+interface KycTokenResponse {
+  accessToken: string;
+  expiresAt: string;
+}
 
 export function useKycStatus(): UseKycStatusReturn {
   const { address, isConnected } = useAccount();
@@ -52,14 +71,15 @@ export function useKycStatus(): UseKycStatusReturn {
     setError(null);
 
     try {
-      const response = await fetch(`${API_URL}/v1/kyc/status/${address}`);
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error?.message || "Failed to fetch KYC status");
-      }
-
-      const { status: apiStatus, verified, applicantId, rejectLabels, verifiedAt } = data.data;
+      const {
+        status: apiStatus,
+        verified,
+        applicantId,
+        rejectLabels,
+        verifiedAt,
+      } = await terraquraApi<KycStatusResponse>(
+        `/v1/kyc/status/${encodeURIComponent(address)}`,
+      );
 
       let state: KycState;
       if (verified) {
@@ -101,24 +121,20 @@ export function useKycStatus(): UseKycStatusReturn {
     setError(null);
 
     try {
-      const response = await fetch(`${API_URL}/v1/kyc/initiate`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ walletAddress: address }),
-      });
-
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error?.message || "Failed to initiate KYC");
-      }
+      const data = await terraquraApi<KycInitiationResponse>(
+        "/v1/kyc/initiate",
+        {
+          method: "POST",
+          body: JSON.stringify({ walletAddress: address }),
+        },
+      );
 
       setStatus((prev) => ({
         ...prev,
         state: "in_progress",
-        applicantId: data.data.applicantId,
-        accessToken: data.data.accessToken,
-        tokenExpiresAt: new Date(data.data.expiresAt),
+        applicantId: data.applicantId,
+        accessToken: data.accessToken,
+        tokenExpiresAt: new Date(data.expiresAt),
       }));
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
@@ -132,17 +148,12 @@ export function useKycStatus(): UseKycStatusReturn {
     if (!address) return null;
 
     try {
-      const response = await fetch(`${API_URL}/v1/kyc/refresh-token/${address}`, {
-        method: "POST",
-      });
-
-      const data = await response.json();
-
-      if (!data.success) {
-        throw new Error(data.error?.message || "Failed to refresh token");
-      }
-
-      const { accessToken, expiresAt } = data.data;
+      const { accessToken, expiresAt } = await terraquraApi<KycTokenResponse>(
+        `/v1/kyc/refresh-token/${encodeURIComponent(address)}`,
+        {
+          method: "POST",
+        },
+      );
 
       setStatus((prev) => ({
         ...prev,

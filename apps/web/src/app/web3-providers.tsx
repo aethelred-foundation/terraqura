@@ -19,6 +19,7 @@ import { WagmiProvider, useAccount, useChainId } from "wagmi";
 import { RainbowKitProvider, darkTheme } from "@rainbow-me/rainbowkit";
 import "@rainbow-me/rainbowkit/styles.css";
 import { config, ACTIVE_NETWORK, configError } from "@/lib/wagmi";
+import { TERRAQURA_PUBLIC_URL } from "@/lib/publicUrl";
 
 // ============================================
 // Query Client Configuration
@@ -34,7 +35,7 @@ function handleQueryError(error: Error): void {
   ];
 
   const shouldIgnore = ignoredErrors.some((msg) =>
-    error.message?.toLowerCase().includes(msg.toLowerCase())
+    error.message?.toLowerCase().includes(msg.toLowerCase()),
   );
 
   if (!shouldIgnore) {
@@ -77,8 +78,7 @@ function createQueryClient(): QueryClient {
         refetchOnMount: true,
         networkMode: "online",
         retry: shouldRetryQuery,
-        retryDelay: (attemptIndex) =>
-          Math.min(1000 * 2 ** attemptIndex, 10000),
+        retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
         structuralSharing: true,
       },
       mutations: {
@@ -134,7 +134,7 @@ function ConnectionMonitor(): null {
     if (isConnected && address) {
       if (chainId !== ACTIVE_NETWORK.id) {
         console.warn(
-          `[TerraQura] Wrong network detected. Expected ${ACTIVE_NETWORK.name} (${ACTIVE_NETWORK.id}), got ${chainId}`
+          `[TerraQura] Wrong network detected. Expected ${ACTIVE_NETWORK.name} (${ACTIVE_NETWORK.id}), got ${chainId}`,
         );
       }
     }
@@ -189,7 +189,9 @@ interface Web3ProvidersProps {
   children: React.ReactNode;
 }
 
-export default function Web3Providers({ children }: Web3ProvidersProps): React.JSX.Element {
+export default function Web3Providers({
+  children,
+}: Web3ProvidersProps): React.JSX.Element {
   const [queryClient] = useState(() => createQueryClient());
 
   // If wagmi config failed to initialise, render without Web3 providers.
@@ -208,12 +210,17 @@ export default function Web3Providers({ children }: Web3ProvidersProps): React.J
             showRecentTransactions={true}
             appInfo={{
               appName: "TerraQura",
-              learnMoreUrl: "https://terraqura.aethelred.network",
+              learnMoreUrl: TERRAQURA_PUBLIC_URL,
               disclaimer: ({ Text, Link }) => (
                 <Text>
                   By connecting your wallet, you agree to TerraQura&apos;s{" "}
-                  <Link href="https://terraqura.aethelred.network/terms">Terms of Service</Link> and{" "}
-                  <Link href="https://terraqura.aethelred.network/privacy">Privacy Policy</Link>
+                  <Link href={`${TERRAQURA_PUBLIC_URL}/terms`}>
+                    Terms of Service
+                  </Link>{" "}
+                  and{" "}
+                  <Link href={`${TERRAQURA_PUBLIC_URL}/privacy`}>
+                    Privacy Policy
+                  </Link>
                 </Text>
               ),
             }}
