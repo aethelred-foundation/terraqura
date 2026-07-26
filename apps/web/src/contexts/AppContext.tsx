@@ -18,7 +18,7 @@ import {
 } from "wagmi";
 import { useConnectModal } from "@rainbow-me/rainbowkit";
 
-import { aethelred, aethelredTestnet } from "@/lib/wagmi";
+import { aethelredTestnet } from "@/lib/wagmi";
 
 // Types
 interface Notification {
@@ -70,7 +70,7 @@ export function AppProviderSSR({ children }: { children: ReactNode }) {
   const [searchOpen, setSearchOpen] = useState(false);
 
   const addNotification = useCallback((n: Omit<Notification, "id">) => {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const id = globalThis.crypto.randomUUID();
     setNotifications((prev) => [...prev, { ...n, id }]);
     setTimeout(
       () => setNotifications((prev) => prev.filter((item) => item.id !== id)),
@@ -122,8 +122,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
   const [searchOpen, setSearchOpen] = useState(false);
 
-  const isWrongNetwork =
-    isConnected && chainId !== aethelred.id && chainId !== aethelredTestnet.id;
+  const isWrongNetwork = isConnected && chainId !== aethelredTestnet.id;
 
   const wallet: WalletState = useMemo(
     () => ({
@@ -146,7 +145,7 @@ export function AppProvider({ children }: { children: ReactNode }) {
   );
 
   const addNotification = useCallback((n: Omit<Notification, "id">) => {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const id = globalThis.crypto.randomUUID();
     const notification = { ...n, id };
     setNotifications((prev) => [...prev, notification]);
     const duration = n.duration || 5000;

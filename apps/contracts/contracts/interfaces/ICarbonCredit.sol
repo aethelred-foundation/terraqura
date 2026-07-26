@@ -45,7 +45,7 @@ interface ICarbonCredit {
         uint256 indexed tokenId,
         bytes32 indexed dacUnitId,
         address indexed operator,
-        uint256 co2AmountKg,
+        uint256 creditsIssued,
         bytes32 sourceDataHash
     );
 

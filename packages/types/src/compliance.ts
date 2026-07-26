@@ -126,7 +126,13 @@ export interface KYCWebhookPayload {
   inspectionId: string;
   correlationId: string;
   levelName: string;
-  reviewStatus: "init" | "pending" | "prechecked" | "queued" | "completed" | "onHold";
+  reviewStatus:
+    | "init"
+    | "pending"
+    | "prechecked"
+    | "queued"
+    | "completed"
+    | "onHold";
   reviewResult: {
     reviewAnswer: "GREEN" | "RED" | "RETRY";
     rejectLabels?: string[];

@@ -1,33 +1,54 @@
-import { randomBytes } from "crypto";
+import { randomUUID } from "node:crypto";
 
+import { ListingStatus } from "@terraqura/types";
 import {
-  ListingStatus,
-  OfferStatus,
-  MarketStats,
-} from "@terraqura/types";
-import { FastifyInstance, FastifyPluginOptions } from "fastify";
+  FastifyInstance,
+  FastifyPluginOptions,
+  FastifyReply,
+  FastifyRequest,
+} from "fastify";
 import { z } from "zod";
 
-import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
-import { mutateState, readState } from "../../lib/state-store.js";
+import {
+  ensureApprovedKyc,
+  getAuthenticatedAddress,
+} from "../../lib/auth-context.js";
+import {
+  bearerAuthRateLimit,
+  verifyBearerAuth,
+} from "../../lib/bearer-auth.js";
+import {
+  CREDITS_STORE_KEY,
+  DEFAULT_CREDITS_STATE,
+  type CreditsState,
+  type StoredCredit,
+} from "../../lib/carbon-state.js";
+import { mutateStatePair, readState } from "../../lib/state-store.js";
+import {
+  getExplorerTxLink,
+  verifyListingCancellationOnChain,
+  verifyListingOnChain,
+  verifyPurchaseOnChain,
+} from "../../services/blockchain/contracts.js";
+
+const TransactionHashSchema = z.string().regex(/^0x[a-fA-F0-9]{64}$/);
 
 const CreateListingSchema = z.object({
-  tokenId: z.string().min(1),
+  tokenId: z.string().regex(/^\d+$/),
   amount: z.number().int().positive(),
-  pricePerUnit: z.string().regex(/^\d+$/),
+  pricePerUnit: z.string().regex(/^[1-9]\d*$/),
   minPurchaseAmount: z.number().int().positive().optional(),
   durationDays: z.number().int().min(0).max(365).optional(),
-});
-
-const CreateOfferSchema = z.object({
-  tokenId: z.string().min(1),
-  amount: z.number().int().positive(),
-  pricePerUnit: z.string().regex(/^\d+$/),
-  durationDays: z.number().int().min(1).max(30),
+  txHash: TransactionHashSchema,
 });
 
 const PurchaseSchema = z.object({
   amount: z.number().int().positive(),
+  txHash: TransactionHashSchema,
+});
+
+const FinalizeCancellationSchema = z.object({
+  txHash: TransactionHashSchema,
 });
 
 interface StoredListing {
@@ -37,46 +58,25 @@ interface StoredListing {
   sellerWallet: string;
   tokenId: string;
   creditId: string;
-  dacUnitName: string;
+  dacUnitId: string;
   amount: number;
   remainingAmount: number;
   pricePerUnit: string;
-  pricePerUnitUsd: number;
   minPurchaseAmount: number;
   status: ListingStatus;
   createdAt: string;
   expiresAt: string | null;
   soldAt: string | null;
   cancelledAt: string | null;
-  txHash: string | null;
-}
-
-interface StoredOffer {
-  id: string;
-  offerId: string;
-  buyerId: string;
-  buyerWallet: string;
-  tokenId: string;
-  creditId: string | null;
-  amount: number;
-  pricePerUnit: string;
-  pricePerUnitUsd: number;
-  depositAmount: string;
-  status: OfferStatus;
-  acceptedBy: string | null;
-  acceptedByWallet: string | null;
-  createdAt: string;
-  expiresAt: string;
-  acceptedAt: string | null;
-  cancelledAt: string | null;
-  txHash: string | null;
-  acceptTxHash: string | null;
+  txHash: string;
+  blockNumber: number;
+  cancellationTxHash: string | null;
 }
 
 interface StoredPurchase {
   id: string;
-  listingId: string | null;
-  offerId: string | null;
+  listingId: string;
+  onChainListingId: string;
   buyerId: string;
   buyerWallet: string;
   sellerId: string;
@@ -95,125 +95,114 @@ interface StoredPurchase {
 
 interface MarketplaceState {
   listings: Record<string, StoredListing>;
-  offers: Record<string, StoredOffer>;
   purchases: StoredPurchase[];
-  nextListingId: number;
-  nextOfferId: number;
+  processedTxHashes: Record<string, string>;
 }
 
-interface CreditsState {
-  credits: Record<
-    string,
-    {
-      initialCreditsIssued?: number;
-      retiredAmount?: number;
-      creditsIssued: number;
-      isRetired: boolean;
-    }
-  >;
-}
-
-const MARKETPLACE_STORE_KEY = "marketplace:v1";
+const MARKETPLACE_STORE_KEY = "marketplace:v2";
 const DEFAULT_MARKETPLACE_STATE: MarketplaceState = {
   listings: {},
-  offers: {},
   purchases: [],
-  nextListingId: 1,
-  nextOfferId: 1,
+  processedTxHashes: {},
 };
-const CREDITS_STORE_KEY = "credits:v1";
-const DEFAULT_CREDITS_STATE: CreditsState = {
-  credits: {},
-};
-
-function getAuthenticatedAddress(request: { user?: unknown }): string | null {
-  const user = request.user as { address?: string } | undefined;
-  return typeof user?.address === "string" ? user.address.toLowerCase() : null;
-}
-
-function isAdmin(request: { user?: unknown }): boolean {
-  const user = request.user as { userType?: string } | undefined;
-  return user?.userType === "admin";
-}
-
-function weiToUsd(wei: string): number {
-  const maticUsd = Number.parseFloat(process.env.MATIC_USD_PRICE || "0.5");
-  const matic = Number(wei) / 1e18;
-  return Number.isFinite(matic) ? matic * maticUsd : 0;
-}
-
-function generateTxHash(): string {
-  return `0x${randomBytes(32).toString("hex")}`;
-}
 
 function isExpired(dateIso: string | null): boolean {
-  if (!dateIso) {
-    return false;
-  }
-  return Date.now() > new Date(dateIso).getTime();
+  return dateIso ? Date.now() > new Date(dateIso).getTime() : false;
 }
 
-function getActiveListingStatus(listing: StoredListing): ListingStatus {
-  if (listing.status !== ListingStatus.ACTIVE) {
-    return listing.status;
-  }
-  if (isExpired(listing.expiresAt)) {
+function getEffectiveStatus(listing: StoredListing): ListingStatus {
+  if (listing.status === ListingStatus.ACTIVE && isExpired(listing.expiresAt)) {
     return ListingStatus.EXPIRED;
   }
   return listing.status;
 }
 
-function getActiveOfferStatus(offer: StoredOffer): OfferStatus {
-  if (offer.status !== OfferStatus.ACTIVE) {
-    return offer.status;
-  }
-  if (isExpired(offer.expiresAt)) {
-    return OfferStatus.EXPIRED;
-  }
-  return offer.status;
-}
-
-function computePlatformFee(totalPriceWei: string): string {
-  return ((BigInt(totalPriceWei) * BigInt(250)) / BigInt(10000)).toString();
-}
-
 function listingResponse(listing: StoredListing) {
   return {
     ...listing,
-    status: getActiveListingStatus(listing),
-    createdAt: listing.createdAt,
-    expiresAt: listing.expiresAt,
+    status: getEffectiveStatus(listing),
+    explorerUrl: getExplorerTxLink(listing.txHash),
   };
 }
 
-function offerResponse(offer: StoredOffer) {
+function findHolding(
+  state: CreditsState,
+  tokenId: string,
+  ownerWallet: string,
+): StoredCredit | undefined {
+  return Object.values(state.credits).find(
+    (credit) =>
+      BigInt(credit.tokenId) === BigInt(tokenId) &&
+      credit.currentOwnerWallet?.toLowerCase() === ownerWallet.toLowerCase(),
+  );
+}
+
+function createBuyerHolding(
+  source: StoredCredit,
+  buyerWallet: string,
+  amount: number,
+  nowIso: string,
+): StoredCredit {
   return {
-    ...offer,
-    status: getActiveOfferStatus(offer),
-    createdAt: offer.createdAt,
-    expiresAt: offer.expiresAt,
+    ...source,
+    id: `cred_${randomUUID()}`,
+    creditsIssued: amount,
+    escrowedAmount: 0,
+    initialCreditsIssued: 0,
+    retiredAmount: 0,
+    currentOwnerId: `user_${buyerWallet.slice(2, 10)}`,
+    currentOwnerWallet: buyerWallet,
+    isRetired: false,
+    retiredAt: null,
+    retirementReason: null,
+    retirementTxHash: null,
+    retirementTxHashes: [],
+    createdAt: nowIso,
+    updatedAt: nowIso,
   };
+}
+
+function requireApprovedOperator(
+  request: FastifyRequest,
+  reply: FastifyReply,
+): string | null {
+  const wallet = getAuthenticatedAddress(request);
+  if (!wallet) {
+    reply.status(401).send({
+      success: false,
+      error: "Missing authenticated wallet",
+    });
+    return null;
+  }
+  if (
+    !ensureApprovedKyc(request, reply, {
+      message: "Approved KYC is required for marketplace operations",
+    })
+  ) {
+    return null;
+  }
+  return wallet;
 }
 
 export async function marketplaceRoutes(
   fastify: FastifyInstance,
-  _options: FastifyPluginOptions
+  _options: FastifyPluginOptions,
 ) {
   fastify.get(
     "/listings",
     {
       schema: {
         tags: ["Marketplace"],
-        summary: "Get marketplace listings",
-        description: "Returns carbon credit listings with optional filters",
+        summary: "Get confirmed on-chain marketplace listings",
         querystring: {
           type: "object",
           properties: {
-            status: { type: "string", enum: ["active", "sold", "cancelled", "expired"] },
-            tokenId: { type: "string" },
-            sellerId: { type: "string" },
-            minPrice: { type: "string" },
-            maxPrice: { type: "string" },
+            status: {
+              type: "string",
+              enum: ["active", "sold", "cancelled", "expired"],
+            },
+            tokenId: { type: "string", pattern: "^\\d+$" },
+            sellerWallet: { type: "string" },
             sortBy: {
               type: "string",
               enum: ["price_asc", "price_desc", "newest", "oldest", "amount"],
@@ -224,83 +213,81 @@ export async function marketplaceRoutes(
         },
       },
     },
-    async (request, _reply) => {
+    async (request) => {
       const query = request.query as {
         status?: string;
         tokenId?: string;
-        sellerId?: string;
-        minPrice?: string;
-        maxPrice?: string;
+        sellerWallet?: string;
         sortBy?: string;
         limit?: number;
         offset?: number;
       };
+      const state = await readState(
+        MARKETPLACE_STORE_KEY,
+        DEFAULT_MARKETPLACE_STATE,
+      );
+      let listings = Object.values(state.listings);
 
-      const state = await readState(MARKETPLACE_STORE_KEY, DEFAULT_MARKETPLACE_STATE);
-      let listings = Object.values(state.listings).map((listing) => ({
-        ...listing,
-        status: getActiveListingStatus(listing),
-      }));
-
-      if (query.status) {
-        listings = listings.filter((listing) => listing.status === query.status);
-      } else {
-        listings = listings.filter((listing) => listing.status === ListingStatus.ACTIVE);
-      }
-
+      listings = listings.filter((listing) =>
+        query.status
+          ? getEffectiveStatus(listing) === query.status
+          : getEffectiveStatus(listing) === ListingStatus.ACTIVE,
+      );
       if (query.tokenId) {
-        listings = listings.filter((listing) => listing.tokenId === query.tokenId);
-      }
-
-      if (query.sellerId) {
-        listings = listings.filter((listing) => listing.sellerId === query.sellerId);
-      }
-
-      if (typeof query.minPrice === "string") {
+        const tokenId = query.tokenId;
         listings = listings.filter(
-          (listing) => BigInt(listing.pricePerUnit) >= BigInt(query.minPrice as string)
+          (listing) => BigInt(listing.tokenId) === BigInt(tokenId),
         );
       }
-
-      if (typeof query.maxPrice === "string") {
+      if (query.sellerWallet) {
+        const sellerWallet = query.sellerWallet.toLowerCase();
         listings = listings.filter(
-          (listing) => BigInt(listing.pricePerUnit) <= BigInt(query.maxPrice as string)
+          (listing) => listing.sellerWallet.toLowerCase() === sellerWallet,
         );
       }
 
       switch (query.sortBy) {
         case "price_asc":
-          listings.sort((a, b) => (BigInt(a.pricePerUnit) > BigInt(b.pricePerUnit) ? 1 : -1));
+          listings.sort((left, right) =>
+            BigInt(left.pricePerUnit) > BigInt(right.pricePerUnit) ? 1 : -1,
+          );
           break;
         case "price_desc":
-          listings.sort((a, b) => (BigInt(a.pricePerUnit) < BigInt(b.pricePerUnit) ? 1 : -1));
+          listings.sort((left, right) =>
+            BigInt(left.pricePerUnit) < BigInt(right.pricePerUnit) ? 1 : -1,
+          );
           break;
         case "oldest":
           listings.sort(
-            (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
+            (left, right) =>
+              new Date(left.createdAt).getTime() -
+              new Date(right.createdAt).getTime(),
           );
           break;
         case "amount":
-          listings.sort((a, b) => b.remainingAmount - a.remainingAmount);
+          listings.sort(
+            (left, right) => right.remainingAmount - left.remainingAmount,
+          );
           break;
-        case "newest":
         default:
           listings.sort(
-            (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+            (left, right) =>
+              new Date(right.createdAt).getTime() -
+              new Date(left.createdAt).getTime(),
           );
       }
 
       const total = listings.length;
-      const limit = query.limit || 50;
-      const offset = query.offset || 0;
-      listings = listings.slice(offset, offset + limit);
-
+      const limit = Math.min(query.limit || 50, 100);
+      const offset = Math.max(query.offset || 0, 0);
       return {
         success: true,
-        data: listings.map((listing) => listingResponse(listing)),
+        data: listings
+          .slice(offset, offset + limit)
+          .map((listing) => listingResponse(listing)),
         pagination: { total, limit, offset },
       };
-    }
+    },
   );
 
   fastify.post(
@@ -308,80 +295,144 @@ export async function marketplaceRoutes(
     {
       schema: {
         tags: ["Marketplace"],
-        summary: "Create a listing",
-        description: "List carbon credits for sale on the marketplace",
+        summary: "Index a wallet-signed on-chain listing",
         security: [{ bearerAuth: [] }],
-        body: {
-          type: "object",
-          required: ["tokenId", "amount", "pricePerUnit"],
-          properties: {
-            tokenId: { type: "string" },
-            amount: { type: "number" },
-            pricePerUnit: { type: "string" },
-            minPurchaseAmount: { type: "number" },
-            durationDays: { type: "number" },
-          },
-        },
       },
       config: bearerAuthRateLimit,
       preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
       const body = CreateListingSchema.parse(request.body);
-      const sellerWallet = getAuthenticatedAddress(request);
-      if (!sellerWallet) {
-        return reply.status(401).send({
+      const sellerWallet = requireApprovedOperator(request, reply);
+      if (!sellerWallet) return;
+
+      let confirmed: Awaited<ReturnType<typeof verifyListingOnChain>>;
+      try {
+        confirmed = await verifyListingOnChain({
+          txHash: body.txHash,
+          seller: sellerWallet,
+          tokenId: body.tokenId,
+          amount: body.amount,
+          pricePerUnit: body.pricePerUnit,
+          minPurchaseAmount: body.minPurchaseAmount ?? 1,
+          durationSeconds: (body.durationDays ?? 0) * 86_400,
+        });
+      } catch (error) {
+        request.log.warn(
+          { err: error, txHash: body.txHash },
+          "Listing receipt rejected",
+        );
+        return reply.status(422).send({
           success: false,
-          error: "Missing authenticated wallet",
+          error:
+            error instanceof Error
+              ? error.message
+              : "Listing transaction could not be verified",
         });
       }
 
-      const listing = await mutateState(
-        MARKETPLACE_STORE_KEY,
-        DEFAULT_MARKETPLACE_STATE,
-        async (state) => {
-          const id = `listing_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-          const listingId = String(state.nextListingId++);
-          const txHash = generateTxHash();
-          const nowIso = new Date().toISOString();
+      const result = await mutateStatePair(
+        {
+          storeKey: MARKETPLACE_STORE_KEY,
+          defaultState: DEFAULT_MARKETPLACE_STATE,
+        },
+        {
+          storeKey: CREDITS_STORE_KEY,
+          defaultState: DEFAULT_CREDITS_STATE,
+        },
+        async (market, credits) => {
+          const existingId =
+            market.processedTxHashes[body.txHash.toLowerCase()];
+          if (existingId) {
+            const existing = market.listings[existingId];
+            return existing
+              ? {
+                  kind: "existing" as const,
+                  listing: existing,
+                }
+              : { kind: "replayed" as const };
+          }
 
-          const created: StoredListing = {
+          const sellerCredit = findHolding(credits, body.tokenId, sellerWallet);
+          if (!sellerCredit) return { kind: "credit_not_found" as const };
+          if (sellerCredit.creditsIssued < body.amount) {
+            return { kind: "insufficient" as const };
+          }
+
+          const duplicateOnChainId = Object.values(market.listings).some(
+            (listing) => listing.listingId === confirmed.listingId,
+          );
+          if (duplicateOnChainId) {
+            return { kind: "duplicate_listing" as const };
+          }
+
+          const nowIso = new Date().toISOString();
+          const id = `listing_${randomUUID()}`;
+          const durationDays = body.durationDays ?? 0;
+          const listing: StoredListing = {
             id,
-            listingId,
+            listingId: confirmed.listingId,
             sellerId: `user_${sellerWallet.slice(2, 10)}`,
             sellerWallet,
             tokenId: body.tokenId,
-            creditId: `credit_${body.tokenId}`,
-            dacUnitName: "TerraQura DAC Facility",
+            creditId: sellerCredit.id,
+            dacUnitId: sellerCredit.dacUnitId,
             amount: body.amount,
             remainingAmount: body.amount,
             pricePerUnit: body.pricePerUnit,
-            pricePerUnitUsd: weiToUsd(body.pricePerUnit),
-            minPurchaseAmount: body.minPurchaseAmount || 1,
+            minPurchaseAmount: body.minPurchaseAmount ?? 1,
             status: ListingStatus.ACTIVE,
             createdAt: nowIso,
-            expiresAt: body.durationDays
-              ? new Date(Date.now() + body.durationDays * 24 * 60 * 60 * 1000).toISOString()
-              : null,
+            expiresAt:
+              durationDays > 0
+                ? new Date(Date.now() + durationDays * 86_400_000).toISOString()
+                : null,
             soldAt: null,
             cancelledAt: null,
-            txHash,
+            txHash: confirmed.txHash,
+            blockNumber: confirmed.blockNumber,
+            cancellationTxHash: null,
           };
 
-          state.listings[id] = created;
-          return created;
-        }
+          sellerCredit.creditsIssued -= body.amount;
+          sellerCredit.escrowedAmount =
+            (sellerCredit.escrowedAmount ?? 0) + body.amount;
+          sellerCredit.updatedAt = nowIso;
+          market.listings[id] = listing;
+          market.processedTxHashes[body.txHash.toLowerCase()] = id;
+          return { kind: "success" as const, listing };
+        },
       );
 
-      return reply.status(201).send({
-        success: true,
-        data: {
-          listingId: listing.id,
-          status: listing.status,
-          txHash: listing.txHash,
-        },
-      });
-    }
+      if (result.kind === "credit_not_found") {
+        return reply.status(404).send({
+          success: false,
+          error: "The authenticated wallet does not own this indexed credit",
+        });
+      }
+      if (result.kind === "insufficient") {
+        return reply.status(409).send({
+          success: false,
+          error: "Listing amount exceeds the indexed available balance",
+        });
+      }
+      if (result.kind === "duplicate_listing") {
+        return reply.status(409).send({
+          success: false,
+          error: "The on-chain listing is already indexed",
+        });
+      }
+      if (result.kind === "replayed") {
+        return reply.status(409).send({
+          success: false,
+          error: "Transaction hash was already used",
+        });
+      }
+
+      return reply
+        .status(result.kind === "existing" ? 200 : 201)
+        .send({ success: true, data: listingResponse(result.listing) });
+    },
   );
 
   fastify.get(
@@ -389,112 +440,24 @@ export async function marketplaceRoutes(
     {
       schema: {
         tags: ["Marketplace"],
-        summary: "Get listing details",
-        params: { type: "object", properties: { id: { type: "string" } } },
+        summary: "Get confirmed listing details",
       },
     },
     async (request, reply) => {
-      const params = request.params as { id: string };
-      const state = await readState(MARKETPLACE_STORE_KEY, DEFAULT_MARKETPLACE_STATE);
-      const listings = new Map(Object.entries(state.listings));
-      const listing = listings.get(params.id);
-
-      if (!listing) {
-        return reply.status(404).send({ success: false, error: "Listing not found" });
-      }
-
-      return {
-        success: true,
-        data: listingResponse(listing),
-      };
-    }
-  );
-
-  fastify.delete(
-    "/listings/:id",
-    {
-      schema: {
-        tags: ["Marketplace"],
-        summary: "Cancel a listing",
-        security: [{ bearerAuth: [] }],
-        params: { type: "object", properties: { id: { type: "string" } } },
-      },
-      config: bearerAuthRateLimit,
-      preHandler: verifyBearerAuth,
-    },
-    async (request, reply) => {
-      const params = request.params as { id: string };
-      const callerWallet = getAuthenticatedAddress(request);
-      if (!callerWallet) {
-        return reply.status(401).send({
-          success: false,
-          error: "Missing authenticated wallet",
-        });
-      }
-
-      const result = await mutateState(
+      const { id } = request.params as { id: string };
+      const state = await readState(
         MARKETPLACE_STORE_KEY,
         DEFAULT_MARKETPLACE_STATE,
-        async (state) => {
-          const listings = new Map(Object.entries(state.listings));
-          const listing = listings.get(params.id);
-          if (!listing) {
-            return { kind: "not_found" as const };
-          }
-
-          const effectiveStatus = getActiveListingStatus(listing);
-          if (effectiveStatus === ListingStatus.EXPIRED) {
-            listing.status = ListingStatus.EXPIRED;
-            listings.set(params.id, listing);
-            state.listings = Object.fromEntries(listings);
-            return { kind: "expired" as const };
-          }
-
-          const isOwner = listing.sellerWallet.toLowerCase() === callerWallet;
-          if (!isOwner && !isAdmin(request)) {
-            return { kind: "forbidden" as const };
-          }
-
-          if (listing.status !== ListingStatus.ACTIVE) {
-            return { kind: "not_active" as const };
-          }
-
-          listing.status = ListingStatus.CANCELLED;
-          listing.cancelledAt = new Date().toISOString();
-          listings.set(params.id, listing);
-          state.listings = Object.fromEntries(listings);
-          return { kind: "success" as const, listing };
-        }
       );
-
-      if (result.kind === "not_found") {
-        return reply.status(404).send({ success: false, error: "Listing not found" });
-      }
-
-      if (result.kind === "expired") {
-        return reply.status(400).send({ success: false, error: "Listing expired" });
-      }
-
-      if (result.kind === "forbidden") {
-        return reply.status(403).send({
+      const listing = state.listings[id];
+      if (!listing) {
+        return reply.status(404).send({
           success: false,
-          error: "Only the seller or an admin can cancel this listing",
+          error: "Listing not found",
         });
       }
-
-      if (result.kind === "not_active") {
-        return reply.status(400).send({ success: false, error: "Listing not active" });
-      }
-
-      return {
-        success: true,
-        data: {
-          listingId: params.id,
-          status: result.listing.status,
-          txHash: generateTxHash(),
-        },
-      };
-    }
+      return { success: true, data: listingResponse(listing) };
+    },
   );
 
   fastify.post(
@@ -502,80 +465,137 @@ export async function marketplaceRoutes(
     {
       schema: {
         tags: ["Marketplace"],
-        summary: "Purchase credits from listing",
+        summary: "Index a wallet-signed on-chain purchase",
         security: [{ bearerAuth: [] }],
-        params: { type: "object", properties: { id: { type: "string" } } },
-        body: {
-          type: "object",
-          required: ["amount"],
-          properties: { amount: { type: "number" } },
-        },
       },
       config: bearerAuthRateLimit,
       preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
-      const params = request.params as { id: string };
+      const { id } = request.params as { id: string };
       const body = PurchaseSchema.parse(request.body);
-      const buyerWallet = getAuthenticatedAddress(request);
-      if (!buyerWallet) {
-        return reply.status(401).send({
+      const buyerWallet = requireApprovedOperator(request, reply);
+      if (!buyerWallet) return;
+
+      const marketSnapshot = await readState(
+        MARKETPLACE_STORE_KEY,
+        DEFAULT_MARKETPLACE_STATE,
+      );
+      const listingSnapshot = marketSnapshot.listings[id];
+      if (!listingSnapshot) {
+        return reply.status(404).send({
           success: false,
-          error: "Missing authenticated wallet",
+          error: "Listing not found",
+        });
+      }
+      const totalPrice = (
+        BigInt(listingSnapshot.pricePerUnit) * BigInt(body.amount)
+      ).toString();
+
+      let confirmed: Awaited<ReturnType<typeof verifyPurchaseOnChain>>;
+      try {
+        confirmed = await verifyPurchaseOnChain({
+          txHash: body.txHash,
+          buyer: buyerWallet,
+          listingId: listingSnapshot.listingId,
+          tokenId: listingSnapshot.tokenId,
+          amount: body.amount,
+          totalPrice,
+        });
+      } catch (error) {
+        request.log.warn(
+          { err: error, txHash: body.txHash },
+          "Purchase receipt rejected",
+        );
+        return reply.status(422).send({
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Purchase transaction could not be verified",
         });
       }
 
-      const result = await mutateState(
-        MARKETPLACE_STORE_KEY,
-        DEFAULT_MARKETPLACE_STATE,
-        async (state) => {
-          const listings = new Map(Object.entries(state.listings));
-          const listing = listings.get(params.id);
-          if (!listing) {
-            return { kind: "not_found" as const };
+      const result = await mutateStatePair(
+        {
+          storeKey: MARKETPLACE_STORE_KEY,
+          defaultState: DEFAULT_MARKETPLACE_STATE,
+        },
+        {
+          storeKey: CREDITS_STORE_KEY,
+          defaultState: DEFAULT_CREDITS_STATE,
+        },
+        async (market, credits) => {
+          const existingId =
+            market.processedTxHashes[body.txHash.toLowerCase()];
+          if (existingId) {
+            const existing = market.purchases.find(
+              (purchase) => purchase.id === existingId,
+            );
+            return existing
+              ? { kind: "existing" as const, purchase: existing }
+              : { kind: "replayed" as const };
           }
 
-          const effectiveStatus = getActiveListingStatus(listing);
-          if (effectiveStatus === ListingStatus.EXPIRED) {
-            listing.status = ListingStatus.EXPIRED;
-            listings.set(params.id, listing);
-            state.listings = Object.fromEntries(listings);
-            return { kind: "expired" as const };
-          }
-
-          if (listing.status !== ListingStatus.ACTIVE) {
+          const listing = market.listings[id];
+          if (!listing) return { kind: "not_found" as const };
+          if (getEffectiveStatus(listing) !== ListingStatus.ACTIVE) {
             return { kind: "not_active" as const };
           }
-
           if (listing.sellerWallet.toLowerCase() === buyerWallet) {
             return { kind: "self_purchase" as const };
           }
-
-          if (body.amount > listing.remainingAmount) {
-            return { kind: "insufficient" as const };
+          if (
+            body.amount > listing.remainingAmount ||
+            body.amount < listing.minPurchaseAmount
+          ) {
+            return { kind: "invalid_amount" as const };
+          }
+          if (confirmed.seller !== listing.sellerWallet.toLowerCase()) {
+            return { kind: "seller_mismatch" as const };
           }
 
-          if (body.amount < listing.minPurchaseAmount) {
-            return { kind: "below_minimum" as const };
+          const sellerCredit = credits.credits[listing.creditId];
+          if (
+            !sellerCredit ||
+            (sellerCredit.escrowedAmount ?? 0) < body.amount
+          ) {
+            return { kind: "balance_mismatch" as const };
           }
 
-          const totalPrice = (BigInt(listing.pricePerUnit) * BigInt(body.amount)).toString();
-          const platformFee = computePlatformFee(totalPrice);
-          const sellerProceeds = (BigInt(totalPrice) - BigInt(platformFee)).toString();
-          const txHash = generateTxHash();
+          const nowIso = new Date().toISOString();
+          sellerCredit.escrowedAmount -= body.amount;
+          sellerCredit.updatedAt = nowIso;
+
+          const buyerCredit = findHolding(
+            credits,
+            listing.tokenId,
+            buyerWallet,
+          );
+          if (buyerCredit) {
+            buyerCredit.creditsIssued += body.amount;
+            buyerCredit.updatedAt = nowIso;
+          } else {
+            const created = createBuyerHolding(
+              sellerCredit,
+              buyerWallet,
+              body.amount,
+              nowIso,
+            );
+            credits.credits[created.id] = created;
+          }
 
           listing.remainingAmount -= body.amount;
           if (listing.remainingAmount === 0) {
             listing.status = ListingStatus.SOLD;
-            listing.soldAt = new Date().toISOString();
+            listing.soldAt = nowIso;
           }
-          listings.set(params.id, listing);
-          state.listings = Object.fromEntries(listings);
 
+          const platformFee = confirmed.platformFee;
           const purchase: StoredPurchase = {
-            id: `purchase_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-            listingId: params.id,
-            offerId: null,
+            id: `purchase_${randomUUID()}`,
+            listingId: listing.id,
+            onChainListingId: listing.listingId,
             buyerId: `user_${buyerWallet.slice(2, 10)}`,
             buyerWallet,
             sellerId: listing.sellerId,
@@ -586,401 +606,187 @@ export async function marketplaceRoutes(
             pricePerUnit: listing.pricePerUnit,
             totalPrice,
             platformFee,
-            sellerProceeds,
-            txHash,
-            blockNumber: Math.floor(Math.random() * 1000000) + 50000000,
-            purchasedAt: new Date().toISOString(),
+            sellerProceeds: (
+              BigInt(totalPrice) - BigInt(platformFee)
+            ).toString(),
+            txHash: confirmed.txHash,
+            blockNumber: confirmed.blockNumber,
+            purchasedAt: nowIso,
           };
-          state.purchases.push(purchase);
-
-          return { kind: "success" as const, purchase, listing };
-        }
+          market.purchases.push(purchase);
+          market.processedTxHashes[body.txHash.toLowerCase()] = purchase.id;
+          return { kind: "success" as const, purchase };
+        },
       );
 
-      if (result.kind === "not_found") {
-        return reply.status(404).send({ success: false, error: "Listing not found" });
+      if (result.kind === "existing") {
+        return {
+          success: true,
+          data: {
+            ...result.purchase,
+            explorerUrl: getExplorerTxLink(result.purchase.txHash),
+          },
+        };
       }
-      if (result.kind === "expired") {
-        return reply.status(400).send({ success: false, error: "Listing expired" });
-      }
-      if (result.kind === "not_active") {
-        return reply.status(400).send({ success: false, error: "Listing not active" });
-      }
-      if (result.kind === "self_purchase") {
-        return reply.status(400).send({
+      if (result.kind !== "success") {
+        const messages: Record<string, string> = {
+          replayed: "Transaction hash was already used",
+          not_found: "Listing not found",
+          not_active: "Listing is not active",
+          self_purchase: "Seller cannot purchase their own listing",
+          invalid_amount: "Purchase amount is outside listing limits",
+          seller_mismatch: "On-chain seller does not match the indexed listing",
+          balance_mismatch: "Escrowed balance does not match the purchase",
+        };
+        return reply.status(409).send({
           success: false,
-          error: "Seller cannot purchase their own listing",
+          error: messages[result.kind],
         });
-      }
-      if (result.kind === "insufficient") {
-        return reply.status(400).send({ success: false, error: "Insufficient credits available" });
-      }
-      if (result.kind === "below_minimum") {
-        return reply.status(400).send({ success: false, error: "Below minimum purchase amount" });
       }
 
       return reply.status(201).send({
         success: true,
         data: {
-          purchaseId: result.purchase.id,
-          amount: result.purchase.amount,
-          totalPrice: result.purchase.totalPrice,
-          platformFee: result.purchase.platformFee,
-          txHash: result.purchase.txHash,
-          explorerUrl: `https://explorer.aethelred.network/tx/${result.purchase.txHash}`,
+          ...result.purchase,
+          explorerUrl: getExplorerTxLink(result.purchase.txHash),
         },
       });
-    }
-  );
-
-  fastify.get(
-    "/offers",
-    {
-      schema: {
-        tags: ["Marketplace"],
-        summary: "Get offers",
-        querystring: {
-          type: "object",
-          properties: {
-            status: { type: "string" },
-            tokenId: { type: "string" },
-            buyerId: { type: "string" },
-            limit: { type: "integer", default: 50 },
-            offset: { type: "integer", default: 0 },
-          },
-        },
-      },
     },
-    async (request, _reply) => {
-      const query = request.query as {
-        status?: string;
-        tokenId?: string;
-        buyerId?: string;
-        limit?: number;
-        offset?: number;
-      };
-
-      const state = await readState(MARKETPLACE_STORE_KEY, DEFAULT_MARKETPLACE_STATE);
-      let offers = Object.values(state.offers).map((offer) => ({
-        ...offer,
-        status: getActiveOfferStatus(offer),
-      }));
-
-      if (query.status) {
-        offers = offers.filter((offer) => offer.status === query.status);
-      } else {
-        offers = offers.filter((offer) => offer.status === OfferStatus.ACTIVE);
-      }
-
-      if (query.tokenId) {
-        offers = offers.filter((offer) => offer.tokenId === query.tokenId);
-      }
-
-      if (query.buyerId) {
-        offers = offers.filter((offer) => offer.buyerId === query.buyerId);
-      }
-
-      offers.sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
-
-      const total = offers.length;
-      const limit = query.limit || 50;
-      const offset = query.offset || 0;
-      offers = offers.slice(offset, offset + limit);
-
-      return {
-        success: true,
-        data: offers.map((offer) => offerResponse(offer)),
-        pagination: { total, limit, offset },
-      };
-    }
   );
 
   fastify.post(
-    "/offers",
+    "/listings/:id/cancel",
     {
       schema: {
         tags: ["Marketplace"],
-        summary: "Create an offer",
-        description: "Make an offer to buy credits from any holder",
+        summary: "Index a wallet-signed on-chain listing cancellation",
         security: [{ bearerAuth: [] }],
-        body: {
-          type: "object",
-          required: ["tokenId", "amount", "pricePerUnit", "durationDays"],
-          properties: {
-            tokenId: { type: "string" },
-            amount: { type: "number" },
-            pricePerUnit: { type: "string" },
-            durationDays: { type: "number" },
-          },
-        },
       },
       config: bearerAuthRateLimit,
       preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
-      const body = CreateOfferSchema.parse(request.body);
-      const buyerWallet = getAuthenticatedAddress(request);
-      if (!buyerWallet) {
-        return reply.status(401).send({
-          success: false,
-          error: "Missing authenticated wallet",
-        });
-      }
+      const { id } = request.params as { id: string };
+      const body = FinalizeCancellationSchema.parse(request.body);
+      const sellerWallet = requireApprovedOperator(request, reply);
+      if (!sellerWallet) return;
 
-      const offer = await mutateState(
+      const snapshot = await readState(
         MARKETPLACE_STORE_KEY,
         DEFAULT_MARKETPLACE_STATE,
-        async (state) => {
-          const id = `offer_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-          const offerId = String(state.nextOfferId++);
-          const depositAmount = (BigInt(body.pricePerUnit) * BigInt(body.amount)).toString();
-          const txHash = generateTxHash();
-          const createdAt = new Date().toISOString();
-          const expiresAt = new Date(
-            Date.now() + body.durationDays * 24 * 60 * 60 * 1000
-          ).toISOString();
-
-          const created: StoredOffer = {
-            id,
-            offerId,
-            buyerId: `user_${buyerWallet.slice(2, 10)}`,
-            buyerWallet,
-            tokenId: body.tokenId,
-            creditId: null,
-            amount: body.amount,
-            pricePerUnit: body.pricePerUnit,
-            pricePerUnitUsd: weiToUsd(body.pricePerUnit),
-            depositAmount,
-            status: OfferStatus.ACTIVE,
-            acceptedBy: null,
-            acceptedByWallet: null,
-            createdAt,
-            expiresAt,
-            acceptedAt: null,
-            cancelledAt: null,
-            txHash,
-            acceptTxHash: null,
-          };
-
-          state.offers[id] = created;
-          return created;
-        }
       );
-
-      return reply.status(201).send({
-        success: true,
-        data: {
-          offerId: offer.id,
-          depositAmount: offer.depositAmount,
-          status: offer.status,
-          expiresAt: offer.expiresAt,
-          txHash: offer.txHash,
-        },
-      });
-    }
-  );
-
-  fastify.post(
-    "/offers/:id/accept",
-    {
-      schema: {
-        tags: ["Marketplace"],
-        summary: "Accept an offer",
-        description: "Accept an offer as a credit holder",
-        security: [{ bearerAuth: [] }],
-        params: { type: "object", properties: { id: { type: "string" } } },
-      },
-      config: bearerAuthRateLimit,
-      preHandler: verifyBearerAuth,
-    },
-    async (request, reply) => {
-      const params = request.params as { id: string };
-      const sellerWallet = getAuthenticatedAddress(request);
-      if (!sellerWallet) {
-        return reply.status(401).send({
+      const listingSnapshot = snapshot.listings[id];
+      if (!listingSnapshot) {
+        return reply.status(404).send({
           success: false,
-          error: "Missing authenticated wallet",
+          error: "Listing not found",
         });
       }
-
-      const result = await mutateState(
-        MARKETPLACE_STORE_KEY,
-        DEFAULT_MARKETPLACE_STATE,
-        async (state) => {
-          const offers = new Map(Object.entries(state.offers));
-          const offer = offers.get(params.id);
-          if (!offer) {
-            return { kind: "not_found" as const };
-          }
-
-          const effectiveStatus = getActiveOfferStatus(offer);
-          if (effectiveStatus === OfferStatus.EXPIRED) {
-            offer.status = OfferStatus.EXPIRED;
-            offers.set(params.id, offer);
-            state.offers = Object.fromEntries(offers);
-            return { kind: "expired" as const };
-          }
-
-          if (offer.status !== OfferStatus.ACTIVE) {
-            return { kind: "not_active" as const };
-          }
-
-          if (offer.buyerWallet.toLowerCase() === sellerWallet) {
-            return { kind: "self_accept" as const };
-          }
-
-          const acceptTxHash = generateTxHash();
-          const platformFee = computePlatformFee(offer.depositAmount);
-          const sellerProceeds = (BigInt(offer.depositAmount) - BigInt(platformFee)).toString();
-          const acceptedAt = new Date().toISOString();
-
-          offer.status = OfferStatus.ACCEPTED;
-          offer.acceptedBy = `user_${sellerWallet.slice(2, 10)}`;
-          offer.acceptedByWallet = sellerWallet;
-          offer.acceptedAt = acceptedAt;
-          offer.acceptTxHash = acceptTxHash;
-          offers.set(params.id, offer);
-          state.offers = Object.fromEntries(offers);
-
-          const purchase: StoredPurchase = {
-            id: `purchase_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`,
-            listingId: null,
-            offerId: params.id,
-            buyerId: offer.buyerId,
-            buyerWallet: offer.buyerWallet,
-            sellerId: offer.acceptedBy,
-            sellerWallet: offer.acceptedByWallet,
-            tokenId: offer.tokenId,
-            creditId: `credit_${offer.tokenId}`,
-            amount: offer.amount,
-            pricePerUnit: offer.pricePerUnit,
-            totalPrice: offer.depositAmount,
-            platformFee,
-            sellerProceeds,
-            txHash: acceptTxHash,
-            blockNumber: Math.floor(Math.random() * 1000000) + 50000000,
-            purchasedAt: acceptedAt,
-          };
-          state.purchases.push(purchase);
-
-          return { kind: "success" as const, offer, purchase };
-        }
-      );
-
-      if (result.kind === "not_found") {
-        return reply.status(404).send({ success: false, error: "Offer not found" });
-      }
-      if (result.kind === "expired") {
-        return reply.status(400).send({ success: false, error: "Offer expired" });
-      }
-      if (result.kind === "not_active") {
-        return reply.status(400).send({ success: false, error: "Offer not active" });
-      }
-      if (result.kind === "self_accept") {
-        return reply.status(400).send({
-          success: false,
-          error: "Buyer cannot accept their own offer",
-        });
-      }
-
-      return {
-        success: true,
-        data: {
-          offerId: params.id,
-          status: result.offer.status,
-          amount: result.offer.amount,
-          totalPrice: result.offer.depositAmount,
-          sellerProceeds: result.purchase.sellerProceeds,
-          txHash: result.offer.acceptTxHash,
-          explorerUrl: `https://explorer.aethelred.network/tx/${result.offer.acceptTxHash}`,
-        },
-      };
-    }
-  );
-
-  fastify.delete(
-    "/offers/:id",
-    {
-      schema: {
-        tags: ["Marketplace"],
-        summary: "Cancel an offer",
-        security: [{ bearerAuth: [] }],
-        params: { type: "object", properties: { id: { type: "string" } } },
-      },
-      config: bearerAuthRateLimit,
-      preHandler: verifyBearerAuth,
-    },
-    async (request, reply) => {
-      const params = request.params as { id: string };
-      const callerWallet = getAuthenticatedAddress(request);
-      if (!callerWallet) {
-        return reply.status(401).send({
-          success: false,
-          error: "Missing authenticated wallet",
-        });
-      }
-
-      const result = await mutateState(
-        MARKETPLACE_STORE_KEY,
-        DEFAULT_MARKETPLACE_STATE,
-        async (state) => {
-          const offers = new Map(Object.entries(state.offers));
-          const offer = offers.get(params.id);
-          if (!offer) {
-            return { kind: "not_found" as const };
-          }
-
-          const effectiveStatus = getActiveOfferStatus(offer);
-          if (effectiveStatus === OfferStatus.EXPIRED) {
-            offer.status = OfferStatus.EXPIRED;
-            offers.set(params.id, offer);
-            state.offers = Object.fromEntries(offers);
-            return { kind: "expired" as const };
-          }
-
-          if (offer.status !== OfferStatus.ACTIVE) {
-            return { kind: "not_active" as const };
-          }
-
-          const isOwner = offer.buyerWallet.toLowerCase() === callerWallet;
-          if (!isOwner && !isAdmin(request)) {
-            return { kind: "forbidden" as const };
-          }
-
-          offer.status = OfferStatus.CANCELLED;
-          offer.cancelledAt = new Date().toISOString();
-          offers.set(params.id, offer);
-          state.offers = Object.fromEntries(offers);
-          return { kind: "success" as const, offer };
-        }
-      );
-
-      if (result.kind === "not_found") {
-        return reply.status(404).send({ success: false, error: "Offer not found" });
-      }
-      if (result.kind === "expired") {
-        return reply.status(400).send({ success: false, error: "Offer expired" });
-      }
-      if (result.kind === "not_active") {
-        return reply.status(400).send({ success: false, error: "Offer not active" });
-      }
-      if (result.kind === "forbidden") {
+      if (
+        listingSnapshot.sellerWallet.toLowerCase() !==
+        sellerWallet.toLowerCase()
+      ) {
         return reply.status(403).send({
           success: false,
-          error: "Only the buyer or an admin can cancel this offer",
+          error: "Only the listing seller can cancel it",
         });
       }
 
+      let confirmed: Awaited<
+        ReturnType<typeof verifyListingCancellationOnChain>
+      >;
+      try {
+        confirmed = await verifyListingCancellationOnChain({
+          txHash: body.txHash,
+          seller: sellerWallet,
+          listingId: listingSnapshot.listingId,
+        });
+      } catch (error) {
+        request.log.warn(
+          { err: error, txHash: body.txHash },
+          "Cancellation receipt rejected",
+        );
+        return reply.status(422).send({
+          success: false,
+          error:
+            error instanceof Error
+              ? error.message
+              : "Cancellation transaction could not be verified",
+        });
+      }
+
+      const result = await mutateStatePair(
+        {
+          storeKey: MARKETPLACE_STORE_KEY,
+          defaultState: DEFAULT_MARKETPLACE_STATE,
+        },
+        {
+          storeKey: CREDITS_STORE_KEY,
+          defaultState: DEFAULT_CREDITS_STATE,
+        },
+        async (market, credits) => {
+          const existingId =
+            market.processedTxHashes[body.txHash.toLowerCase()];
+          if (existingId === id) {
+            const existingListing = market.listings[id];
+            if (!existingListing) {
+              return { kind: "replayed" as const };
+            }
+            return {
+              kind: "existing" as const,
+              listing: existingListing,
+            };
+          }
+          if (existingId) return { kind: "replayed" as const };
+
+          const listing = market.listings[id];
+          if (!listing) return { kind: "not_found" as const };
+          if (
+            listing.status !== ListingStatus.ACTIVE &&
+            getEffectiveStatus(listing) !== ListingStatus.EXPIRED
+          ) {
+            return { kind: "not_cancellable" as const };
+          }
+          const sellerCredit = credits.credits[listing.creditId];
+          if (
+            !sellerCredit ||
+            (sellerCredit.escrowedAmount ?? 0) < listing.remainingAmount
+          ) {
+            return { kind: "balance_mismatch" as const };
+          }
+
+          const nowIso = new Date().toISOString();
+          sellerCredit.escrowedAmount -= listing.remainingAmount;
+          sellerCredit.creditsIssued += listing.remainingAmount;
+          sellerCredit.updatedAt = nowIso;
+          listing.status = ListingStatus.CANCELLED;
+          listing.cancelledAt = nowIso;
+          listing.cancellationTxHash = confirmed.txHash;
+          market.processedTxHashes[body.txHash.toLowerCase()] = id;
+          return { kind: "success" as const, listing };
+        },
+      );
+
+      if (result.kind !== "success" && result.kind !== "existing") {
+        const messages: Record<string, string> = {
+          replayed: "Transaction hash was already used",
+          not_found: "Listing not found",
+          not_cancellable: "Listing is not cancellable",
+          balance_mismatch: "Escrowed balance does not match the listing",
+        };
+        return reply.status(409).send({
+          success: false,
+          error: messages[result.kind],
+        });
+      }
       return {
         success: true,
         data: {
-          offerId: params.id,
-          status: result.offer.status,
-          refundAmount: result.offer.depositAmount,
-          txHash: generateTxHash(),
+          ...listingResponse(result.listing),
+          cancellationExplorerUrl: getExplorerTxLink(confirmed.txHash),
         },
       };
-    }
+    },
   );
 
   fastify.get(
@@ -988,90 +794,80 @@ export async function marketplaceRoutes(
     {
       schema: {
         tags: ["Marketplace"],
-        summary: "Get market statistics",
-        description: "Returns marketplace volume, pricing, and activity stats",
+        summary: "Get confirmed marketplace statistics",
       },
     },
-    async (_request, _reply) => {
-      const state = await readState(MARKETPLACE_STORE_KEY, DEFAULT_MARKETPLACE_STATE);
-      const creditsState = await readState(CREDITS_STORE_KEY, DEFAULT_CREDITS_STATE);
-
+    async () => {
+      const [market, credits] = await Promise.all([
+        readState(MARKETPLACE_STORE_KEY, DEFAULT_MARKETPLACE_STATE),
+        readState(CREDITS_STORE_KEY, DEFAULT_CREDITS_STATE),
+      ]);
       const now = Date.now();
-      const oneDayAgo = now - 24 * 60 * 60 * 1000;
-      const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
-
-      const purchases24h = state.purchases.filter(
-        (purchase) => new Date(purchase.purchasedAt).getTime() > oneDayAgo
+      const oneDayAgo = now - 86_400_000;
+      const sevenDaysAgo = now - 7 * 86_400_000;
+      const purchases24h = market.purchases.filter(
+        (purchase) => new Date(purchase.purchasedAt).getTime() > oneDayAgo,
       );
-      const purchases7d = state.purchases.filter(
-        (purchase) => new Date(purchase.purchasedAt).getTime() > sevenDaysAgo
+      const purchases7d = market.purchases.filter(
+        (purchase) => new Date(purchase.purchasedAt).getTime() > sevenDaysAgo,
       );
-
-      const totalVolume24h = purchases24h
-        .reduce((sum, purchase) => sum + BigInt(purchase.totalPrice), BigInt(0))
-        .toString();
-      const totalVolume7d = purchases7d
-        .reduce((sum, purchase) => sum + BigInt(purchase.totalPrice), BigInt(0))
-        .toString();
-
-      const activeListings = Object.values(state.listings).filter(
-        (listing) => getActiveListingStatus(listing) === ListingStatus.ACTIVE
+      const activeListings = Object.values(market.listings).filter(
+        (listing) => getEffectiveStatus(listing) === ListingStatus.ACTIVE,
       );
-      const totalCreditsListed = activeListings.reduce(
-        (sum, listing) => sum + listing.remainingAmount,
-        0
-      );
-      const firstActiveListing = activeListings[0];
-
+      const volume = (purchases: StoredPurchase[]) =>
+        purchases
+          .reduce((sum, purchase) => sum + BigInt(purchase.totalPrice), 0n)
+          .toString();
       const floorPrice =
-        firstActiveListing
-          ? activeListings.reduce(
-              (min, listing) =>
-                BigInt(listing.pricePerUnit) < BigInt(min) ? listing.pricePerUnit : min,
-              firstActiveListing.pricePerUnit
-            )
+        activeListings.length > 0
+          ? activeListings.reduce((minimum, listing) =>
+              BigInt(listing.pricePerUnit) < BigInt(minimum.pricePerUnit)
+                ? listing
+                : minimum,
+            ).pricePerUnit
           : "0";
-
       const avgPrice24h =
         purchases24h.length > 0
           ? (
               purchases24h.reduce(
                 (sum, purchase) => sum + BigInt(purchase.pricePerUnit),
-                BigInt(0)
+                0n,
               ) / BigInt(purchases24h.length)
             ).toString()
           : "0";
+      const holdings = Object.values(credits.credits);
 
-      const creditValues = Object.values(creditsState.credits);
-      const totalCreditsMinted = creditValues.reduce(
-        (sum, credit) => sum + (credit.initialCreditsIssued ?? credit.creditsIssued),
-        0
-      );
-      const totalCreditsRetired = creditValues.reduce(
-        (sum, credit) => sum + (credit.retiredAmount ?? 0),
-        0
-      );
-
-      const stats: MarketStats = {
-        totalVolume24h,
-        totalVolumeUsd24h: weiToUsd(totalVolume24h),
-        totalVolume7d,
-        totalVolumeUsd7d: weiToUsd(totalVolume7d),
-        totalTransactions24h: purchases24h.length,
-        totalTransactions7d: purchases7d.length,
-        activeListings: activeListings.length,
-        totalCreditsListed,
-        floorPrice,
-        floorPriceUsd: weiToUsd(floorPrice),
-        avgPrice24h,
-        avgPriceUsd24h: weiToUsd(avgPrice24h),
-        totalCreditsMinted,
-        totalCreditsRetired,
-        totalCreditsTraded: state.purchases.reduce((sum, purchase) => sum + purchase.amount, 0),
+      return {
+        success: true,
+        data: {
+          totalVolume24h: volume(purchases24h),
+          totalVolume7d: volume(purchases7d),
+          totalTransactions24h: purchases24h.length,
+          totalTransactions7d: purchases7d.length,
+          activeListings: activeListings.length,
+          totalCreditsListed: activeListings.reduce(
+            (sum, listing) => sum + listing.remainingAmount,
+            0,
+          ),
+          floorPrice,
+          avgPrice24h,
+          totalCreditsMinted: holdings.reduce(
+            (sum, credit) => sum + (credit.initialCreditsIssued ?? 0),
+            0,
+          ),
+          totalCreditsRetired: holdings.reduce(
+            (sum, credit) => sum + (credit.retiredAmount ?? 0),
+            0,
+          ),
+          totalCreditsTraded: market.purchases.reduce(
+            (sum, purchase) => sum + purchase.amount,
+            0,
+          ),
+          denomination: "AETH_WEI",
+          usdConversion: null,
+        },
       };
-
-      return { success: true, data: stats };
-    }
+    },
   );
 
   fastify.get(
@@ -1079,55 +875,67 @@ export async function marketplaceRoutes(
     {
       schema: {
         tags: ["Marketplace"],
-        summary: "Get purchase history",
+        summary: "Get confirmed on-chain purchase history",
         querystring: {
           type: "object",
           properties: {
-            tokenId: { type: "string" },
-            buyerId: { type: "string" },
-            sellerId: { type: "string" },
-            limit: { type: "integer", default: 50 },
-            offset: { type: "integer", default: 0 },
+            tokenId: { type: "string", pattern: "^\\d+$" },
+            buyerWallet: { type: "string" },
+            sellerWallet: { type: "string" },
+            limit: { type: "integer", minimum: 1, maximum: 100, default: 50 },
+            offset: { type: "integer", minimum: 0, default: 0 },
           },
         },
       },
     },
-    async (request, _reply) => {
+    async (request) => {
       const query = request.query as {
         tokenId?: string;
-        buyerId?: string;
-        sellerId?: string;
+        buyerWallet?: string;
+        sellerWallet?: string;
         limit?: number;
         offset?: number;
       };
-
-      const state = await readState(MARKETPLACE_STORE_KEY, DEFAULT_MARKETPLACE_STATE);
+      const state = await readState(
+        MARKETPLACE_STORE_KEY,
+        DEFAULT_MARKETPLACE_STATE,
+      );
       let purchases = [...state.purchases];
-
       if (query.tokenId) {
-        purchases = purchases.filter((purchase) => purchase.tokenId === query.tokenId);
+        const tokenId = query.tokenId;
+        purchases = purchases.filter(
+          (purchase) => BigInt(purchase.tokenId) === BigInt(tokenId),
+        );
       }
-      if (query.buyerId) {
-        purchases = purchases.filter((purchase) => purchase.buyerId === query.buyerId);
+      if (query.buyerWallet) {
+        const buyerWallet = query.buyerWallet.toLowerCase();
+        purchases = purchases.filter(
+          (purchase) => purchase.buyerWallet.toLowerCase() === buyerWallet,
+        );
       }
-      if (query.sellerId) {
-        purchases = purchases.filter((purchase) => purchase.sellerId === query.sellerId);
+      if (query.sellerWallet) {
+        const sellerWallet = query.sellerWallet.toLowerCase();
+        purchases = purchases.filter(
+          (purchase) => purchase.sellerWallet.toLowerCase() === sellerWallet,
+        );
       }
-
       purchases.sort(
-        (a, b) => new Date(b.purchasedAt).getTime() - new Date(a.purchasedAt).getTime()
+        (left, right) =>
+          new Date(right.purchasedAt).getTime() -
+          new Date(left.purchasedAt).getTime(),
       );
 
       const total = purchases.length;
-      const limit = query.limit || 50;
-      const offset = query.offset || 0;
-      purchases = purchases.slice(offset, offset + limit);
-
+      const limit = Math.min(query.limit || 50, 100);
+      const offset = Math.max(query.offset || 0, 0);
       return {
         success: true,
-        data: purchases,
+        data: purchases.slice(offset, offset + limit).map((purchase) => ({
+          ...purchase,
+          explorerUrl: getExplorerTxLink(purchase.txHash),
+        })),
         pagination: { total, limit, offset },
       };
-    }
+    },
   );
 }

@@ -18,6 +18,7 @@ import {
 import { WagmiProvider, useAccount, useChainId } from "wagmi";
 import { RainbowKitProvider, darkTheme } from "@rainbow-me/rainbowkit";
 import "@rainbow-me/rainbowkit/styles.css";
+import { AppProvider, AppProviderSSR } from "@/contexts/AppContext";
 import { config, ACTIVE_NETWORK, configError } from "@/lib/wagmi";
 import { TERRAQURA_PUBLIC_URL } from "@/lib/publicUrl";
 
@@ -197,11 +198,13 @@ export default function Web3Providers({
   // If wagmi config failed to initialise, render without Web3 providers.
   // The marketing site works fine without blockchain connectivity.
   if (configError || !config) {
-    return <>{children}</>;
+    return <AppProviderSSR>{children}</AppProviderSSR>;
   }
 
   return (
-    <ProviderErrorBoundary fallback={children}>
+    <ProviderErrorBoundary
+      fallback={<AppProviderSSR>{children}</AppProviderSSR>}
+    >
       <WagmiProvider config={config}>
         <QueryClientProvider client={queryClient}>
           <RainbowKitProvider
@@ -226,7 +229,7 @@ export default function Web3Providers({
             }}
           >
             <ConnectionMonitor />
-            {children}
+            <AppProvider>{children}</AppProvider>
           </RainbowKitProvider>
         </QueryClientProvider>
       </WagmiProvider>

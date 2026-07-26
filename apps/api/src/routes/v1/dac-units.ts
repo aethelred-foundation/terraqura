@@ -1,3 +1,5 @@
+import { createHash, randomUUID } from "node:crypto";
+
 import { DACStatus } from "@terraqura/types";
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
@@ -7,11 +9,12 @@ import {
   getAuthenticatedAddress,
   isAdmin,
 } from "../../lib/auth-context.js";
-import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
-import { mutateState, readState } from "../../lib/state-store.js";
 import {
-  whitelistDacUnitOnChain,
-} from "../../services/blockchain/contracts.js";
+  bearerAuthRateLimit,
+  verifyBearerAuth,
+} from "../../lib/bearer-auth.js";
+import { mutateState, readState } from "../../lib/state-store.js";
+import { whitelistDacUnitOnChain } from "../../services/blockchain/contracts.js";
 
 const CreateDACUnitSchema = z.object({
   name: z.string().min(1).max(255),
@@ -51,13 +54,9 @@ const DEFAULT_DAC_UNITS_STATE: DacUnitsState = {
   units: {},
 };
 
-function buildDacLocation(unit: StoredDacUnit): string {
-  return [unit.name, unit.countryCode].filter(Boolean).join(", ");
-}
-
 export async function dacUnitsRoutes(
   fastify: FastifyInstance,
-  _options: FastifyPluginOptions
+  _options: FastifyPluginOptions,
 ) {
   /**
    * List all DAC units
@@ -122,7 +121,10 @@ export async function dacUnitsRoutes(
         offset?: number;
       };
 
-      const state = await readState(DAC_UNITS_STORE_KEY, DEFAULT_DAC_UNITS_STATE);
+      const state = await readState(
+        DAC_UNITS_STORE_KEY,
+        DEFAULT_DAC_UNITS_STATE,
+      );
       let units = Object.values(state.units);
 
       // Filter by status
@@ -159,7 +161,7 @@ export async function dacUnitsRoutes(
           offset,
         },
       };
-    }
+    },
   );
 
   /**
@@ -236,8 +238,8 @@ export async function dacUnitsRoutes(
         DAC_UNITS_STORE_KEY,
         DEFAULT_DAC_UNITS_STATE,
         async (state) => {
-          const id = `dac_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-          const unitId = `0x${Buffer.from(id).toString("hex").padEnd(64, "0")}`;
+          const id = `dac_${randomUUID()}`;
+          const unitId = `0x${createHash("sha256").update(id).digest("hex")}`;
           const createdAt = new Date().toISOString();
 
           const createdUnit: StoredDacUnit = {
@@ -250,8 +252,8 @@ export async function dacUnitsRoutes(
             longitude: body.longitude,
             countryCode: body.countryCode,
             status: DACStatus.PENDING,
-            capacityTonnesPerYear: body.capacityTonnesPerYear || 0,
-            technologyType: body.technologyType || "DAC",
+            capacityTonnesPerYear: body.capacityTonnesPerYear ?? 0,
+            technologyType: body.technologyType ?? "DAC",
             gridIntensityGco2PerKwh: body.gridIntensityGco2PerKwh ?? null,
             createdAt,
             whitelistedAt: null,
@@ -260,7 +262,7 @@ export async function dacUnitsRoutes(
 
           state.units[id] = createdUnit;
           return createdUnit;
-        }
+        },
       );
 
       return reply.status(201).send({
@@ -271,7 +273,7 @@ export async function dacUnitsRoutes(
           status: dacUnit.status,
         },
       });
-    }
+    },
   );
 
   /**
@@ -283,7 +285,8 @@ export async function dacUnitsRoutes(
       schema: {
         tags: ["DAC Units"],
         summary: "Get DAC unit details",
-        description: "Returns detailed information about a specific DAC facility",
+        description:
+          "Returns detailed information about a specific DAC facility",
         params: {
           type: "object",
           properties: {
@@ -332,7 +335,10 @@ export async function dacUnitsRoutes(
     },
     async (request, reply) => {
       const params = request.params as { id: string };
-      const state = await readState(DAC_UNITS_STORE_KEY, DEFAULT_DAC_UNITS_STATE);
+      const state = await readState(
+        DAC_UNITS_STORE_KEY,
+        DEFAULT_DAC_UNITS_STATE,
+      );
       const dacUnit = state.units[params.id];
 
       if (!dacUnit) {
@@ -348,7 +354,7 @@ export async function dacUnitsRoutes(
           ...dacUnit,
         },
       };
-    }
+    },
   );
 
   /**
@@ -360,7 +366,8 @@ export async function dacUnitsRoutes(
       schema: {
         tags: ["DAC Units"],
         summary: "Whitelist a DAC unit",
-        description: "Approves a DAC facility for carbon credit minting (Admin only)",
+        description:
+          "Approves a DAC facility for carbon credit minting (Admin only)",
         security: [{ bearerAuth: [] }],
         params: {
           type: "object",
@@ -419,7 +426,10 @@ export async function dacUnitsRoutes(
       }
 
       const params = request.params as { id: string };
-      const existingState = await readState(DAC_UNITS_STORE_KEY, DEFAULT_DAC_UNITS_STATE);
+      const existingState = await readState(
+        DAC_UNITS_STORE_KEY,
+        DEFAULT_DAC_UNITS_STATE,
+      );
       const existingUnit = existingState.units[params.id];
 
       if (!existingUnit) {
@@ -434,7 +444,6 @@ export async function dacUnitsRoutes(
         whitelistResult = await whitelistDacUnitOnChain({
           unitId: existingUnit.unitId,
           operator: existingUnit.operatorWallet,
-          location: buildDacLocation(existingUnit),
         });
       } catch (error) {
         request.log.error(
@@ -466,7 +475,7 @@ export async function dacUnitsRoutes(
 
           state.units[params.id] = updated;
           return updated;
-        }
+        },
       );
 
       if (!whitelistedUnit) {
@@ -485,6 +494,6 @@ export async function dacUnitsRoutes(
           txHash: whitelistedUnit.whitelistTxHash,
         },
       };
-    }
+    },
   );
 }

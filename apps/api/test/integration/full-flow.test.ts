@@ -14,10 +14,14 @@ const {
   mockWhitelistDacUnitOnChain,
   mockMintVerifiedCreditsOnChain,
   mockVerifyRetirementOnChain,
+  mockVerifyListingOnChain,
+  mockVerifyPurchaseOnChain,
 } = vi.hoisted(() => ({
   mockWhitelistDacUnitOnChain: vi.fn(),
   mockMintVerifiedCreditsOnChain: vi.fn(),
   mockVerifyRetirementOnChain: vi.fn(),
+  mockVerifyListingOnChain: vi.fn(),
+  mockVerifyPurchaseOnChain: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------
@@ -42,11 +46,74 @@ vi.mock("../../src/lib/state-store.js", () => ({
       return result;
     },
   ),
+  mutateStatePair: vi.fn(
+    async <TFirst, TSecond, R>(
+      first: { storeKey: string; defaultState: TFirst },
+      second: { storeKey: string; defaultState: TSecond },
+      mutator: (firstState: TFirst, secondState: TSecond) => Promise<R> | R,
+    ): Promise<R> => {
+      const firstState = structuredClone(
+        (store.get(first.storeKey) as TFirst) ?? first.defaultState,
+      );
+      const secondState = structuredClone(
+        (store.get(second.storeKey) as TSecond) ?? second.defaultState,
+      );
+      const result = await mutator(firstState, secondState);
+      store.set(first.storeKey, structuredClone(firstState));
+      store.set(second.storeKey, structuredClone(secondState));
+      return result;
+    },
+  ),
+}));
+
+vi.mock("../../src/lib/sensor-reading-store.js", () => ({
+  insertSensorReadings: vi.fn(async (readings: Array<{ dataHash: string }>) => {
+    const state = (store.get("sensors:v1") as
+      | {
+          readings: Array<{ dataHash: string }>;
+        }
+      | undefined) ?? { readings: [] };
+    const existing = new Set(state.readings.map((reading) => reading.dataHash));
+    if (readings.some((reading) => existing.has(reading.dataHash))) {
+      return false;
+    }
+    state.readings.push(...structuredClone(readings));
+    store.set("sensors:v1", state);
+    return true;
+  }),
+  listSensorReadings: vi.fn(
+    async (dacUnitId: string, startTime: Date, endTime: Date) => {
+      const state = (store.get("sensors:v1") as
+        | {
+            readings: Array<{ dacUnitId: string; time: string }>;
+          }
+        | undefined) ?? { readings: [] };
+      return structuredClone(
+        state.readings.filter((reading) => {
+          const capturedAt = new Date(reading.time);
+          return (
+            reading.dacUnitId === dacUnitId &&
+            capturedAt >= startTime &&
+            capturedAt <= endTime
+          );
+        }),
+      );
+    },
+  ),
+  summarizeSensorReadings: vi.fn(async () => ({
+    totalCo2CapturedKg: 0,
+    totalEnergyConsumedKwh: 0,
+    avgCo2CaptureRateKgHour: 0,
+    avgPurityPercentage: 0,
+    readingCount: 0,
+    anomalyCount: 0,
+  })),
 }));
 
 vi.mock("../../src/lib/runtime-env.js", () => ({
   getApiRuntimeEnv: () => ({
     DATABASE_URL: "postgres://localhost:5432/test",
+    DATABASE_SSL_MODE: "disable",
     JWT_SECRET: "a]ks8d7f6g5h4j3k2l1m0n9b8v7c6x5z4",
     SIWE_DOMAIN: "localhost",
     KYC_PROVIDER: "disabled",
@@ -63,14 +130,13 @@ vi.mock("../../src/services/gasless/relayer.service.js", () => ({
 
 vi.mock("../../src/services/blockchain/contracts.js", () => ({
   getExplorerTxLink: (txHash: string) =>
-    `https://explorer-testnet.aethelred.network/tx/${txHash}`,
+    `https://explorer.test.invalid/tx/${txHash}`,
   whitelistDacUnitOnChain: mockWhitelistDacUnitOnChain,
   mintVerifiedCreditsOnChain: mockMintVerifiedCreditsOnChain,
   verifyRetirementOnChain: mockVerifyRetirementOnChain,
+  verifyListingOnChain: mockVerifyListingOnChain,
+  verifyPurchaseOnChain: mockVerifyPurchaseOnChain,
 }));
-
-// Set env for sensor API key mapping before importing routes
-process.env.SENSOR_API_KEYS = "sensor-key-001:__DAC_UNIT_ID__";
 
 import { creditsRoutes } from "../../src/routes/v1/credits.js";
 import { dacUnitsRoutes } from "../../src/routes/v1/dac-units.js";
@@ -80,6 +146,7 @@ import { verificationRoutes } from "../../src/routes/v1/verification.js";
 
 const JWT_SECRET = "a]ks8d7f6g5h4j3k2l1m0n9b8v7c6x5z4";
 const OPERATOR_WALLET = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+const TEST_CID = `Qm${"a".repeat(44)}`;
 const BUYER_WALLET = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 
 function sign(app: FastifyInstance, payload: object): string {
@@ -121,10 +188,24 @@ describe("full lifecycle integration", () => {
     mockMintVerifiedCreditsOnChain.mockResolvedValue({
       txHash: `0x${"2".repeat(64)}`,
       tokenId: "1",
+      amount: 500,
     });
     mockVerifyRetirementOnChain.mockResolvedValue({
       txHash: `0x${"3".repeat(64)}`,
       blockNumber: 7332,
+    });
+    mockVerifyListingOnChain.mockResolvedValue({
+      txHash: `0x${"4".repeat(64)}`,
+      blockNumber: 7333,
+      listingId: "41",
+      seller: OPERATOR_WALLET,
+    });
+    mockVerifyPurchaseOnChain.mockResolvedValue({
+      txHash: `0x${"5".repeat(64)}`,
+      blockNumber: 7334,
+      buyer: BUYER_WALLET,
+      seller: OPERATOR_WALLET,
+      platformFee: "1250000000000000000",
     });
     app = await buildApp();
   });
@@ -182,9 +263,7 @@ describe("full lifecycle integration", () => {
   // ---------------------------------------------------------------
 
   it("step 3: submit sensor readings", async () => {
-    // We need to update the sensor API key mapping to match our DAC unit.
-    // The sensors route parses SENSOR_API_KEYS at module load, so we
-    // directly seed sensor readings into the store instead.
+    // Seed accepted telemetry to exercise the remaining lifecycle in one test.
     const now = new Date();
     const readings = [];
     for (let i = 0; i < 10; i++) {
@@ -277,7 +356,7 @@ describe("full lifecycle integration", () => {
       payload: {
         verificationId,
         recipientWallet: OPERATOR_WALLET,
-        ipfsMetadataCid: "QmIntegrationTestMetadata",
+        ipfsMetadataCid: TEST_CID,
       },
     });
 
@@ -317,7 +396,10 @@ describe("full lifecycle integration", () => {
     });
     const tokenId = creditRes.json().data.tokenId;
 
-    const token = sign(app, { address: OPERATOR_WALLET });
+    const token = sign(app, {
+      address: OPERATOR_WALLET,
+      kycStatus: "approved",
+    });
     const res = await app.inject({
       method: "POST",
       url: "/v1/marketplace/listings",
@@ -328,11 +410,12 @@ describe("full lifecycle integration", () => {
         pricePerUnit: "1000000000000000000", // 1 ether
         minPurchaseAmount: 5,
         durationDays: 30,
+        txHash: `0x${"4".repeat(64)}`,
       },
     });
 
     expect(res.statusCode).toBe(201);
-    listingId = res.json().data.listingId;
+    listingId = res.json().data.id;
     expect(listingId).toBeTruthy();
   });
 
@@ -340,20 +423,26 @@ describe("full lifecycle integration", () => {
   // 9. Purchase credits
   // ---------------------------------------------------------------
 
-  it("step 9: buyer purchases credits from listing", async () => {
-    const token = sign(app, { address: BUYER_WALLET });
+  it("step 9: buyer purchases all listed credits", async () => {
+    const token = sign(app, {
+      address: BUYER_WALLET,
+      kycStatus: "approved",
+    });
     const res = await app.inject({
       method: "POST",
       url: `/v1/marketplace/listings/${listingId}/purchase`,
       headers: { authorization: `Bearer ${token}` },
-      payload: { amount: 20 },
+      payload: {
+        amount: 50,
+        txHash: `0x${"5".repeat(64)}`,
+      },
     });
 
     expect(res.statusCode).toBe(201);
     const data = res.json().data;
-    expect(data.amount).toBe(20);
-    expect(data.totalPrice).toBe("20000000000000000000"); // 20 ether
-    expect(data.platformFee).toBe("500000000000000000"); // 2.5% = 0.5 ether
+    expect(data.amount).toBe(50);
+    expect(data.totalPrice).toBe("50000000000000000000");
+    expect(data.platformFee).toBe("1250000000000000000");
     expect(data.txHash).toMatch(/^0x/);
   });
 
@@ -361,14 +450,14 @@ describe("full lifecycle integration", () => {
   // 10. Verify listing state after partial purchase
   // ---------------------------------------------------------------
 
-  it("step 10: listing is still active with reduced amount", async () => {
+  it("step 10: listing is sold after its escrow is purchased", async () => {
     const res = await app.inject({
       method: "GET",
       url: `/v1/marketplace/listings/${listingId}`,
     });
     expect(res.statusCode).toBe(200);
-    expect(res.json().data.remainingAmount).toBe(30);
-    expect(res.json().data.status).toBe("active");
+    expect(res.json().data.remainingAmount).toBe(0);
+    expect(res.json().data.status).toBe("sold");
   });
 
   // ---------------------------------------------------------------
@@ -451,9 +540,9 @@ describe("full lifecycle integration", () => {
     });
     expect(res.statusCode).toBe(200);
     const data = res.json().data;
-    expect(data.totalCreditsTraded).toBe(20);
+    expect(data.totalCreditsTraded).toBe(50);
     expect(data.totalTransactions24h).toBeGreaterThanOrEqual(1);
-    expect(data.activeListings).toBe(1); // Still partially listed
+    expect(data.activeListings).toBe(0);
   });
 
   // ---------------------------------------------------------------
@@ -472,7 +561,7 @@ describe("full lifecycle integration", () => {
       payload: {
         verificationId,
         recipientWallet: OPERATOR_WALLET,
-        ipfsMetadataCid: "QmDuplicate",
+        ipfsMetadataCid: TEST_CID,
       },
     });
     expect(res.statusCode).toBe(409);

@@ -3,14 +3,11 @@ import rateLimit from "@fastify/rate-limit";
 import Fastify from "fastify";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// ---------------------------------------------------------------------------
-// Mock state-store
-// ---------------------------------------------------------------------------
 const store = new Map<string, unknown>();
 
 vi.mock("../../lib/state-store.js", () => ({
   readState: vi.fn(async <T>(key: string, defaultState: T): Promise<T> => {
-    return (store.get(key) as T) ?? structuredClone(defaultState);
+    return structuredClone((store.get(key) as T) ?? defaultState);
   }),
   mutateState: vi.fn(
     async <T, R>(
@@ -18,10 +15,27 @@ vi.mock("../../lib/state-store.js", () => ({
       defaultState: T,
       mutator: (state: T) => Promise<R> | R,
     ): Promise<R> => {
-      const current = (store.get(key) as T) ?? structuredClone(defaultState);
-      const mutableState = structuredClone(current);
-      const result = await mutator(mutableState);
-      store.set(key, mutableState);
+      const state = structuredClone((store.get(key) as T) ?? defaultState);
+      const result = await mutator(state);
+      store.set(key, structuredClone(state));
+      return result;
+    },
+  ),
+  mutateStatePair: vi.fn(
+    async <TFirst, TSecond, R>(
+      first: { storeKey: string; defaultState: TFirst },
+      second: { storeKey: string; defaultState: TSecond },
+      mutator: (firstState: TFirst, secondState: TSecond) => Promise<R> | R,
+    ): Promise<R> => {
+      const firstState = structuredClone(
+        (store.get(first.storeKey) as TFirst) ?? first.defaultState,
+      );
+      const secondState = structuredClone(
+        (store.get(second.storeKey) as TSecond) ?? second.defaultState,
+      );
+      const result = await mutator(firstState, secondState);
+      store.set(first.storeKey, structuredClone(firstState));
+      store.set(second.storeKey, structuredClone(secondState));
       return result;
     },
   ),
@@ -30,55 +44,147 @@ vi.mock("../../lib/state-store.js", () => ({
 vi.mock("../../lib/runtime-env.js", () => ({
   getApiRuntimeEnv: () => ({
     DATABASE_URL: "postgres://localhost:5432/test",
+    DATABASE_SSL_MODE: "disable",
     JWT_SECRET: "a]ks8d7f6g5h4j3k2l1m0n9b8v7c6x5z4",
     SIWE_DOMAIN: "localhost",
     KYC_PROVIDER: "disabled",
   }),
 }));
 
+vi.mock("../../services/blockchain/contracts.js", () => ({
+  getExplorerTxLink: (txHash: string) => `https://explorer.test/tx/${txHash}`,
+  verifyListingOnChain: vi.fn(
+    async ({ txHash, seller }: { txHash: string; seller: string }) => {
+      if (txHash === transactionHash("f")) {
+        throw new Error(
+          "Listing receipt did not confirm the requested operation",
+        );
+      }
+      return {
+        txHash,
+        blockNumber: 101,
+        listingId: BigInt(`0x${txHash.slice(-8)}`).toString(),
+        seller: seller.toLowerCase(),
+      };
+    },
+  ),
+  verifyPurchaseOnChain: vi.fn(
+    async ({
+      txHash,
+      buyer,
+      totalPrice,
+    }: {
+      txHash: string;
+      buyer: string;
+      totalPrice: string;
+    }) => ({
+      txHash,
+      blockNumber: 102,
+      buyer: buyer.toLowerCase(),
+      seller: SELLER,
+      platformFee: ((BigInt(totalPrice) * 250n) / 10_000n).toString(),
+    }),
+  ),
+  verifyListingCancellationOnChain: vi.fn(
+    async ({ txHash, seller }: { txHash: string; seller: string }) => ({
+      txHash,
+      blockNumber: 103,
+      seller: seller.toLowerCase(),
+    }),
+  ),
+}));
+
 import { marketplaceRoutes } from "./marketplace.js";
 
 const SELLER = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const BUYER = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-const THIRD_PARTY = "0xcccccccccccccccccccccccccccccccccccccccc";
 const JWT_SECRET = "a]ks8d7f6g5h4j3k2l1m0n9b8v7c6x5z4";
+const CREDIT_STORE_KEY = "credits:v1";
+
+function transactionHash(character: string): string {
+  return `0x${character.repeat(64)}`;
+}
+
+function seedSellerCredit(amount = 100): void {
+  const now = new Date().toISOString();
+  store.set(CREDIT_STORE_KEY, {
+    credits: {
+      credit_seller: {
+        id: "credit_seller",
+        tokenId: "1",
+        verificationId: "verification_1",
+        dacUnitId: "dac_1",
+        captureStartTime: now,
+        captureEndTime: now,
+        co2CapturedKg: amount * 1000,
+        energyConsumedKwh: amount * 200,
+        creditsIssued: amount,
+        escrowedAmount: 0,
+        initialCreditsIssued: amount,
+        retiredAmount: 0,
+        sourceDataHash: `0x${"1".repeat(64)}`,
+        verificationStatus: "minted",
+        efficiencyFactor: 9000,
+        mintTxHash: transactionHash("9"),
+        ipfsMetadataCid: null,
+        arweaveTxId: null,
+        currentOwnerId: "user_aaaaaaaa",
+        currentOwnerWallet: SELLER,
+        isRetired: false,
+        retiredAt: null,
+        retirementReason: null,
+        retirementTxHash: null,
+        retirementTxHashes: [],
+        createdAt: now,
+        updatedAt: now,
+      },
+    },
+    verificationToCredit: { verification_1: "credit_seller" },
+    nextTokenId: 2,
+  });
+}
 
 async function buildApp() {
   const app = Fastify({ logger: false });
-  await app.register(rateLimit, {
-    max: 100,
-    timeWindow: "1 minute",
-  });
+  await app.register(rateLimit, { max: 100, timeWindow: "1 minute" });
   await app.register(jwt, { secret: JWT_SECRET });
-
   await app.register(marketplaceRoutes, { prefix: "/v1/marketplace" });
   await app.ready();
   return app;
 }
 
-function sign(app: ReturnType<typeof Fastify>, payload: object) {
-  return (app as unknown as { jwt: { sign: (p: object) => string } }).jwt.sign(payload);
-}
-
-/** Creates a listing via the API and returns the parsed response body */
-async function createListing(
+function sign(
   app: Awaited<ReturnType<typeof buildApp>>,
   wallet: string,
+  kycStatus: "approved" | "pending" = "approved",
+) {
+  return app.jwt.sign({
+    sub: wallet,
+    address: wallet,
+    chainId: 7332,
+    userType: "operator",
+    kycStatus,
+  });
+}
+
+async function createListing(
+  app: Awaited<ReturnType<typeof buildApp>>,
   overrides: Record<string, unknown> = {},
 ) {
-  const token = sign(app, { address: wallet });
-  const res = await app.inject({
+  return app.inject({
     method: "POST",
     url: "/v1/marketplace/listings",
-    headers: { authorization: `Bearer ${token}` },
+    headers: { authorization: `Bearer ${sign(app, SELLER)}` },
     payload: {
-      tokenId: "token_1",
-      amount: 100,
-      pricePerUnit: "1000000000000000000", // 1 ether in wei
+      tokenId: "1",
+      amount: 20,
+      pricePerUnit: "1000000000000000000",
+      minPurchaseAmount: 1,
+      durationDays: 30,
+      txHash: transactionHash("1"),
       ...overrides,
     },
   });
-  return res;
 }
 
 describe("marketplace routes", () => {
@@ -86,375 +192,214 @@ describe("marketplace routes", () => {
 
   beforeEach(async () => {
     store.clear();
+    seedSellerCredit();
     app = await buildApp();
   });
 
-  // ---------- Listings ----------
+  it("indexes a confirmed wallet-signed listing and moves credits to escrow", async () => {
+    const response = await createListing(app);
 
-  it("creates a listing successfully", async () => {
-    const res = await createListing(app, SELLER);
-    expect(res.statusCode).toBe(201);
-    const data = res.json().data;
-    expect(data.status).toBe("active");
-    expect(data.txHash).toMatch(/^0x/);
+    expect(response.statusCode).toBe(201);
+    expect(response.json().data).toMatchObject({
+      tokenId: "1",
+      amount: 20,
+      remainingAmount: 20,
+      sellerWallet: SELLER,
+      status: "active",
+      txHash: transactionHash("1"),
+      blockNumber: 101,
+    });
+
+    const credits = store.get(CREDIT_STORE_KEY) as {
+      credits: Record<
+        string,
+        { creditsIssued: number; escrowedAmount: number }
+      >;
+    };
+    expect(credits.credits.credit_seller).toMatchObject({
+      creditsIssued: 80,
+      escrowedAmount: 20,
+    });
   });
 
-  it("returns 401 when creating listing without auth", async () => {
-    const res = await app.inject({
+  it("requires authentication and approved KYC", async () => {
+    const payload = {
+      tokenId: "1",
+      amount: 1,
+      pricePerUnit: "1",
+      txHash: transactionHash("2"),
+    };
+    const unauthenticated = await app.inject({
       method: "POST",
       url: "/v1/marketplace/listings",
-      payload: { tokenId: "t", amount: 1, pricePerUnit: "100" },
+      payload,
     });
-    expect(res.statusCode).toBe(401);
-  });
+    expect(unauthenticated.statusCode).toBe(401);
 
-  it("lists active listings by default", async () => {
-    await createListing(app, SELLER);
-    await createListing(app, SELLER, { tokenId: "token_2" });
-
-    const res = await app.inject({
-      method: "GET",
+    const pendingKyc = await app.inject({
+      method: "POST",
       url: "/v1/marketplace/listings",
+      headers: { authorization: `Bearer ${sign(app, SELLER, "pending")}` },
+      payload,
     });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().data).toHaveLength(2);
+    expect(pendingKyc.statusCode).toBe(403);
   });
 
-  it("returns listing details by id", async () => {
-    const created = await createListing(app, SELLER);
-    const listingId = created.json().data.listingId;
-
-    const res = await app.inject({
-      method: "GET",
-      url: `/v1/marketplace/listings/${listingId}`,
+  it("rejects an unconfirmed or mismatched listing receipt", async () => {
+    const response = await createListing(app, {
+      txHash: transactionHash("f"),
     });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().data.tokenId).toBe("token_1");
+    expect(response.statusCode).toBe(422);
+    expect(response.json().error).toMatch(/receipt/i);
   });
 
-  it("returns 404 for non-existent listing", async () => {
-    const res = await app.inject({
-      method: "GET",
-      url: "/v1/marketplace/listings/nope",
+  it("does not index more credits than the authenticated wallet owns", async () => {
+    const response = await createListing(app, {
+      amount: 101,
+      txHash: transactionHash("2"),
     });
-    expect(res.statusCode).toBe(404);
+    expect(response.statusCode).toBe(409);
+    expect(response.json().error).toMatch(/available balance/i);
   });
 
-  // ---------- Cancel listing ----------
-
-  it("cancels own listing", async () => {
-    const created = await createListing(app, SELLER);
-    const listingId = created.json().data.listingId;
-
-    const token = sign(app, { address: SELLER });
-    const res = await app.inject({
-      method: "DELETE",
-      url: `/v1/marketplace/listings/${listingId}`,
-      headers: { authorization: `Bearer ${token}` },
-    });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().data.status).toBe("cancelled");
+  it("treats a repeated listing transaction as an idempotent retry", async () => {
+    const first = await createListing(app);
+    const second = await createListing(app);
+    expect(first.statusCode).toBe(201);
+    expect(second.statusCode).toBe(200);
+    expect(second.json().data.id).toBe(first.json().data.id);
   });
 
-  it("returns 403 when non-owner cancels listing", async () => {
-    const created = await createListing(app, SELLER);
-    const listingId = created.json().data.listingId;
-
-    const token = sign(app, { address: BUYER });
-    const res = await app.inject({
-      method: "DELETE",
-      url: `/v1/marketplace/listings/${listingId}`,
-      headers: { authorization: `Bearer ${token}` },
-    });
-    expect(res.statusCode).toBe(403);
-  });
-
-  // ---------- Purchase ----------
-
-  it("purchases credits from a listing", async () => {
-    const created = await createListing(app, SELLER, { minPurchaseAmount: 1 });
-    const listingId = created.json().data.listingId;
-
-    const token = sign(app, { address: BUYER });
-    const res = await app.inject({
+  it("indexes a confirmed purchase and transfers the indexed holding", async () => {
+    const created = await createListing(app);
+    const listingId = created.json().data.id as string;
+    const response = await app.inject({
       method: "POST",
       url: `/v1/marketplace/listings/${listingId}/purchase`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { amount: 10 },
+      headers: { authorization: `Bearer ${sign(app, BUYER)}` },
+      payload: { amount: 5, txHash: transactionHash("3") },
     });
-    expect(res.statusCode).toBe(201);
-    const data = res.json().data;
-    expect(data.amount).toBe(10);
-    expect(data.totalPrice).toBe("10000000000000000000"); // 10 * 1e18
-    // platform fee 2.5%
-    expect(data.platformFee).toBe("250000000000000000"); // 2.5% of 10e18
+
+    expect(response.statusCode).toBe(201);
+    expect(response.json().data).toMatchObject({
+      listingId,
+      buyerWallet: BUYER,
+      sellerWallet: SELLER,
+      amount: 5,
+      totalPrice: "5000000000000000000",
+      platformFee: "125000000000000000",
+      sellerProceeds: "4875000000000000000",
+      txHash: transactionHash("3"),
+      blockNumber: 102,
+    });
+
+    const credits = store.get(CREDIT_STORE_KEY) as {
+      credits: Record<
+        string,
+        {
+          creditsIssued: number;
+          escrowedAmount: number;
+          currentOwnerWallet: string;
+        }
+      >;
+    };
+    expect(credits.credits.credit_seller.escrowedAmount).toBe(15);
+    expect(
+      Object.values(credits.credits).find(
+        (credit) => credit.currentOwnerWallet === BUYER,
+      )?.creditsIssued,
+    ).toBe(5);
   });
 
-  it("prevents self-purchase", async () => {
-    const created = await createListing(app, SELLER);
-    const listingId = created.json().data.listingId;
+  it("enforces listing ownership, availability, and purchase limits", async () => {
+    const created = await createListing(app, { minPurchaseAmount: 5 });
+    const listingId = created.json().data.id as string;
 
-    const token = sign(app, { address: SELLER });
-    const res = await app.inject({
+    const selfPurchase = await app.inject({
       method: "POST",
       url: `/v1/marketplace/listings/${listingId}/purchase`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { amount: 1 },
+      headers: { authorization: `Bearer ${sign(app, SELLER)}` },
+      payload: { amount: 5, txHash: transactionHash("4") },
     });
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error).toMatch(/own listing/i);
-  });
+    expect(selfPurchase.statusCode).toBe(409);
+    expect(selfPurchase.json().error).toMatch(/own listing/i);
 
-  it("enforces minimum purchase amount", async () => {
-    const created = await createListing(app, SELLER, { minPurchaseAmount: 50 });
-    const listingId = created.json().data.listingId;
-
-    const token = sign(app, { address: BUYER });
-    const res = await app.inject({
+    const belowMinimum = await app.inject({
       method: "POST",
       url: `/v1/marketplace/listings/${listingId}/purchase`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { amount: 5 },
+      headers: { authorization: `Bearer ${sign(app, BUYER)}` },
+      payload: { amount: 4, txHash: transactionHash("5") },
     });
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error).toMatch(/minimum/i);
+    expect(belowMinimum.statusCode).toBe(409);
+    expect(belowMinimum.json().error).toMatch(/listing limits/i);
   });
 
-  it("rejects purchase exceeding remaining amount", async () => {
-    const created = await createListing(app, SELLER, { amount: 10 });
-    const listingId = created.json().data.listingId;
+  it("indexes a confirmed cancellation and releases unsold escrow", async () => {
+    const created = await createListing(app);
+    const listingId = created.json().data.id as string;
 
-    const token = sign(app, { address: BUYER });
-    const res = await app.inject({
+    const forbidden = await app.inject({
       method: "POST",
-      url: `/v1/marketplace/listings/${listingId}/purchase`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { amount: 999 },
+      url: `/v1/marketplace/listings/${listingId}/cancel`,
+      headers: { authorization: `Bearer ${sign(app, BUYER)}` },
+      payload: { txHash: transactionHash("6") },
     });
-    expect(res.statusCode).toBe(400);
-    expect(res.json().error).toMatch(/insufficient/i);
+    expect(forbidden.statusCode).toBe(403);
+
+    const response = await app.inject({
+      method: "POST",
+      url: `/v1/marketplace/listings/${listingId}/cancel`,
+      headers: { authorization: `Bearer ${sign(app, SELLER)}` },
+      payload: { txHash: transactionHash("7") },
+    });
+    expect(response.statusCode).toBe(200);
+    expect(response.json().data).toMatchObject({
+      status: "cancelled",
+      cancellationTxHash: transactionHash("7"),
+    });
+
+    const credits = store.get(CREDIT_STORE_KEY) as {
+      credits: Record<
+        string,
+        { creditsIssued: number; escrowedAmount: number }
+      >;
+    };
+    expect(credits.credits.credit_seller).toMatchObject({
+      creditsIssued: 100,
+      escrowedAmount: 0,
+    });
   });
 
-  it("marks listing as sold when fully purchased", async () => {
-    const created = await createListing(app, SELLER, { amount: 10 });
-    const listingId = created.json().data.listingId;
-
-    const token = sign(app, { address: BUYER });
+  it("returns only receipt-backed listings, purchases, and native-denominated stats", async () => {
+    const created = await createListing(app);
+    const listingId = created.json().data.id as string;
     await app.inject({
       method: "POST",
       url: `/v1/marketplace/listings/${listingId}/purchase`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { amount: 10 },
+      headers: { authorization: `Bearer ${sign(app, BUYER)}` },
+      payload: { amount: 5, txHash: transactionHash("8") },
     });
 
-    const detail = await app.inject({
-      method: "GET",
-      url: `/v1/marketplace/listings/${listingId}`,
+    const [listings, detail, purchases, stats] = await Promise.all([
+      app.inject({ method: "GET", url: "/v1/marketplace/listings" }),
+      app.inject({
+        method: "GET",
+        url: `/v1/marketplace/listings/${listingId}`,
+      }),
+      app.inject({ method: "GET", url: "/v1/marketplace/purchases" }),
+      app.inject({ method: "GET", url: "/v1/marketplace/stats" }),
+    ]);
+
+    expect(listings.json().data).toHaveLength(1);
+    expect(detail.json().data.remainingAmount).toBe(15);
+    expect(purchases.json().data).toHaveLength(1);
+    expect(stats.json().data).toMatchObject({
+      activeListings: 1,
+      totalCreditsListed: 15,
+      totalCreditsTraded: 5,
+      totalTransactions24h: 1,
+      denomination: "AETH_WEI",
+      usdConversion: null,
     });
-    expect(detail.json().data.status).toBe("sold");
-  });
-
-  // ---------- Offers ----------
-
-  it("creates an offer", async () => {
-    const token = sign(app, { address: BUYER });
-    const res = await app.inject({
-      method: "POST",
-      url: "/v1/marketplace/offers",
-      headers: { authorization: `Bearer ${token}` },
-      payload: {
-        tokenId: "token_1",
-        amount: 10,
-        pricePerUnit: "500000000000000000",
-        durationDays: 7,
-      },
-    });
-    expect(res.statusCode).toBe(201);
-    expect(res.json().data.status).toBe("active");
-    expect(res.json().data.depositAmount).toBe("5000000000000000000");
-  });
-
-  it("accepts an offer", async () => {
-    // Create offer as buyer
-    const buyerToken = sign(app, { address: BUYER });
-    const offerRes = await app.inject({
-      method: "POST",
-      url: "/v1/marketplace/offers",
-      headers: { authorization: `Bearer ${buyerToken}` },
-      payload: {
-        tokenId: "token_1",
-        amount: 5,
-        pricePerUnit: "1000000000000000000",
-        durationDays: 7,
-      },
-    });
-    const offerId = offerRes.json().data.offerId;
-
-    // Accept as seller
-    const sellerToken = sign(app, { address: SELLER });
-    const acceptRes = await app.inject({
-      method: "POST",
-      url: `/v1/marketplace/offers/${offerId}/accept`,
-      headers: { authorization: `Bearer ${sellerToken}` },
-    });
-    expect(acceptRes.statusCode).toBe(200);
-    expect(acceptRes.json().data.status).toBe("accepted");
-    expect(acceptRes.json().data.txHash).toMatch(/^0x/);
-  });
-
-  it("prevents buyer from accepting their own offer", async () => {
-    const buyerToken = sign(app, { address: BUYER });
-    const offerRes = await app.inject({
-      method: "POST",
-      url: "/v1/marketplace/offers",
-      headers: { authorization: `Bearer ${buyerToken}` },
-      payload: {
-        tokenId: "t",
-        amount: 1,
-        pricePerUnit: "100",
-        durationDays: 1,
-      },
-    });
-    const offerId = offerRes.json().data.offerId;
-
-    const acceptRes = await app.inject({
-      method: "POST",
-      url: `/v1/marketplace/offers/${offerId}/accept`,
-      headers: { authorization: `Bearer ${buyerToken}` },
-    });
-    expect(acceptRes.statusCode).toBe(400);
-    expect(acceptRes.json().error).toMatch(/own offer/i);
-  });
-
-  it("cancels an offer", async () => {
-    const buyerToken = sign(app, { address: BUYER });
-    const offerRes = await app.inject({
-      method: "POST",
-      url: "/v1/marketplace/offers",
-      headers: { authorization: `Bearer ${buyerToken}` },
-      payload: {
-        tokenId: "t",
-        amount: 1,
-        pricePerUnit: "100",
-        durationDays: 1,
-      },
-    });
-    const offerId = offerRes.json().data.offerId;
-
-    const cancelRes = await app.inject({
-      method: "DELETE",
-      url: `/v1/marketplace/offers/${offerId}`,
-      headers: { authorization: `Bearer ${buyerToken}` },
-    });
-    expect(cancelRes.statusCode).toBe(200);
-    expect(cancelRes.json().data.status).toBe("cancelled");
-    expect(cancelRes.json().data.refundAmount).toBeTruthy();
-  });
-
-  it("returns 403 when third party cancels offer", async () => {
-    const buyerToken = sign(app, { address: BUYER });
-    const offerRes = await app.inject({
-      method: "POST",
-      url: "/v1/marketplace/offers",
-      headers: { authorization: `Bearer ${buyerToken}` },
-      payload: {
-        tokenId: "t",
-        amount: 1,
-        pricePerUnit: "100",
-        durationDays: 1,
-      },
-    });
-    const offerId = offerRes.json().data.offerId;
-
-    const thirdToken = sign(app, { address: THIRD_PARTY });
-    const res = await app.inject({
-      method: "DELETE",
-      url: `/v1/marketplace/offers/${offerId}`,
-      headers: { authorization: `Bearer ${thirdToken}` },
-    });
-    expect(res.statusCode).toBe(403);
-  });
-
-  // ---------- Platform fee calculation ----------
-
-  it("calculates 2.5% platform fee correctly", async () => {
-    const created = await createListing(app, SELLER, {
-      amount: 4,
-      pricePerUnit: "2000000000000000000", // 2 ether
-    });
-    const listingId = created.json().data.listingId;
-
-    const token = sign(app, { address: BUYER });
-    const res = await app.inject({
-      method: "POST",
-      url: `/v1/marketplace/listings/${listingId}/purchase`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { amount: 4 },
-    });
-    const data = res.json().data;
-    // total = 4 * 2e18 = 8e18
-    // fee = 8e18 * 250 / 10000 = 2e17
-    expect(data.totalPrice).toBe("8000000000000000000");
-    expect(data.platformFee).toBe("200000000000000000");
-  });
-
-  // ---------- Stats ----------
-
-  it("returns market stats with zero values when empty", async () => {
-    const res = await app.inject({
-      method: "GET",
-      url: "/v1/marketplace/stats",
-    });
-    expect(res.statusCode).toBe(200);
-    const data = res.json().data;
-    expect(data.activeListings).toBe(0);
-    expect(data.totalTransactions24h).toBe(0);
-    expect(data.totalCreditsMinted).toBe(0);
-  });
-
-  it("returns aggregate stats after listings and purchases", async () => {
-    // Create and purchase
-    const created = await createListing(app, SELLER, { amount: 10 });
-    const listingId = created.json().data.listingId;
-
-    const token = sign(app, { address: BUYER });
-    await app.inject({
-      method: "POST",
-      url: `/v1/marketplace/listings/${listingId}/purchase`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { amount: 5 },
-    });
-
-    const res = await app.inject({
-      method: "GET",
-      url: "/v1/marketplace/stats",
-    });
-    const data = res.json().data;
-    expect(data.activeListings).toBe(1); // 5 remaining
-    expect(data.totalCreditsTraded).toBe(5);
-    expect(data.totalTransactions24h).toBe(1);
-  });
-
-  // ---------- Purchases ----------
-
-  it("returns purchase history", async () => {
-    const created = await createListing(app, SELLER, { amount: 20 });
-    const listingId = created.json().data.listingId;
-
-    const token = sign(app, { address: BUYER });
-    await app.inject({
-      method: "POST",
-      url: `/v1/marketplace/listings/${listingId}/purchase`,
-      headers: { authorization: `Bearer ${token}` },
-      payload: { amount: 3 },
-    });
-
-    const res = await app.inject({
-      method: "GET",
-      url: "/v1/marketplace/purchases",
-    });
-    expect(res.statusCode).toBe(200);
-    expect(res.json().data).toHaveLength(1);
-    expect(res.json().data[0].amount).toBe(3);
   });
 });

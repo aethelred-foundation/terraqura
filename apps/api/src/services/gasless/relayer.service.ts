@@ -1,7 +1,11 @@
 // TerraQura Gasless Transaction Relayer
-// Enables meta-transactions via OpenZeppelin Defender
+// Enables signed ERC-2771 meta-transactions.
+
+import { readFileSync } from "node:fs";
 
 import { ethers } from "ethers";
+
+import { getApiRuntimeEnv } from "../../lib/runtime-env.js";
 
 // ERC-2771 ForwardRequest type
 interface ForwardRequest {
@@ -16,9 +20,7 @@ interface ForwardRequest {
 
 interface RelayerConfig {
   forwarderAddress: string;
-  defenderApiKey?: string;
-  defenderApiSecret?: string;
-  privateKey?: string;
+  privateKey: string;
   rpcUrl: string;
   chainId: number;
 }
@@ -45,7 +47,7 @@ type ForwarderContract = ethers.Contract & {
   execute: (
     request: ForwardRequestTuple,
     signature: string,
-    overrides?: { gasLimit?: bigint }
+    overrides?: { gasLimit?: bigint },
   ) => Promise<ethers.ContractTransactionResponse>;
 };
 
@@ -89,22 +91,19 @@ const FORWARDER_DOMAIN = {
 export class GaslessRelayer {
   private config: RelayerConfig;
   private provider: ethers.JsonRpcProvider;
-  private signer: ethers.Wallet | null = null;
+  private signer: ethers.Wallet;
   private forwarder: ForwarderContract;
 
   constructor(config: RelayerConfig) {
     this.config = config;
     this.provider = new ethers.JsonRpcProvider(config.rpcUrl);
 
-    // Initialize signer (use Defender Relayer in production)
-    if (config.privateKey) {
-      this.signer = new ethers.Wallet(config.privateKey, this.provider);
-    }
+    this.signer = new ethers.Wallet(config.privateKey, this.provider);
 
     this.forwarder = new ethers.Contract(
       config.forwarderAddress,
       FORWARDER_ABI,
-      this.signer || this.provider
+      this.signer,
     ) as ForwarderContract;
   }
 
@@ -122,7 +121,7 @@ export class GaslessRelayer {
     from: string,
     to: string,
     data: string,
-    gasLimit?: bigint
+    gasLimit?: bigint,
   ): Promise<{ request: ForwardRequest; domain: object }> {
     const nonce = await this.getNonce(from);
 
@@ -169,13 +168,10 @@ export class GaslessRelayer {
    */
   async verifyRequest(
     request: ForwardRequest,
-    signature: string
+    signature: string,
   ): Promise<boolean> {
     try {
-      return await this.forwarder.verify(
-        toTuple(request),
-        signature
-      );
+      return await this.forwarder.verify(toTuple(request), signature);
     } catch (error) {
       console.error("Request verification failed:", error);
       return false;
@@ -187,15 +183,8 @@ export class GaslessRelayer {
    */
   async relay(
     request: ForwardRequest,
-    signature: string
+    signature: string,
   ): Promise<RelayResult> {
-    if (!this.signer) {
-      return {
-        success: false,
-        error: "Relayer not configured with signing capability",
-      };
-    }
-
     // Verify the request first
     const isValid = await this.verifyRequest(request, signature);
     if (!isValid) {
@@ -215,13 +204,9 @@ export class GaslessRelayer {
       }
 
       // Execute via forwarder
-      const tx = await this.forwarder.execute(
-        toTuple(request),
-        signature,
-        {
-          gasLimit: request.gas + BigInt(50000), // Extra for forwarder overhead
-        }
-      );
+      const tx = await this.forwarder.execute(toTuple(request), signature, {
+        gasLimit: request.gas + BigInt(50000), // Extra for forwarder overhead
+      });
 
       const receipt = await tx.wait();
 
@@ -241,47 +226,6 @@ export class GaslessRelayer {
       return {
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
-      };
-    }
-  }
-
-  /**
-   * Relay via OpenZeppelin Defender (production)
-   */
-  async relayViaDefender(
-    request: ForwardRequest,
-    signature: string
-  ): Promise<RelayResult> {
-    if (!this.config.defenderApiKey || !this.config.defenderApiSecret) {
-      return {
-        success: false,
-        error: "Defender credentials not configured",
-      };
-    }
-
-    try {
-      // In production, use @openzeppelin/defender-sdk
-      // const { Defender } = require("@openzeppelin/defender-sdk");
-      // const client = new Defender({
-      //   apiKey: this.config.defenderApiKey,
-      //   apiSecret: this.config.defenderApiSecret,
-      // });
-      //
-      // const tx = await client.relaySigner.sendTransaction({
-      //   to: this.config.forwarderAddress,
-      //   data: this.forwarder.interface.encodeFunctionData("execute", [
-      //     [request.from, request.to, request.value, request.gas, request.nonce, request.deadline, request.data],
-      //     signature,
-      //   ]),
-      //   speed: "fast",
-      // });
-
-      // Fallback to direct relay for now
-      return this.relay(request, signature);
-    } catch (error) {
-      return {
-        success: false,
-        error: error instanceof Error ? error.message : "Defender relay failed",
       };
     }
   }
@@ -311,21 +255,33 @@ let relayer: GaslessRelayer | null = null;
 
 export function getGaslessRelayer(): GaslessRelayer | null {
   if (!relayer) {
-    const forwarderAddress = process.env.FORWARDER_CONTRACT;
-    const rpcUrl = process.env.AETHELRED_RPC_URL;
+    const env = getApiRuntimeEnv();
+    const forwarderAddress = env.FORWARDER_CONTRACT;
 
-    if (!forwarderAddress || !rpcUrl) {
+    if (!forwarderAddress) {
       console.warn("Gasless relayer not configured");
       return null;
     }
 
+    let privateKey: string | undefined;
+    if (env.NODE_ENV === "production") {
+      const signerKeyFile = env.RELAYER_SIGNER_KEY_FILE;
+      if (!signerKeyFile) {
+        throw new Error("Gasless relayer signer file is not configured");
+      }
+      privateKey = readFileSync(signerKeyFile, "utf8").trim();
+    } else {
+      privateKey = env.RELAYER_PRIVATE_KEY;
+    }
+    if (!privateKey || !/^0x[a-fA-F0-9]{64}$/.test(privateKey)) {
+      throw new Error("Gasless relayer signer secret is invalid");
+    }
+
     relayer = new GaslessRelayer({
       forwarderAddress,
-      rpcUrl,
-      chainId: parseInt(process.env.CHAIN_ID || "78432", 10),
-      privateKey: process.env.RELAYER_PRIVATE_KEY,
-      defenderApiKey: process.env.DEFENDER_RELAYER_API_KEY,
-      defenderApiSecret: process.env.DEFENDER_RELAYER_API_SECRET,
+      rpcUrl: env.AETHELRED_RPC_URL,
+      chainId: env.CHAIN_ID,
+      privateKey,
     });
   }
 

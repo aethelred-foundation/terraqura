@@ -1,4 +1,6 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { scryptSync } from "node:crypto";
+
+import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import {
   createTestServer,
@@ -6,10 +8,39 @@ import {
   resetStateStore,
   seedState,
 } from "../../../test/helpers.js";
+
 import type { FastifyInstance } from "fastify";
 
 const SENSORS_STORE_KEY = "sensors:v1";
-const VALID_API_KEY = "test-sensor-key-1"; // Maps to dac-unit-001
+const API_KEYS_STORE_KEY = "api-keys:v2";
+const VALID_API_KEY = `tqs_${"1".repeat(64)}`;
+
+function seedSensorCredential() {
+  const now = new Date().toISOString();
+  const salt = "sensor-test-salt";
+  seedState(API_KEYS_STORE_KEY, {
+    keys: {
+      key_sensor: {
+        id: "key_sensor",
+        walletAddress: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        dacUnitId: "dac-unit-001",
+        name: "Test sensor",
+        type: "sensor",
+        description: null,
+        keyHash: scryptSync(VALID_API_KEY, salt, 64).toString("hex"),
+        keySalt: salt,
+        keyPrefix: VALID_API_KEY.slice(0, 8),
+        permissions: ["sensors:write"],
+        isActive: true,
+        expiresAt: null,
+        lastUsedAt: null,
+        totalRequests: 0,
+        createdAt: now,
+        updatedAt: now,
+      },
+    },
+  });
+}
 
 describe("Sensors routes", () => {
   let server: FastifyInstance;
@@ -18,8 +49,9 @@ describe("Sensors routes", () => {
     server = await createTestServer();
   });
 
-  afterEach(() => {
+  beforeEach(() => {
     resetStateStore();
+    seedSensorCredential();
   });
 
   afterAll(async () => {
@@ -181,7 +213,7 @@ describe("Sensors routes", () => {
       expect(body.data.timestamp >= before).toBe(true);
     });
 
-    it("generates a deterministic hash for the same input data", async () => {
+    it("rejects replayed evidence with the same deterministic hash", async () => {
       const payload = {
         sensorId: "sensor-hash-test",
         timestamp: "2026-01-01T00:00:00.000Z",
@@ -204,7 +236,10 @@ describe("Sensors routes", () => {
         payload,
       });
 
-      expect(r1.json().data.dataHash).toBe(r2.json().data.dataHash);
+      expect(r1.statusCode).toBe(201);
+      expect(r1.json().data.dataHash).toMatch(/^0x[a-f0-9]{64}$/);
+      expect(r2.statusCode).toBe(409);
+      expect(r2.json().error).toMatch(/already been accepted/i);
     });
   });
 
@@ -285,7 +320,7 @@ describe("Sensors routes", () => {
       expect(response.statusCode).toBe(401);
     });
 
-    it("produces a consistent batch hash for same input data", async () => {
+    it("rejects a replayed batch", async () => {
       const readings = [
         {
           sensorId: "sensor-batch",
@@ -310,7 +345,10 @@ describe("Sensors routes", () => {
         payload: { readings },
       });
 
-      expect(r1.json().data.batchHash).toBe(r2.json().data.batchHash);
+      expect(r1.statusCode).toBe(201);
+      expect(r1.json().data.batchHash).toMatch(/^0x[a-f0-9]{64}$/);
+      expect(r2.statusCode).toBe(409);
+      expect(r2.json().error).toMatch(/already been accepted/i);
     });
   });
 

@@ -133,43 +133,67 @@ module.exports = {
       },
       fontSize: {
         // Fluid typography scale
-        "display-2xl": ["clamp(3rem, 2rem + 5vw, 6rem)", { 
-          lineHeight: "1.05", 
-          letterSpacing: "-0.03em", 
-          fontWeight: "700" 
-        }],
-        "display-xl": ["clamp(2.5rem, 1.8rem + 3.5vw, 4.5rem)", { 
-          lineHeight: "1.1", 
-          letterSpacing: "-0.025em", 
-          fontWeight: "700" 
-        }],
-        "display-lg": ["clamp(2rem, 1.5rem + 2.5vw, 3.5rem)", { 
-          lineHeight: "1.15", 
-          letterSpacing: "-0.02em", 
-          fontWeight: "700" 
-        }],
-        "display": ["clamp(1.75rem, 1.3rem + 2vw, 2.75rem)", { 
-          lineHeight: "1.2", 
-          letterSpacing: "-0.02em", 
-          fontWeight: "700" 
-        }],
-        "display-sm": ["clamp(1.5rem, 1.2rem + 1.5vw, 2.25rem)", { 
-          lineHeight: "1.25", 
-          letterSpacing: "-0.015em", 
-          fontWeight: "600" 
-        }],
-        "body-xl": ["clamp(1.25rem, 1.1rem + 0.75vw, 1.75rem)", { 
-          lineHeight: "1.6", 
-          fontWeight: "400" 
-        }],
-        "body-lg": ["clamp(1.125rem, 1rem + 0.5vw, 1.5rem)", { 
-          lineHeight: "1.6", 
-          fontWeight: "400" 
-        }],
-        "body": ["clamp(1rem, 0.95rem + 0.25vw, 1.125rem)", { 
-          lineHeight: "1.7", 
-          fontWeight: "400" 
-        }],
+        "display-2xl": [
+          "clamp(3rem, 2rem + 5vw, 6rem)",
+          {
+            lineHeight: "1.05",
+            letterSpacing: "-0.03em",
+            fontWeight: "700",
+          },
+        ],
+        "display-xl": [
+          "clamp(2.5rem, 1.8rem + 3.5vw, 4.5rem)",
+          {
+            lineHeight: "1.1",
+            letterSpacing: "-0.025em",
+            fontWeight: "700",
+          },
+        ],
+        "display-lg": [
+          "clamp(2rem, 1.5rem + 2.5vw, 3.5rem)",
+          {
+            lineHeight: "1.15",
+            letterSpacing: "-0.02em",
+            fontWeight: "700",
+          },
+        ],
+        display: [
+          "clamp(1.75rem, 1.3rem + 2vw, 2.75rem)",
+          {
+            lineHeight: "1.2",
+            letterSpacing: "-0.02em",
+            fontWeight: "700",
+          },
+        ],
+        "display-sm": [
+          "clamp(1.5rem, 1.2rem + 1.5vw, 2.25rem)",
+          {
+            lineHeight: "1.25",
+            letterSpacing: "-0.015em",
+            fontWeight: "600",
+          },
+        ],
+        "body-xl": [
+          "clamp(1.25rem, 1.1rem + 0.75vw, 1.75rem)",
+          {
+            lineHeight: "1.6",
+            fontWeight: "400",
+          },
+        ],
+        "body-lg": [
+          "clamp(1.125rem, 1rem + 0.5vw, 1.5rem)",
+          {
+            lineHeight: "1.6",
+            fontWeight: "400",
+          },
+        ],
+        body: [
+          "clamp(1rem, 0.95rem + 0.25vw, 1.125rem)",
+          {
+            lineHeight: "1.7",
+            fontWeight: "400",
+          },
+        ],
       },
       keyframes: {
         "accordion-down": {
@@ -196,19 +220,25 @@ module.exports = {
           from: { transform: "scale(0.95)", opacity: "0" },
           to: { transform: "scale(1)", opacity: "1" },
         },
-        "float": {
+        float: {
           "0%, 100%": { transform: "translateY(0)" },
           "50%": { transform: "translateY(-20px)" },
         },
         "pulse-glow": {
-          "0%, 100%": { opacity: "0.5", boxShadow: "0 0 20px rgba(16, 185, 129, 0.2)" },
-          "50%": { opacity: "0.8", boxShadow: "0 0 40px rgba(16, 185, 129, 0.4)" },
+          "0%, 100%": {
+            opacity: "0.5",
+            boxShadow: "0 0 20px rgba(16, 185, 129, 0.2)",
+          },
+          "50%": {
+            opacity: "0.8",
+            boxShadow: "0 0 40px rgba(16, 185, 129, 0.4)",
+          },
         },
-        "shimmer": {
+        shimmer: {
           "0%": { backgroundPosition: "-200% 0" },
           "100%": { backgroundPosition: "200% 0" },
         },
-        "marquee": {
+        marquee: {
           from: { transform: "translateX(0)" },
           to: { transform: "translateX(-50%)" },
         },
@@ -228,16 +258,17 @@ module.exports = {
         "slide-down": "slide-down 0.5s cubic-bezier(0.16, 1, 0.3, 1)",
         "fade-in": "fade-in 0.5s cubic-bezier(0.4, 0, 0.2, 1)",
         "scale-in": "scale-in 0.3s cubic-bezier(0.16, 1, 0.3, 1)",
-        "float": "float 6s ease-in-out infinite",
+        float: "float 6s ease-in-out infinite",
         "pulse-glow": "pulse-glow 4s ease-in-out infinite",
-        "shimmer": "shimmer 2s linear infinite",
-        "marquee": "marquee 40s linear infinite",
+        shimmer: "shimmer 2s linear infinite",
+        marquee: "marquee 40s linear infinite",
         "spin-slow": "spin-slow 20s linear infinite",
-        "gradient": "gradient-shift 8s ease infinite",
+        gradient: "gradient-shift 8s ease infinite",
       },
       backgroundImage: {
         "gradient-radial": "radial-gradient(var(--tw-gradient-stops))",
-        "gradient-conic": "conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))",
+        "gradient-conic":
+          "conic-gradient(from 180deg at 50% 50%, var(--tw-gradient-stops))",
         "gradient-mesh": `
           radial-gradient(ellipse at 20% 30%, rgba(16, 185, 129, 0.08) 0%, transparent 50%),
           radial-gradient(ellipse at 80% 70%, rgba(6, 182, 212, 0.06) 0%, transparent 50%),
@@ -249,13 +280,14 @@ module.exports = {
         "glow-cyan": "0 0 40px -10px rgba(6, 182, 212, 0.3)",
         "glow-violet": "0 0 40px -10px rgba(139, 92, 246, 0.3)",
         "glow-strong": "0 0 60px -10px rgba(16, 185, 129, 0.5)",
-        "premium": "0 20px 40px -10px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05)",
+        premium:
+          "0 20px 40px -10px rgba(0, 0, 0, 0.5), 0 0 0 1px rgba(255, 255, 255, 0.05)",
       },
       transitionTimingFunction: {
         "out-expo": "cubic-bezier(0.16, 1, 0.3, 1)",
         "in-expo": "cubic-bezier(0.7, 0, 0.84, 0)",
-        "spring": "cubic-bezier(0.34, 1.56, 0.64, 1)",
-        "dramatic": "cubic-bezier(0.87, 0, 0.13, 1)",
+        spring: "cubic-bezier(0.34, 1.56, 0.64, 1)",
+        dramatic: "cubic-bezier(0.87, 0, 0.13, 1)",
       },
       backdropBlur: {
         xs: "2px",

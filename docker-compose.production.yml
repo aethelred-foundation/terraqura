@@ -17,53 +17,21 @@ x-service-security: &service-security
       max-file: "5"
 
 services:
-  timescaledb:
-    image: timescale/timescaledb:2.19.3-pg15
+  postgres:
+    image: postgres:16.9-alpine
     restart: unless-stopped
     environment:
       POSTGRES_USER: terraqura
       POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
       POSTGRES_DB: terraqura
     volumes:
-      - timescaledb_data:/var/lib/postgresql/data
-      - ./packages/database/src/timescale/schema.sql:/docker-entrypoint-initdb.d/01-timescale.sql:ro
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U terraqura -d terraqura"]
       interval: 10s
       timeout: 5s
       retries: 10
       start_period: 20s
-    networks:
-      - data
-    logging:
-      driver: json-file
-      options:
-        max-size: 10m
-        max-file: "5"
-
-  redis:
-    image: redis:7.4-alpine
-    restart: unless-stopped
-    command:
-      - redis-server
-      - --appendonly
-      - "yes"
-      - --requirepass
-      - ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
-    volumes:
-      - redis_data:/data
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          'redis-cli -a "$${REDIS_PASSWORD}" --no-auth-warning ping | grep PONG',
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 10
-      start_period: 10s
-    environment:
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
     networks:
       - data
     logging:
@@ -86,32 +54,31 @@ services:
       LOG_LEVEL: ${LOG_LEVEL:-info}
       TRUST_PROXY: "1"
       API_DOCS_ENABLED: ${API_DOCS_ENABLED:-false}
-      DATABASE_URL: postgresql://terraqura:${DB_PASSWORD:?DB_PASSWORD is required}@timescaledb:5432/terraqura
+      DATABASE_URL: postgresql://terraqura:${DB_PASSWORD:?DB_PASSWORD is required}@postgres:5432/terraqura
+      DATABASE_SSL_MODE: disable
       JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
       JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-24h}
       SIWE_DOMAIN: ${SIWE_DOMAIN:?SIWE_DOMAIN is required}
+      ADMIN_WALLETS: ${ADMIN_WALLETS:?ADMIN_WALLETS is required}
+      AUDITOR_WALLETS: ${AUDITOR_WALLETS:-}
       CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required}
-      CHAIN_ID: ${CHAIN_ID:-78432}
+      CHAIN_ID: ${CHAIN_ID:?CHAIN_ID is required}
       AETHELRED_RPC_URL: ${AETHELRED_RPC_URL:?AETHELRED_RPC_URL is required}
+      AETHELRED_EXPLORER_URL: ${AETHELRED_EXPLORER_URL:?AETHELRED_EXPLORER_URL is required}
       ACCESS_CONTROL_ADDRESS: ${ACCESS_CONTROL_ADDRESS:?ACCESS_CONTROL_ADDRESS is required}
       VERIFICATION_ENGINE_ADDRESS: ${VERIFICATION_ENGINE_ADDRESS:?VERIFICATION_ENGINE_ADDRESS is required}
       CARBON_CREDIT_ADDRESS: ${CARBON_CREDIT_ADDRESS:?CARBON_CREDIT_ADDRESS is required}
       CARBON_MARKETPLACE_ADDRESS: ${CARBON_MARKETPLACE_ADDRESS:?CARBON_MARKETPLACE_ADDRESS is required}
       CIRCUIT_BREAKER_ADDRESS: ${CIRCUIT_BREAKER_ADDRESS:?CIRCUIT_BREAKER_ADDRESS is required}
-      PRIVATE_KEY: ${PRIVATE_KEY:?PRIVATE_KEY is required}
+      OPERATOR_SIGNER_KEY_FILE: /run/secrets/terraqura_operator_signer
       KYC_PROVIDER: ${KYC_PROVIDER:?KYC_PROVIDER is required}
       SUMSUB_APP_TOKEN: ${SUMSUB_APP_TOKEN:-}
       SUMSUB_SECRET_KEY: ${SUMSUB_SECRET_KEY:-}
-      ONFIDO_API_TOKEN: ${ONFIDO_API_TOKEN:-}
-      SENSOR_API_KEYS: ${SENSOR_API_KEYS:?SENSOR_API_KEYS is required}
-      FORWARDER_CONTRACT: ${FORWARDER_CONTRACT:-}
-      RELAYER_PRIVATE_KEY: ${RELAYER_PRIVATE_KEY:-}
-      DEFENDER_RELAYER_API_KEY: ${DEFENDER_RELAYER_API_KEY:-}
-      DEFENDER_RELAYER_API_SECRET: ${DEFENDER_RELAYER_API_SECRET:-}
+      SUMSUB_WEBHOOK_SECRET: ${SUMSUB_WEBHOOK_SECRET:-}
+    secrets:
+      - terraqura_operator_signer
     depends_on:
-      timescaledb:
-        condition: service_healthy
-      redis:
+      postgres:
         condition: service_healthy
     healthcheck:
       test:
@@ -129,44 +96,14 @@ services:
       - app
       - data
 
-  worker:
-    <<: *service-security
-    build:
-      context: .
-      dockerfile: apps/worker/Dockerfile
-    environment:
-      NODE_ENV: production
-      WORKER_CONCURRENCY: ${WORKER_CONCURRENCY:-5}
-      DATABASE_URL: postgresql://terraqura:${DB_PASSWORD:?DB_PASSWORD is required}@timescaledb:5432/terraqura
-      TIMESCALE_URL: postgresql://terraqura:${DB_PASSWORD:?DB_PASSWORD is required}@timescaledb:5432/terraqura
-      REDIS_HOST: redis
-      REDIS_PORT: 6379
-      REDIS_PASSWORD: ${REDIS_PASSWORD:?REDIS_PASSWORD is required}
-      AETHELRED_RPC_URL: ${AETHELRED_RPC_URL:?AETHELRED_RPC_URL is required}
-      CHAIN_ID: ${CHAIN_ID:-78432}
-      PRIVATE_KEY: ${PRIVATE_KEY:?PRIVATE_KEY is required}
-      MINTER_PRIVATE_KEY: ${PRIVATE_KEY:?PRIVATE_KEY is required}
-      CARBON_CREDIT_CONTRACT: ${CARBON_CREDIT_ADDRESS:?CARBON_CREDIT_ADDRESS is required}
-      VERIFICATION_ENGINE_CONTRACT: ${VERIFICATION_ENGINE_ADDRESS:?VERIFICATION_ENGINE_ADDRESS is required}
-      KYC_PROVIDER: ${KYC_PROVIDER:?KYC_PROVIDER is required}
-      SUMSUB_APP_TOKEN: ${SUMSUB_APP_TOKEN:-}
-      SUMSUB_SECRET_KEY: ${SUMSUB_SECRET_KEY:-}
-      ONFIDO_API_TOKEN: ${ONFIDO_API_TOKEN:-}
-    depends_on:
-      timescaledb:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
-    stop_grace_period: 45s
-    networks:
-      - app
-      - data
-
 volumes:
-  timescaledb_data:
-  redis_data:
+  postgres_data:
 
 networks:
   app:
   data:
     internal: true
+
+secrets:
+  terraqura_operator_signer:
+    file: ${OPERATOR_SIGNER_KEY_FILE:?OPERATOR_SIGNER_KEY_FILE is required}

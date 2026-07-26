@@ -11,7 +11,7 @@ export function shortenAddress(address: string, chars = 4): string {
 
 export function formatNumber(
   num: number,
-  options?: Intl.NumberFormatOptions
+  options?: Intl.NumberFormatOptions,
 ): string {
   return new Intl.NumberFormat("en-US", options).format(num);
 }

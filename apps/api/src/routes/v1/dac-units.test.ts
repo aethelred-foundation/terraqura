@@ -1,4 +1,12 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
 
 const mockWhitelistDacUnitOnChain = vi.fn();
 
@@ -14,6 +22,7 @@ import {
   resetStateStore,
   seedState,
 } from "../../../test/helpers.js";
+
 import type { FastifyInstance } from "fastify";
 
 const DAC_UNITS_STORE_KEY = "dac-units:v1";
@@ -370,7 +379,9 @@ describe("DAC Units routes", () => {
     });
 
     it("returns 503 when on-chain whitelisting is unavailable", async () => {
-      mockWhitelistDacUnitOnChain.mockRejectedValueOnce(new Error("rpc unavailable"));
+      mockWhitelistDacUnitOnChain.mockRejectedValueOnce(
+        new Error("rpc unavailable"),
+      );
       const unit = makeDacUnit({ id: "dac_wl_fail" });
       seedState(DAC_UNITS_STORE_KEY, { units: { dac_wl_fail: unit } });
 

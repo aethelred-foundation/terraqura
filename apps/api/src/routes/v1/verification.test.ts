@@ -1,6 +1,14 @@
 import { createHash } from "crypto";
 
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "vitest";
 
 import {
   createTestServer,
@@ -11,6 +19,7 @@ import {
   resetStateStore,
   seedState,
 } from "../../../test/helpers.js";
+
 import type { FastifyInstance } from "fastify";
 
 const SENSORS_STORE_KEY = "sensors:v1";
@@ -19,7 +28,7 @@ const DAC_UNITS_STORE_KEY = "dac-units:v1";
 
 function buildVerificationDatasetHash(
   dacUnitId: string,
-  readings: Array<{ time: string; sensorId: string; dataHash: string }>
+  readings: Array<{ time: string; sensorId: string; dataHash: string }>,
 ) {
   const digest = createHash("sha256");
   digest.update(dacUnitId.toLowerCase());
@@ -210,6 +219,25 @@ describe("Verification routes", () => {
       expect(body.error).toBe("endTime must be after startTime");
     });
 
+    it("returns 400 when the verification period exceeds 31 days", async () => {
+      const token = generateAuthToken(server);
+      const response = await server.inject({
+        method: "POST",
+        url: "/v1/verification/initiate",
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          dacUnitId: "dac-unit-001",
+          startTime: "2026-01-01T00:00:00.000Z",
+          endTime: "2026-02-02T00:00:00.000Z",
+        },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error).toBe(
+        "Verification periods cannot exceed 31 days",
+      );
+    });
+
     it("fails verification (FAILED) when no sensor readings exist", async () => {
       // No readings seeded
       const token = generateAuthToken(server);
@@ -372,7 +400,7 @@ describe("Verification routes", () => {
           time: reading.time,
           sensorId: reading.sensorId,
           dataHash: reading.dataHash,
-        }))
+        })),
       );
 
       const existing = makeVerification({
@@ -382,7 +410,9 @@ describe("Verification routes", () => {
         endTime: "2026-01-16T00:00:00.000Z",
         sourceDataHash,
       });
-      seedState(VERIFICATIONS_STORE_KEY, { verifications: { ver_existing: existing } });
+      seedState(VERIFICATIONS_STORE_KEY, {
+        verifications: { ver_existing: existing },
+      });
 
       const token = generateAuthToken(server);
       const response = await server.inject({
@@ -490,7 +520,10 @@ describe("Verification routes", () => {
       const verification = makeVerification({
         id: "ver_failed",
         status: "FAILED",
-        sourceCheck: { status: "PASSED", completedAt: new Date().toISOString() },
+        sourceCheck: {
+          status: "PASSED",
+          completedAt: new Date().toISOString(),
+        },
         logicCheck: {
           status: "FAILED",
           completedAt: new Date().toISOString(),
@@ -604,7 +637,12 @@ describe("Verification routes", () => {
         id: "ver_fail_msgs",
         status: "FAILED",
         sourceCheck: { status: "FAILED", completedAt: now },
-        logicCheck: { status: "FAILED", completedAt: now, kwhPerTonne: 100, efficiencyFactor: 0 },
+        logicCheck: {
+          status: "FAILED",
+          completedAt: now,
+          kwhPerTonne: 100,
+          efficiencyFactor: 0,
+        },
         mintCheck: { status: "FAILED", completedAt: now },
       });
       seedState(VERIFICATIONS_STORE_KEY, {
@@ -633,7 +671,10 @@ describe("Verification routes", () => {
         id: "ver_no_credits",
         status: "FAILED",
         creditsToMint: null,
-        sourceCheck: { status: "FAILED", completedAt: new Date().toISOString() },
+        sourceCheck: {
+          status: "FAILED",
+          completedAt: new Date().toISOString(),
+        },
         logicCheck: { status: "PENDING", completedAt: null },
         mintCheck: { status: "PENDING", completedAt: null },
       });

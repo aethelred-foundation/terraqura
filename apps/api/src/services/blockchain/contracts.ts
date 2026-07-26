@@ -1,92 +1,12 @@
-/**
- * TerraQura Blockchain Service
- *
- * Provides ethers.js integration with deployed contracts on Aethelred Testnet
- */
+import { readFileSync } from "node:fs";
 
 import { ethers } from "ethers";
 
-// Contract addresses on Aethelred Testnet (Chain ID: 78432) - Solidity 0.8.32 (Bug-free)
-export const CONTRACTS = {
-  // Core Contracts (UUPS Proxies)
-  accessControl:
-    process.env.ACCESS_CONTROL_ADDRESS ||
-    "0x55695aAAEC30AB495074c57e85Ae2E1A4866B83b",
-  verificationEngine:
-    process.env.VERIFICATION_ENGINE_ADDRESS ||
-    "0x8dad7E87646e9607Fae225e3A7EAD17ce179dEA8",
-  carbonCredit:
-    process.env.CARBON_CREDIT_ADDRESS ||
-    "0x29B58064fD95b175e5824767d3B18bACFafaF959",
-  carbonMarketplace:
-    process.env.CARBON_MARKETPLACE_ADDRESS ||
-    "0x5a4cb32709AB829E2918F0a914FBa1e0Dab2Fdec",
-
-  // Governance Contracts
-  multisig: "0x0805E6ffDE71fd798F3Fe787D1dC907aABA65bAD",
-  timelock: "0xb8b01581d61Bf2D58B8B8626Ebb7Ab959ccF6354",
-
-  // Security Contracts
-  circuitBreaker:
-    process.env.CIRCUIT_BREAKER_ADDRESS ||
-    "0x24192ecf06aA782F1dF69878413D217d9319e257",
-
-  // Gasless Marketplace
-  gaslessMarketplace: "0x45a65e46e8C1D588702cB659b7d3786476Be0A80",
-} as const;
-
-// Network configuration
-export const NETWORK = {
-  chainId: 78432,
-  name: "Aethelred Testnet",
-  rpcUrl:
-    process.env.AETHELRED_RPC_URL || "https://rpc-testnet.aethelred.network",
-  explorerUrl: "https://explorer-testnet.aethelred.network",
-};
-
-// Minimal ABIs for contract interaction
-export const ABIS = {
-  carbonCredit: [
-    "function name() view returns (string)",
-    "function symbol() view returns (string)",
-    "function balanceOf(address account, uint256 id) view returns (uint256)",
-    "function uri(uint256 tokenId) view returns (string)",
-    "function mintVerifiedCredits(address recipient, bytes32 dacId, bytes32 dataHash, uint256 captureTimestamp, uint256 co2AmountKg, uint256 energyConsumedKwh, int256 latitude, int256 longitude, uint8 purityPercentage, uint256 gridIntensityGCO2PerKwh, string metadataUri, string arweaveBackup) external returns (uint256)",
-    "function retireCredits(uint256 tokenId, uint256 amount, string reason) external",
-    "event CreditMinted(uint256 indexed tokenId, bytes32 indexed dacUnitId, address indexed operator, uint256 co2AmountKg, bytes32 sourceDataHash)",
-    "event CreditRetired(uint256 indexed tokenId, address indexed retiredBy, uint256 amount, string retirementReason)",
-    "event Transfer(address indexed operator, address indexed from, address indexed to, uint256 id, uint256 value)",
-  ],
-  carbonMarketplace: [
-    "function createListing(uint256 tokenId, uint256 amount, uint256 pricePerUnit) external returns (uint256)",
-    "function buyCredits(uint256 listingId, uint256 amount) external payable",
-    "function cancelListing(uint256 listingId) external",
-    "function listings(uint256 listingId) view returns (uint256 tokenId, address seller, uint256 amount, uint256 pricePerUnit, bool active)",
-    "function platformFeeBps() view returns (uint256)",
-    "event ListingCreated(uint256 indexed listingId, address indexed seller, uint256 indexed tokenId, uint256 amount, uint256 pricePerUnit)",
-    "event ListingSold(uint256 indexed listingId, address indexed buyer, uint256 amount, uint256 totalPrice)",
-  ],
-  verificationEngine: [
-    "function isWhitelisted(bytes32 dacUnitId) view returns (bool)",
-    "function getOperator(bytes32 dacUnitId) view returns (address)",
-    "function whitelistDacUnit(bytes32 unitId, address operator, string location) external",
-    "function carbonCreditContract() view returns (address)",
-  ],
-  circuitBreaker: [
-    "function isOperationAllowed(address contractAddr) view returns (bool)",
-    "function globalPause() view returns (bool)",
-    "function getStatus() view returns (bool isGloballyPaused, uint8 currentLevel, uint256 monitoredCount)",
-    "function activateGlobalPause(string reason) external",
-  ],
-};
-
-// Provider singleton
-let provider: ethers.JsonRpcProvider | null = null;
+import { getApiRuntimeEnv } from "../../lib/runtime-env.js";
 
 export interface WhitelistDacUnitParams {
   unitId: string;
   operator: string;
-  location: string;
 }
 
 export interface MintVerifiedCreditsParams {
@@ -112,67 +32,184 @@ export interface VerifyRetirementParams {
   reason: string;
 }
 
+export interface VerifyListingParams {
+  txHash: string;
+  seller: string;
+  tokenId: string;
+  amount: number;
+  pricePerUnit: string;
+  minPurchaseAmount: number;
+  durationSeconds: number;
+}
+
+export interface VerifyPurchaseParams {
+  txHash: string;
+  buyer: string;
+  listingId: string;
+  tokenId: string;
+  amount: number;
+  totalPrice: string;
+}
+
+export interface VerifyListingCancellationParams {
+  txHash: string;
+  seller: string;
+  listingId: string;
+}
+
+export interface SyncComplianceStatusParams {
+  wallet: string;
+  status: "pending" | "verified" | "rejected";
+  provider: string;
+  applicantId: string;
+  sanctionsCleared: boolean;
+}
+
+const ABIS = {
+  accessControl: [
+    "function updateComplianceStatus(address account, uint8 status, string provider, bytes32 applicantIdHash, bool sanctionsCleared) external",
+  ],
+  carbonCredit: [
+    "function balanceOf(address account, uint256 id) view returns (uint256)",
+    "function uri(uint256 tokenId) view returns (string)",
+    "function mintVerifiedCredits(address recipient, bytes32 dacId, bytes32 dataHash, uint256 captureTimestamp, uint256 co2AmountKg, uint256 energyConsumedKwh, int256 latitude, int256 longitude, uint8 purityPercentage, uint256 gridIntensityGCO2PerKwh, string metadataUri, string arweaveBackup) external returns (uint256)",
+    "function retireCredits(uint256 tokenId, uint256 amount, string reason) external",
+    "event CreditMinted(uint256 indexed tokenId, bytes32 indexed dacUnitId, address indexed operator, uint256 creditsIssued, bytes32 sourceDataHash)",
+    "event CreditRetired(uint256 indexed tokenId, address indexed retiredBy, uint256 amount, string retirementReason)",
+  ],
+  carbonMarketplace: [
+    "function createListing(uint256 tokenId, uint256 amount, uint256 pricePerUnit, uint256 minPurchaseAmount, uint256 duration) external returns (uint256)",
+    "function purchase(uint256 listingId, uint256 amount) external payable",
+    "function cancelListing(uint256 listingId) external",
+    "function getListing(uint256 listingId) view returns (tuple(uint256 listingId,address seller,uint256 tokenId,uint256 amount,uint256 pricePerUnit,uint256 minPurchaseAmount,bool isActive,uint256 createdAt,uint256 expiresAt))",
+    "event ListingCreated(uint256 indexed listingId, address indexed seller, uint256 indexed tokenId, uint256 amount, uint256 pricePerUnit)",
+    "event ListingCancelled(uint256 indexed listingId, address indexed seller)",
+    "event Purchase(uint256 indexed listingId, address indexed buyer, address indexed seller, uint256 tokenId, uint256 amount, uint256 totalPrice, uint256 platformFee)",
+  ],
+  verificationEngine: [
+    "function isWhitelisted(bytes32 dacUnitId) view returns (bool)",
+    "function getOperator(bytes32 dacUnitId) view returns (address)",
+    "function whitelistDacUnit(bytes32 unitId, address operator) external",
+  ],
+  circuitBreaker: [
+    "function getStatus() view returns (bool isGloballyPaused, uint8 currentLevel, uint256 monitoredCount)",
+  ],
+} as const;
+
+function getContracts() {
+  const env = getApiRuntimeEnv();
+  return {
+    accessControl: env.ACCESS_CONTROL_ADDRESS,
+    verificationEngine: env.VERIFICATION_ENGINE_ADDRESS,
+    carbonCredit: env.CARBON_CREDIT_ADDRESS,
+    carbonMarketplace: env.CARBON_MARKETPLACE_ADDRESS,
+    circuitBreaker: env.CIRCUIT_BREAKER_ADDRESS,
+  } as const;
+}
+
+function getNetwork() {
+  const env = getApiRuntimeEnv();
+  return {
+    chainId: env.CHAIN_ID,
+    name: "Aethelred Testnet",
+    rpcUrl: env.AETHELRED_RPC_URL,
+    explorerUrl: env.AETHELRED_EXPLORER_URL,
+  } as const;
+}
+
+let provider: ethers.JsonRpcProvider | null = null;
+
 export function getProvider(): ethers.JsonRpcProvider {
   if (!provider) {
-    provider = new ethers.JsonRpcProvider(NETWORK.rpcUrl);
+    const network = getNetwork();
+    provider = new ethers.JsonRpcProvider(
+      network.rpcUrl,
+      {
+        chainId: network.chainId,
+        name: network.name,
+      },
+      {
+        staticNetwork: true,
+      },
+    );
   }
   return provider;
 }
 
-// Contract getters
-export function getCarbonCreditContract(
+function getCarbonCreditContract(
   signerOrProvider?: ethers.Signer | ethers.Provider,
 ) {
   return new ethers.Contract(
-    CONTRACTS.carbonCredit,
+    getContracts().carbonCredit,
     ABIS.carbonCredit,
     signerOrProvider || getProvider(),
   );
 }
 
-export function getMarketplaceContract(
+function getAccessControlContract(
   signerOrProvider?: ethers.Signer | ethers.Provider,
 ) {
   return new ethers.Contract(
-    CONTRACTS.carbonMarketplace,
+    getContracts().accessControl,
+    ABIS.accessControl,
+    signerOrProvider || getProvider(),
+  );
+}
+
+function getMarketplaceContract(
+  signerOrProvider?: ethers.Signer | ethers.Provider,
+) {
+  return new ethers.Contract(
+    getContracts().carbonMarketplace,
     ABIS.carbonMarketplace,
     signerOrProvider || getProvider(),
   );
 }
 
-export function getVerificationEngineContract(
+function getVerificationEngineContract(
   signerOrProvider?: ethers.Signer | ethers.Provider,
 ) {
   return new ethers.Contract(
-    CONTRACTS.verificationEngine,
+    getContracts().verificationEngine,
     ABIS.verificationEngine,
     signerOrProvider || getProvider(),
   );
 }
 
-export function getCircuitBreakerContract(
+function getCircuitBreakerContract(
   signerOrProvider?: ethers.Signer | ethers.Provider,
 ) {
   return new ethers.Contract(
-    CONTRACTS.circuitBreaker,
+    getContracts().circuitBreaker,
     ABIS.circuitBreaker,
     signerOrProvider || getProvider(),
   );
 }
 
-// Helper to get signer from private key
-export function getSigner(): ethers.Wallet {
-  const privateKey = process.env.PRIVATE_KEY;
-  if (!privateKey) {
-    throw new Error("PRIVATE_KEY not set in environment");
+function loadOperatorPrivateKey(): string {
+  const env = getApiRuntimeEnv();
+  if (env.NODE_ENV === "production") {
+    if (!env.OPERATOR_SIGNER_KEY_FILE) {
+      throw new Error("Production operator signer secret is not configured");
+    }
+    const privateKey = readFileSync(
+      env.OPERATOR_SIGNER_KEY_FILE,
+      "utf8",
+    ).trim();
+    if (!/^0x[a-fA-F0-9]{64}$/.test(privateKey)) {
+      throw new Error("Operator signer secret is not a valid private key");
+    }
+    return privateKey;
   }
-  return new ethers.Wallet(privateKey, getProvider());
+
+  if (!env.PRIVATE_KEY) {
+    throw new Error("Development operator signer is not configured");
+  }
+  return env.PRIVATE_KEY;
 }
 
-function assertBlockchainExecutionConfigured(): void {
-  if (!process.env.PRIVATE_KEY) {
-    throw new Error("Blockchain signer is not configured");
-  }
+function getSigner(): ethers.Wallet {
+  return new ethers.Wallet(loadOperatorPrivateKey(), getProvider());
 }
 
 function assertSuccessfulReceipt(
@@ -182,32 +219,70 @@ function assertSuccessfulReceipt(
   if (!receipt || receipt.status !== 1) {
     throw new Error(`${operation} transaction was not confirmed on-chain`);
   }
-
   return receipt;
 }
 
-// Check if operations are allowed (circuit breaker)
+async function assertConfiguredNetwork(): Promise<void> {
+  const expectedChainId = BigInt(getNetwork().chainId);
+  const actualNetwork = await getProvider().getNetwork();
+  if (actualNetwork.chainId !== expectedChainId) {
+    throw new Error(
+      `RPC chain mismatch: expected ${expectedChainId}, received ${actualNetwork.chainId}`,
+    );
+  }
+}
+
+async function getConfirmedTransaction(
+  txHash: string,
+  expectedContract: string,
+  expectedSigner?: string,
+): Promise<{
+  transaction: ethers.TransactionResponse;
+  receipt: ethers.TransactionReceipt;
+}> {
+  await assertConfiguredNetwork();
+  const chainProvider = getProvider();
+  const [transaction, receipt] = await Promise.all([
+    chainProvider.getTransaction(txHash),
+    chainProvider.getTransactionReceipt(txHash),
+  ]);
+
+  if (!transaction || !receipt || receipt.status !== 1) {
+    throw new Error("Transaction is missing, pending, or reverted");
+  }
+  if (transaction.to?.toLowerCase() !== expectedContract.toLowerCase()) {
+    throw new Error(
+      "Transaction target does not match the configured contract",
+    );
+  }
+  if (
+    expectedSigner &&
+    transaction.from.toLowerCase() !== expectedSigner.toLowerCase()
+  ) {
+    throw new Error(
+      "Transaction signer does not match the authenticated wallet",
+    );
+  }
+
+  return { transaction, receipt };
+}
+
 export async function isSystemOperational(): Promise<boolean> {
   try {
-    const cb = getCircuitBreakerContract();
-    if (typeof cb.getStatus !== "function") {
-      throw new Error("Circuit breaker contract missing getStatus()");
-    }
-
-    const status = await cb.getStatus();
-    const isGloballyPaused = Array.isArray(status)
-      ? status[0]
-      : status.isGloballyPaused;
-    return !isGloballyPaused;
+    await assertConfiguredNetwork();
+    const contract = getCircuitBreakerContract() as ethers.Contract & {
+      getStatus: () => Promise<[boolean, number, bigint]>;
+    };
+    const status = await contract.getStatus();
+    return !status[0];
   } catch (error) {
-    console.error("Error checking system status:", error);
+    console.error("System status check failed:", error);
     return false;
   }
 }
 
 async function assertSystemOperationalOrThrow(): Promise<void> {
-  const operational = await isSystemOperational();
-  if (!operational) {
+  if (!(await isSystemOperational())) {
     throw new Error("Circuit breaker is active or unavailable");
   }
 }
@@ -215,7 +290,6 @@ async function assertSystemOperationalOrThrow(): Promise<void> {
 export async function whitelistDacUnitOnChain(
   params: WhitelistDacUnitParams,
 ): Promise<{ txHash: string }> {
-  assertBlockchainExecutionConfigured();
   await assertSystemOperationalOrThrow();
 
   const contract = getVerificationEngineContract(
@@ -224,26 +298,51 @@ export async function whitelistDacUnitOnChain(
     whitelistDacUnit: (
       unitId: string,
       operator: string,
-      location: string,
     ) => Promise<ethers.ContractTransactionResponse>;
   };
-  const tx = await contract.whitelistDacUnit(
-    params.unitId,
-    params.operator,
-    params.location,
-  );
+  const tx = await contract.whitelistDacUnit(params.unitId, params.operator);
   const receipt = assertSuccessfulReceipt(
     await tx.wait(),
     "DAC unit whitelist",
   );
+  return { txHash: receipt.hash };
+}
 
+export async function syncComplianceStatusOnChain(
+  params: SyncComplianceStatusParams,
+): Promise<{ txHash: string }> {
+  await assertConfiguredNetwork();
+  const statusCode = {
+    pending: 1,
+    verified: 2,
+    rejected: 3,
+  }[params.status];
+  const contract = getAccessControlContract(getSigner()) as ethers.Contract & {
+    updateComplianceStatus: (
+      wallet: string,
+      status: number,
+      provider: string,
+      applicantIdHash: string,
+      sanctionsCleared: boolean,
+    ) => Promise<ethers.ContractTransactionResponse>;
+  };
+  const tx = await contract.updateComplianceStatus(
+    params.wallet,
+    statusCode,
+    params.provider,
+    ethers.id(params.applicantId),
+    params.sanctionsCleared,
+  );
+  const receipt = assertSuccessfulReceipt(
+    await tx.wait(),
+    "Compliance status synchronization",
+  );
   return { txHash: receipt.hash };
 }
 
 export async function mintVerifiedCreditsOnChain(
   params: MintVerifiedCreditsParams,
-): Promise<{ txHash: string; tokenId: string }> {
-  assertBlockchainExecutionConfigured();
+): Promise<{ txHash: string; tokenId: string; amount: number }> {
   await assertSystemOperationalOrThrow();
 
   const contract = getCarbonCreditContract(getSigner()) as ethers.Contract & {
@@ -284,61 +383,50 @@ export async function mintVerifiedCreditsOnChain(
   for (const log of receipt.logs) {
     try {
       const parsed = contract.interface.parseLog(log);
-      if (parsed?.name === "CreditMinted") {
+      if (
+        parsed?.name === "CreditMinted" &&
+        String(parsed.args.dacUnitId).toLowerCase() ===
+          params.dacUnitId.toLowerCase() &&
+        String(parsed.args.operator).toLowerCase() ===
+          params.recipient.toLowerCase() &&
+        String(parsed.args.sourceDataHash).toLowerCase() ===
+          params.sourceDataHash.toLowerCase()
+      ) {
+        const amount = Number(parsed.args.creditsIssued);
+        if (!Number.isSafeInteger(amount) || amount <= 0) {
+          throw new Error("Mint event contains an invalid operator amount");
+        }
         return {
           txHash: receipt.hash,
           tokenId: ethers.toBeHex(parsed.args.tokenId, 32),
+          amount,
         };
       }
     } catch {
-      // Ignore unrelated logs.
+      // Ignore logs emitted by other contracts in the same receipt.
     }
   }
-
   throw new Error("Mint transaction confirmed without a CreditMinted event");
 }
 
-/**
- * Verify a wallet-signed retirement before the API updates its indexed state.
- *
- * The API never holds the credit owner's key. The owner submits
- * `retireCredits` from their wallet, then supplies the transaction hash. This
- * verifier binds the confirmed receipt to the configured CarbonCredit
- * contract, caller, token, amount, and reason so an unrelated transaction
- * cannot be replayed as a retirement.
- */
 export async function verifyRetirementOnChain(
   params: VerifyRetirementParams,
 ): Promise<{ txHash: string; blockNumber: number }> {
-  const chainProvider = getProvider();
-  const [transaction, receipt] = await Promise.all([
-    chainProvider.getTransaction(params.txHash),
-    chainProvider.getTransactionReceipt(params.txHash),
-  ]);
-
-  if (!transaction || !receipt || receipt.status !== 1) {
-    throw new Error("Retirement transaction is missing, pending, or reverted");
-  }
-
-  if (
-    transaction.to?.toLowerCase() !== CONTRACTS.carbonCredit.toLowerCase() ||
-    transaction.from.toLowerCase() !== params.retiree.toLowerCase()
-  ) {
-    throw new Error("Retirement transaction contract or signer does not match");
-  }
-
+  const { receipt } = await getConfirmedTransaction(
+    params.txHash,
+    getContracts().carbonCredit,
+    params.retiree,
+  );
   const contract = getCarbonCreditContract();
-  const expectedTokenId = BigInt(params.tokenId);
-  const expectedAmount = BigInt(params.amount);
   const matchedEvent = receipt.logs.some((log) => {
     try {
       const parsed = contract.interface.parseLog(log);
       return (
         parsed?.name === "CreditRetired" &&
-        BigInt(parsed.args.tokenId) === expectedTokenId &&
+        BigInt(parsed.args.tokenId) === BigInt(params.tokenId) &&
         String(parsed.args.retiredBy).toLowerCase() ===
           params.retiree.toLowerCase() &&
-        BigInt(parsed.args.amount) === expectedAmount &&
+        BigInt(parsed.args.amount) === BigInt(params.amount) &&
         String(parsed.args.retirementReason) === params.reason
       );
     } catch {
@@ -351,19 +439,164 @@ export async function verifyRetirementOnChain(
       "Confirmed transaction does not contain the expected retirement event",
     );
   }
-
-  return {
-    txHash: receipt.hash,
-    blockNumber: receipt.blockNumber,
-  };
+  return { txHash: receipt.hash, blockNumber: receipt.blockNumber };
 }
 
-// Get explorer link for transaction
+export async function verifyListingOnChain(
+  params: VerifyListingParams,
+): Promise<{ txHash: string; blockNumber: number; listingId: string }> {
+  const { transaction, receipt } = await getConfirmedTransaction(
+    params.txHash,
+    getContracts().carbonMarketplace,
+    params.seller,
+  );
+  const contract = getMarketplaceContract();
+  const call = contract.interface.parseTransaction({
+    data: transaction.data,
+    value: transaction.value,
+  });
+  if (
+    call?.name !== "createListing" ||
+    BigInt(call.args.tokenId) !== BigInt(params.tokenId) ||
+    BigInt(call.args.amount) !== BigInt(params.amount) ||
+    BigInt(call.args.pricePerUnit) !== BigInt(params.pricePerUnit) ||
+    BigInt(call.args.minPurchaseAmount) !== BigInt(params.minPurchaseAmount) ||
+    BigInt(call.args.duration) !== BigInt(params.durationSeconds)
+  ) {
+    throw new Error(
+      "Transaction calldata does not match the requested listing",
+    );
+  }
+
+  for (const log of receipt.logs) {
+    try {
+      const parsed = contract.interface.parseLog(log);
+      if (
+        parsed?.name === "ListingCreated" &&
+        String(parsed.args.seller).toLowerCase() ===
+          params.seller.toLowerCase() &&
+        BigInt(parsed.args.tokenId) === BigInt(params.tokenId) &&
+        BigInt(parsed.args.amount) === BigInt(params.amount) &&
+        BigInt(parsed.args.pricePerUnit) === BigInt(params.pricePerUnit)
+      ) {
+        return {
+          txHash: receipt.hash,
+          blockNumber: receipt.blockNumber,
+          listingId: BigInt(parsed.args.listingId).toString(),
+        };
+      }
+    } catch {
+      // Ignore unrelated logs.
+    }
+  }
+  throw new Error(
+    "Confirmed transaction does not contain the expected listing event",
+  );
+}
+
+export async function verifyPurchaseOnChain(
+  params: VerifyPurchaseParams,
+): Promise<{
+  txHash: string;
+  blockNumber: number;
+  seller: string;
+  platformFee: string;
+}> {
+  const { transaction, receipt } = await getConfirmedTransaction(
+    params.txHash,
+    getContracts().carbonMarketplace,
+    params.buyer,
+  );
+  const contract = getMarketplaceContract();
+  const call = contract.interface.parseTransaction({
+    data: transaction.data,
+    value: transaction.value,
+  });
+  if (
+    call?.name !== "purchase" ||
+    BigInt(call.args.listingId) !== BigInt(params.listingId) ||
+    BigInt(call.args.amount) !== BigInt(params.amount) ||
+    transaction.value !== BigInt(params.totalPrice)
+  ) {
+    throw new Error(
+      "Transaction calldata does not match the requested purchase",
+    );
+  }
+
+  for (const log of receipt.logs) {
+    try {
+      const parsed = contract.interface.parseLog(log);
+      if (
+        parsed?.name === "Purchase" &&
+        BigInt(parsed.args.listingId) === BigInt(params.listingId) &&
+        String(parsed.args.buyer).toLowerCase() ===
+          params.buyer.toLowerCase() &&
+        BigInt(parsed.args.tokenId) === BigInt(params.tokenId) &&
+        BigInt(parsed.args.amount) === BigInt(params.amount) &&
+        BigInt(parsed.args.totalPrice) === BigInt(params.totalPrice)
+      ) {
+        return {
+          txHash: receipt.hash,
+          blockNumber: receipt.blockNumber,
+          seller: String(parsed.args.seller).toLowerCase(),
+          platformFee: BigInt(parsed.args.platformFee).toString(),
+        };
+      }
+    } catch {
+      // Ignore unrelated logs.
+    }
+  }
+  throw new Error(
+    "Confirmed transaction does not contain the expected purchase event",
+  );
+}
+
+export async function verifyListingCancellationOnChain(
+  params: VerifyListingCancellationParams,
+): Promise<{ txHash: string; blockNumber: number }> {
+  const { transaction, receipt } = await getConfirmedTransaction(
+    params.txHash,
+    getContracts().carbonMarketplace,
+    params.seller,
+  );
+  const contract = getMarketplaceContract();
+  const call = contract.interface.parseTransaction({
+    data: transaction.data,
+    value: transaction.value,
+  });
+  if (
+    call?.name !== "cancelListing" ||
+    BigInt(call.args.listingId) !== BigInt(params.listingId)
+  ) {
+    throw new Error(
+      "Transaction calldata does not match the requested cancellation",
+    );
+  }
+  const matchedEvent = receipt.logs.some((log) => {
+    try {
+      const parsed = contract.interface.parseLog(log);
+      return (
+        parsed?.name === "ListingCancelled" &&
+        BigInt(parsed.args.listingId) === BigInt(params.listingId) &&
+        String(parsed.args.seller).toLowerCase() === params.seller.toLowerCase()
+      );
+    } catch {
+      return false;
+    }
+  });
+
+  if (!matchedEvent) {
+    throw new Error(
+      "Confirmed transaction does not contain the expected cancellation event",
+    );
+  }
+  return { txHash: receipt.hash, blockNumber: receipt.blockNumber };
+}
+
 export function getExplorerTxLink(txHash: string): string {
-  return `${NETWORK.explorerUrl}/tx/${txHash}`;
+  return `${getNetwork().explorerUrl}/tx/${txHash}`;
 }
 
-// Get explorer link for address
 export function getExplorerAddressLink(address: string): string {
-  return `${NETWORK.explorerUrl}/address/${address}`;
+  return `${getNetwork().explorerUrl}/address/${address}`;
 }

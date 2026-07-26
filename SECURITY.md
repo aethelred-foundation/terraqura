@@ -1,63 +1,18 @@
-# Security Policy
+# Security policy
 
-## Reporting a Vulnerability
+Report suspected vulnerabilities privately to `security@aethelred.io`. Include
+affected component and version, reproduction steps, impact, and any suggested
+mitigation. Do not publish an exploit or open a public issue before the team has
+had a reasonable opportunity to investigate.
 
-If you discover a security vulnerability in TerraQura, please report it responsibly. **Do not open a public GitHub issue.**
+The supported scope is the current `main` branch:
 
-### Contact
+- Solidity contracts and deployment scripts;
+- API authentication, authorization, KYC/sanctions, custody, and indexing;
+- sensor credential issuance and telemetry ingestion;
+- web wallet and transaction flows; and
+- production container and proxy configuration.
 
-- **Email:** security@aethelred.io
-- **PGP:** Available on request
-
-### What to Include
-
-- Description of the vulnerability
-- Steps to reproduce
-- Potential impact assessment
-- Suggested fix (if any)
-
-### Response Timeline
-
-| Stage | SLA |
-|-------|-----|
-| Acknowledgment | 48 hours |
-| Initial assessment | 5 business days |
-| Fix timeline communicated | 10 business days |
-| Patch released | Depends on severity |
-
-## Scope
-
-### In Scope
-
-- Smart contracts (Solidity EVM)
-- Backend API endpoints
-- Authentication and authorization logic
-- Cryptographic implementations
-- Oracle data verification
-- Frontend security (XSS, CSRF, injection)
-
-### Out of Scope
-
-- Denial of service via rate-limited endpoints
-- Social engineering attacks
-- Third-party dependencies (report upstream)
-- Issues in test or development environments
-
-## Security Features
-
-**Smart contracts:** Reentrancy guards, UUPS upgradeable proxy pattern, circuit breaker emergency pause, multisig admin (2-of-3), timelock on upgrades, role-based access control (MINTER_ROLE, OPERATOR_ROLE, ADMIN_ROLE), checked arithmetic.
-
-**Application layer:** JWT + SIWE auth, RBAC, Zod input validation, per-endpoint rate limiting, CORS, Helmet headers, parameterised queries.
-
-**Infrastructure:** TLS 1.3, ADGM data residency (UAE), DDoS protection, container security contexts, secrets management.
-
-## Bug Bounty
-
-A bug bounty program will be announced prior to mainnet launch. Details will be published at [aethelred.io/security](https://aethelred.io/security).
-
-## Supported Versions
-
-| Version | Supported |
-|---------|-----------|
-| main (pre-mainnet) | Yes |
-| Older branches | No |
+Repository checks are not an independent audit. Production operators remain
+responsible for TLS termination, secret storage, database backups, monitoring,
+incident response, governance key custody, and contract review before mainnet.

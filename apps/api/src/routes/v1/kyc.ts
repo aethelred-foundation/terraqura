@@ -3,8 +3,12 @@
 
 import { FastifyInstance, FastifyRequest, FastifyReply } from "fastify";
 
-import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
+import {
+  bearerAuthRateLimit,
+  verifyBearerAuth,
+} from "../../lib/bearer-auth.js";
 import { getApiRuntimeEnv } from "../../lib/runtime-env.js";
+import { syncComplianceStatusOnChain } from "../../services/blockchain/contracts.js";
 import { createSumsubService } from "../../services/kyc/sumsub.service.js";
 
 interface InitiateKycBody {
@@ -42,7 +46,7 @@ function getAuthenticatedWalletAddress(request: FastifyRequest): string | null {
 function ensureWalletOwnership(
   request: FastifyRequest,
   reply: FastifyReply,
-  walletAddress: string
+  walletAddress: string,
 ): string | null {
   const authenticatedWallet = getAuthenticatedWalletAddress(request);
 
@@ -79,17 +83,6 @@ export async function kycRoutes(fastify: FastifyInstance) {
     runtimeEnv.KYC_PROVIDER === "sumsub"
       ? "KYC service is not configured"
       : `KYC endpoints require KYC_PROVIDER=sumsub; current value is ${runtimeEnv.KYC_PROVIDER}`;
-  const queueKycCheck = async (payload: {
-    userId: string;
-    walletAddress: string;
-    applicantId: string;
-    provider: "sumsub";
-    checkType: "initial" | "refresh";
-  }) => {
-    // API writes an audit trail even when dedicated queue workers are unavailable.
-    fastify.log.info({ payload }, "KYC check request recorded");
-  };
-
   // ============================================
   // INITIATE KYC
   // ============================================
@@ -134,8 +127,13 @@ export async function kycRoutes(fastify: FastifyInstance) {
       preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
-      const { walletAddress, email, firstName, lastName, country } = request.body;
-      const authorizedWallet = ensureWalletOwnership(request, reply, walletAddress);
+      const { walletAddress, email, firstName, lastName, country } =
+        request.body;
+      const authorizedWallet = ensureWalletOwnership(
+        request,
+        reply,
+        walletAddress,
+      );
       if (!authorizedWallet) {
         return;
       }
@@ -152,7 +150,8 @@ export async function kycRoutes(fastify: FastifyInstance) {
 
       try {
         // Check if applicant already exists
-        let applicant = await sumsubService.getApplicantByExternalId(authorizedWallet);
+        let applicant =
+          await sumsubService.getApplicantByExternalId(authorizedWallet);
 
         if (!applicant) {
           // Create new applicant
@@ -167,16 +166,8 @@ export async function kycRoutes(fastify: FastifyInstance) {
         }
 
         // Generate access token for WebSDK
-        const tokenResponse = await sumsubService.generateAccessToken(authorizedWallet);
-
-        // Queue async status check
-        await queueKycCheck({
-          userId: authorizedWallet,
-          walletAddress: authorizedWallet,
-          applicantId: applicant.id,
-          provider: "sumsub",
-          checkType: "initial",
-        });
+        const tokenResponse =
+          await sumsubService.generateAccessToken(authorizedWallet);
 
         return {
           success: true,
@@ -197,7 +188,7 @@ export async function kycRoutes(fastify: FastifyInstance) {
           },
         });
       }
-    }
+    },
   );
 
   // ============================================
@@ -243,7 +234,11 @@ export async function kycRoutes(fastify: FastifyInstance) {
     },
     async (request, reply) => {
       const { walletAddress } = request.params;
-      const authorizedWallet = ensureWalletOwnership(request, reply, walletAddress);
+      const authorizedWallet = ensureWalletOwnership(
+        request,
+        reply,
+        walletAddress,
+      );
       if (!authorizedWallet) {
         return;
       }
@@ -260,7 +255,8 @@ export async function kycRoutes(fastify: FastifyInstance) {
 
       try {
         // Get applicant
-        const applicant = await sumsubService.getApplicantByExternalId(authorizedWallet);
+        const applicant =
+          await sumsubService.getApplicantByExternalId(authorizedWallet);
 
         if (!applicant) {
           return {
@@ -274,17 +270,29 @@ export async function kycRoutes(fastify: FastifyInstance) {
 
         // Get verification status
         const verificationStatus = await sumsubService.getVerificationStatus(
-          applicant.id
+          applicant.id,
         );
+
+        let sanctionsCleared = false;
+        if (verificationStatus.status === "verified") {
+          const sanctions = await sumsubService.requestSanctionsCheck(
+            applicant.id,
+          );
+          sanctionsCleared = !sanctions.hit;
+        }
 
         return {
           success: true,
           data: {
-            status: verificationStatus.status,
-            verified: verificationStatus.status === "verified",
+            status:
+              verificationStatus.status === "verified" && !sanctionsCleared
+                ? "rejected"
+                : verificationStatus.status,
+            verified:
+              verificationStatus.status === "verified" && sanctionsCleared,
             applicantId: applicant.id,
             rejectLabels: verificationStatus.rejectLabels,
-            sanctionsCleared: true, // Would come from sanctions check
+            sanctionsCleared,
             verifiedAt:
               verificationStatus.status === "verified"
                 ? applicant.createdAt
@@ -301,7 +309,7 @@ export async function kycRoutes(fastify: FastifyInstance) {
           },
         });
       }
-    }
+    },
   );
 
   // ============================================
@@ -343,7 +351,11 @@ export async function kycRoutes(fastify: FastifyInstance) {
     },
     async (request, reply) => {
       const { walletAddress } = request.params;
-      const authorizedWallet = ensureWalletOwnership(request, reply, walletAddress);
+      const authorizedWallet = ensureWalletOwnership(
+        request,
+        reply,
+        walletAddress,
+      );
       if (!authorizedWallet) {
         return;
       }
@@ -359,7 +371,8 @@ export async function kycRoutes(fastify: FastifyInstance) {
       }
 
       try {
-        const tokenResponse = await sumsubService.generateAccessToken(authorizedWallet);
+        const tokenResponse =
+          await sumsubService.generateAccessToken(authorizedWallet);
 
         return {
           success: true,
@@ -378,7 +391,7 @@ export async function kycRoutes(fastify: FastifyInstance) {
           },
         });
       }
-    }
+    },
   );
 
   // ============================================
@@ -425,7 +438,15 @@ export async function kycRoutes(fastify: FastifyInstance) {
       }
 
       const signature = request.headers["x-payload-digest"] as string;
-      const rawBody = JSON.stringify(request.body);
+      const rawBody = (
+        request as typeof request & { rawBody?: Buffer }
+      ).rawBody?.toString("utf8");
+      if (!rawBody) {
+        fastify.log.error("Raw webhook body is unavailable");
+        return reply
+          .status(503)
+          .send({ error: "Webhook validation unavailable" });
+      }
 
       // Verify webhook signature
       if (!sumsubService.verifyWebhookSignature(rawBody, signature || "")) {
@@ -447,14 +468,34 @@ export async function kycRoutes(fastify: FastifyInstance) {
           createdAt: new Date().toISOString(),
         });
 
-        // Queue update job if needed
         if (result.action === "update_status" && result.status) {
-          await queueKycCheck({
-            userId: event.externalUserId,
-            walletAddress: event.externalUserId,
-            applicantId: event.applicantId,
+          if (!/^0x[a-fA-F0-9]{40}$/.test(event.externalUserId)) {
+            throw new Error("Webhook external user ID is not a wallet address");
+          }
+
+          let status: "pending" | "verified" | "rejected" =
+            result.status === "verified"
+              ? "verified"
+              : result.status === "rejected"
+                ? "rejected"
+                : "pending";
+          let sanctionsCleared = false;
+          if (status === "verified") {
+            const sanctions = await sumsubService.requestSanctionsCheck(
+              event.applicantId,
+            );
+            sanctionsCleared = !sanctions.hit;
+            if (!sanctionsCleared) {
+              status = "rejected";
+            }
+          }
+
+          await syncComplianceStatusOnChain({
+            wallet: event.externalUserId,
+            status,
             provider: "sumsub",
-            checkType: "refresh",
+            applicantId: event.applicantId,
+            sanctionsCleared,
           });
         }
 
@@ -463,7 +504,7 @@ export async function kycRoutes(fastify: FastifyInstance) {
         fastify.log.error(error, "Webhook processing failed");
         return reply.status(500).send({ error: "Webhook processing failed" });
       }
-    }
+    },
   );
 
   // ============================================
@@ -505,7 +546,11 @@ export async function kycRoutes(fastify: FastifyInstance) {
     },
     async (request, reply) => {
       const { walletAddress } = request.params;
-      const authorizedWallet = ensureWalletOwnership(request, reply, walletAddress);
+      const authorizedWallet = ensureWalletOwnership(
+        request,
+        reply,
+        walletAddress,
+      );
       if (!authorizedWallet) {
         return;
       }
@@ -522,9 +567,8 @@ export async function kycRoutes(fastify: FastifyInstance) {
 
       try {
         // Get applicant
-        const applicant = await sumsubService.getApplicantByExternalId(
-          authorizedWallet
-        );
+        const applicant =
+          await sumsubService.getApplicantByExternalId(authorizedWallet);
 
         if (!applicant) {
           return reply.status(404).send({
@@ -556,7 +600,7 @@ export async function kycRoutes(fastify: FastifyInstance) {
           },
         });
       }
-    }
+    },
   );
 }
 

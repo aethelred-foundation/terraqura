@@ -1,3 +1,5 @@
+import { fileURLToPath } from "node:url";
+
 import cors from "@fastify/cors";
 import helmet from "@fastify/helmet";
 import jwt from "@fastify/jwt";
@@ -5,8 +7,8 @@ import rateLimit from "@fastify/rate-limit";
 import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import Fastify, { FastifyError } from "fastify";
-import { fileURLToPath } from "node:url";
 
+import { ensureDatabaseSchema } from "./lib/database-schema.js";
 import { getApiRuntimeEnv } from "./lib/runtime-env.js";
 import { activityRoutes } from "./routes/v1/activity.js";
 import { analyticsRoutes } from "./routes/v1/analytics.js";
@@ -79,6 +81,8 @@ function resolveJwtSecret(): string {
 }
 
 async function buildServer() {
+  await ensureDatabaseSchema();
+
   const fastify = Fastify({
     // A bounded hop count prevents clients from supplying an arbitrary
     // X-Forwarded-For chain while still supporting a controlled reverse proxy.
@@ -97,6 +101,23 @@ async function buildServer() {
           : undefined,
     },
   });
+
+  fastify.removeContentTypeParser("application/json");
+  fastify.addContentTypeParser(
+    "application/json",
+    { parseAs: "buffer" },
+    (request, body, done) => {
+      Object.defineProperty(request, "rawBody", {
+        value: body,
+        enumerable: false,
+      });
+      try {
+        done(null, JSON.parse(body.toString("utf8")));
+      } catch (error) {
+        done(error as Error, undefined);
+      }
+    },
+  );
 
   // Security plugins
   await fastify.register(helmet, {

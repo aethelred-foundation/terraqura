@@ -16,7 +16,11 @@ export function AnimatedSection({
   className,
   id,
 }: AnimatedSectionProps) {
-  return <div id={id} className={className}>{children}</div>;
+  return (
+    <div id={id} className={className}>
+      {children}
+    </div>
+  );
 }
 
 export function StaggerContainer({

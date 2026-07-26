@@ -10,14 +10,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 const mockGetNonce = vi.fn();
 const mockBuildForwardRequest = vi.fn();
 const mockRelay = vi.fn();
-const mockRelayViaDefender = vi.fn();
 const mockGetSigningTypes = vi.fn();
 
 let mockRelayerInstance: object | null = {
   getNonce: mockGetNonce,
   buildForwardRequest: mockBuildForwardRequest,
   relay: mockRelay,
-  relayViaDefender: mockRelayViaDefender,
   getSigningTypes: mockGetSigningTypes,
 };
 
@@ -28,9 +26,12 @@ vi.mock("../../services/gasless/relayer.service.js", () => ({
 vi.mock("../../lib/runtime-env.js", () => ({
   getApiRuntimeEnv: () => ({
     DATABASE_URL: "postgres://localhost:5432/test",
+    DATABASE_SSL_MODE: "disable",
     JWT_SECRET: "a]ks8d7f6g5h4j3k2l1m0n9b8v7c6x5z4",
     SIWE_DOMAIN: "localhost",
     KYC_PROVIDER: "disabled",
+    CHAIN_ID: 7332,
+    FORWARDER_CONTRACT: "0x1234567890abcdef1234567890abcdef12345678",
   }),
 }));
 
@@ -59,7 +60,7 @@ function signToken(
   return app.jwt.sign({
     sub: overrides.address ?? ADDRESS,
     address: overrides.address ?? ADDRESS,
-    chainId: 78432,
+    chainId: 7332,
     userType: overrides.userType ?? "operator",
     kycStatus: "approved",
   });
@@ -76,12 +77,8 @@ describe("gasless routes", () => {
       getNonce: mockGetNonce,
       buildForwardRequest: mockBuildForwardRequest,
       relay: mockRelay,
-      relayViaDefender: mockRelayViaDefender,
       getSigningTypes: mockGetSigningTypes,
     };
-
-    // Clear env vars that affect relay path
-    delete process.env.DEFENDER_RELAYER_API_KEY;
 
     app = await buildApp();
   });
@@ -144,7 +141,7 @@ describe("gasless routes", () => {
       domain: {
         name: "MinimalForwarder",
         version: "0.0.1",
-        chainId: 78432,
+        chainId: 7332,
         verifyingContract: TARGET,
       },
     });
@@ -324,41 +321,6 @@ describe("gasless routes", () => {
     expect(res.statusCode).toBe(503);
   });
 
-  it("uses Defender relay when DEFENDER_RELAYER_API_KEY is set", async () => {
-    process.env.DEFENDER_RELAYER_API_KEY = "defender_key";
-    mockRelayViaDefender.mockResolvedValue({
-      success: true,
-      txHash: "0x" + "d".repeat(64),
-    });
-
-    // Rebuild app so env is picked up at route registration time
-    const defenderApp = await buildApp();
-    const token = signToken(defenderApp);
-
-    const res = await defenderApp.inject({
-      method: "POST",
-      url: "/v1/gasless/relay",
-      headers: { authorization: `Bearer ${token}` },
-      payload: {
-        request: {
-          from: ADDRESS,
-          to: TARGET,
-          value: "0",
-          gas: "500000",
-          nonce: "0",
-          deadline: 1700000000,
-          data: "0x",
-        },
-        signature: "0xsig",
-      },
-    });
-    expect(res.statusCode).toBe(200);
-    expect(mockRelayViaDefender).toHaveBeenCalled();
-    expect(mockRelay).not.toHaveBeenCalled();
-
-    delete process.env.DEFENDER_RELAYER_API_KEY;
-  });
-
   it("returns 500 when relay throws an unexpected error", async () => {
     mockRelay.mockRejectedValue(new Error("Unexpected RPC failure"));
     const token = signToken(app);
@@ -387,9 +349,6 @@ describe("gasless routes", () => {
   // ---------- GET /status ----------
 
   it("returns relayer status when enabled", async () => {
-    process.env.FORWARDER_CONTRACT =
-      "0x1234567890abcdef1234567890abcdef12345678";
-    process.env.CHAIN_ID = "78432";
     const token = signToken(app);
 
     const res = await app.inject({
@@ -400,7 +359,7 @@ describe("gasless routes", () => {
     expect(res.statusCode).toBe(200);
     const data = res.json().data;
     expect(data.enabled).toBe(true);
-    expect(data.chainId).toBe(78432);
+    expect(data.chainId).toBe(7332);
   });
 
   it("returns enabled=false when relayer is null", async () => {

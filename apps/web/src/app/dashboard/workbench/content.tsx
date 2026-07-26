@@ -20,6 +20,7 @@ import {
   WalletCards,
   type LucideIcon,
 } from "lucide-react";
+import { formatEther, parseEther } from "viem";
 import { useAccount, usePublicClient, useWriteContract } from "wagmi";
 
 import {
@@ -28,9 +29,11 @@ import {
   ToastContainer,
   TopNav,
 } from "@/components/dapp/SharedComponents";
+import { SumsubWidget } from "@/components/kyc/SumsubWidget";
 import { useApp } from "@/contexts/AppContext";
+import { useKycStatus } from "@/hooks/useKycStatus";
 import { useOperatorSession } from "@/hooks/useOperatorSession";
-import { CarbonCreditABI } from "@/lib/abis";
+import { CarbonCreditABI, CarbonMarketplaceABI } from "@/lib/abis";
 import { CHAIN_ID, CONTRACTS } from "@/lib/contracts";
 import { TERRAQURA_API_URL, terraquraApi } from "@/lib/terraquraApi";
 
@@ -55,11 +58,30 @@ interface Credit {
   dacUnitId: string;
   co2CapturedKg: number;
   creditsIssued: number;
+  escrowedAmount: number;
   retiredAmount: number;
   verificationStatus: string;
   isRetired: boolean;
   mintTxHash: string | null;
   currentOwnerWallet: string | null;
+}
+
+interface MarketplaceListing {
+  id: string;
+  listingId: string;
+  sellerWallet: string;
+  tokenId: string;
+  creditId: string;
+  dacUnitId: string;
+  amount: number;
+  remainingAmount: number;
+  pricePerUnit: string;
+  minPurchaseAmount: number;
+  status: "active" | "sold" | "cancelled" | "expired";
+  createdAt: string;
+  expiresAt: string | null;
+  txHash: string;
+  explorerUrl?: string;
 }
 
 interface SensorSummary {
@@ -236,6 +258,7 @@ function OperationGate({
   loading,
   onConnect,
   onSignIn,
+  onStartKyc,
 }: {
   connected: boolean;
   authenticated: boolean;
@@ -243,6 +266,7 @@ function OperationGate({
   loading: boolean;
   onConnect?: () => void;
   onSignIn: () => void;
+  onStartKyc: () => void;
 }) {
   if (!connected) {
     return (
@@ -293,7 +317,7 @@ function OperationGate({
       <div className="border border-amber-300/20 bg-amber-300/[0.05] p-4">
         <div className="flex items-start gap-3">
           <AlertTriangle className="mt-0.5 h-5 w-5 text-amber-300" />
-          <div>
+          <div className="flex-1">
             <p className="text-sm font-medium text-white">
               Operator identity review: {kycStatus || "pending"}
             </p>
@@ -302,6 +326,7 @@ function OperationGate({
               and retirement until the connected operator passes KYC.
             </p>
           </div>
+          <ActionButton onClick={onStartKyc}>Continue review</ActionButton>
         </div>
       </div>
     );
@@ -316,9 +341,12 @@ export function TerraQuraWorkbench() {
   const { writeContractAsync } = useWriteContract();
   const { openConnectModal, addNotification } = useApp();
   const operator = useOperatorSession();
+  const kyc = useKycStatus(operator.token);
+  const [showKyc, setShowKyc] = useState(false);
 
   const [projects, setProjects] = useState<DacUnit[]>([]);
   const [credits, setCredits] = useState<Credit[]>([]);
+  const [listings, setListings] = useState<MarketplaceListing[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState("");
   const [projectDetail, setProjectDetail] = useState<DacUnit | null>(null);
   const [summary, setSummary] = useState<SensorSummary | null>(null);
@@ -328,33 +356,46 @@ export function TerraQuraWorkbench() {
   const [busy, setBusy] = useState<string | null>(null);
   const [pageError, setPageError] = useState<string | null>(null);
   const [receipt, setReceipt] = useState<TransactionReceiptState | null>(null);
+  const [sensorCredentialIssued, setSensorCredentialIssued] = useState(false);
 
   const [projectForm, setProjectForm] = useState({
-    name: "Masdar City DAC Demonstrator",
-    latitude: "24.427",
-    longitude: "54.619",
+    name: "",
+    latitude: "",
+    longitude: "",
     countryCode: "AE",
-    capacityTonnesPerYear: "1000",
+    capacityTonnesPerYear: "",
     technologyType: "Direct air capture",
-    gridIntensityGco2PerKwh: "50",
+    gridIntensityGco2PerKwh: "",
   });
   const [sensorForm, setSensorForm] = useState({
     apiKey: "",
-    sensorId: "TQ-DAC-01-CO2",
+    sensorId: "",
     timestamp: dateTimeLocal(),
-    co2CaptureRateKgHour: "1000",
-    energyConsumptionKwh: "350",
-    co2PurityPercentage: "97",
+    co2CaptureRateKgHour: "",
+    energyConsumptionKwh: "",
+    co2PurityPercentage: "",
+    measurementDurationSeconds: "3600",
   });
   const [verificationForm, setVerificationForm] = useState({
     startTime: dateTimeLocal(24),
     endTime: dateTimeLocal(-1),
   });
   const [metadataCid, setMetadataCid] = useState("");
+  const [listingForm, setListingForm] = useState({
+    creditId: "",
+    amount: "",
+    priceAeth: "",
+    minPurchaseAmount: "1",
+    durationDays: "30",
+  });
+  const [purchaseForm, setPurchaseForm] = useState({
+    listingId: "",
+    amount: "",
+  });
   const [retirementForm, setRetirementForm] = useState({
     creditId: "",
     amount: "",
-    reason: "Retired against FY2026 operational emissions",
+    reason: "",
   });
 
   const selectedProject = useMemo(
@@ -371,9 +412,38 @@ export function TerraQuraWorkbench() {
     [credits, selectedProjectId],
   );
   const latestVerification = verifications[0] ?? null;
+  const selectedListingCredit =
+    projectCredits.find((credit) => credit.id === listingForm.creditId) ??
+    projectCredits.find(
+      (credit) =>
+        credit.creditsIssued > 0 &&
+        credit.currentOwnerWallet?.toLowerCase() === address?.toLowerCase(),
+    ) ??
+    null;
+  const projectListings = useMemo(
+    () =>
+      listings.filter(
+        (listing) =>
+          listing.dacUnitId === selectedProjectId &&
+          listing.status === "active",
+      ),
+    [listings, selectedProjectId],
+  );
+  const selectedPurchaseListing =
+    projectListings.find((listing) => listing.id === purchaseForm.listingId) ??
+    projectListings.find(
+      (listing) =>
+        listing.sellerWallet.toLowerCase() !== address?.toLowerCase(),
+    ) ??
+    null;
   const selectedRetirementCredit =
     projectCredits.find((credit) => credit.id === retirementForm.creditId) ??
-    projectCredits.find((credit) => !credit.isRetired) ??
+    projectCredits.find(
+      (credit) =>
+        !credit.isRetired &&
+        credit.creditsIssued > 0 &&
+        credit.currentOwnerWallet?.toLowerCase() === address?.toLowerCase(),
+    ) ??
     null;
 
   const currentStage = useMemo(() => {
@@ -382,18 +452,27 @@ export function TerraQuraWorkbench() {
     if (!latestVerification || latestVerification.status !== "PASSED") return 2;
     if (projectCredits.length === 0) return 3;
     if (projectCredits.some((credit) => credit.retiredAmount > 0)) return 5;
+    if (projectListings.length > 0) return 4;
     return 4;
-  }, [latestVerification, projectCredits, selectedProject, summary]);
+  }, [
+    latestVerification,
+    projectCredits,
+    projectListings.length,
+    selectedProject,
+    summary,
+  ]);
 
   const loadPortfolio = useCallback(async () => {
     setPageError(null);
     try {
-      const [projectData, creditData] = await Promise.all([
+      const [projectData, creditData, listingData] = await Promise.all([
         terraquraApi<DacUnit[]>("/v1/dac-units"),
         terraquraApi<Credit[]>("/v1/credits"),
+        terraquraApi<MarketplaceListing[]>("/v1/marketplace/listings"),
       ]);
       setProjects(projectData);
       setCredits(creditData);
+      setListings(listingData);
       setSelectedProjectId((current) => current || projectData[0]?.id || "");
     } catch (cause) {
       setPageError(
@@ -447,6 +526,25 @@ export function TerraQuraWorkbench() {
   useEffect(() => {
     void loadProject(selectedProjectId);
   }, [loadProject, selectedProjectId]);
+
+  useEffect(() => {
+    if (selectedListingCredit && !listingForm.creditId) {
+      setListingForm((current) => ({
+        ...current,
+        creditId: selectedListingCredit.id,
+        amount: String(selectedListingCredit.creditsIssued),
+      }));
+    }
+  }, [listingForm.creditId, selectedListingCredit]);
+
+  useEffect(() => {
+    if (selectedPurchaseListing && !purchaseForm.listingId) {
+      setPurchaseForm({
+        listingId: selectedPurchaseListing.id,
+        amount: String(selectedPurchaseListing.minPurchaseAmount),
+      });
+    }
+  }, [purchaseForm.listingId, selectedPurchaseListing]);
 
   useEffect(() => {
     if (selectedRetirementCredit && !retirementForm.creditId) {
@@ -550,6 +648,9 @@ export function TerraQuraWorkbench() {
           co2CaptureRateKgHour: Number(sensorForm.co2CaptureRateKgHour),
           energyConsumptionKwh: Number(sensorForm.energyConsumptionKwh),
           co2PurityPercentage: Number(sensorForm.co2PurityPercentage),
+          measurementDurationSeconds: Number(
+            sensorForm.measurementDurationSeconds,
+          ),
         }),
       });
       setReceipt({ label: "MRV evidence hash", hash: result.dataHash });
@@ -563,6 +664,51 @@ export function TerraQuraWorkbench() {
           ? result.anomalyReason || "Review required"
           : "The immutable source hash is ready for verification.",
       });
+    });
+  };
+
+  const provisionSensorCredential = async () => {
+    await runOperation("Sensor credential provisioning", async () => {
+      const token = requireOperator();
+      if (!selectedProjectId) {
+        throw new Error("Select a registered project first");
+      }
+      const credential = await terraquraApi<{ key: string }>("/v1/api-keys", {
+        method: "POST",
+        token,
+        body: JSON.stringify({
+          name: `${selectedProject?.name || selectedProjectId} telemetry`,
+          type: "sensor",
+          dacUnitId: selectedProjectId,
+          expiresInDays: 365,
+        }),
+      });
+      setSensorForm((current) => ({ ...current, apiKey: credential.key }));
+      setSensorCredentialIssued(true);
+      addNotification({
+        type: "success",
+        title: "Sensor credential provisioned",
+        message: "Store it securely; the full credential is shown only once.",
+      });
+    });
+  };
+
+  const whitelistProject = async () => {
+    await runOperation("Project whitelist", async () => {
+      const token = requireOperator();
+      if (!selectedProjectId || operator.session?.userType !== "admin") {
+        throw new Error("A configured administrator wallet is required");
+      }
+      const result = await terraquraApi<{ txHash: string }>(
+        `/v1/dac-units/${selectedProjectId}/whitelist`,
+        { method: "POST", token },
+      );
+      setReceipt({
+        label: "Project whitelisted on Aethelred",
+        hash: result.txHash,
+      });
+      await loadPortfolio();
+      await loadProject(selectedProjectId);
     });
   };
 
@@ -649,6 +795,240 @@ export function TerraQuraWorkbench() {
     });
   };
 
+  const createListing = async (event: React.FormEvent) => {
+    event.preventDefault();
+    await runOperation("Marketplace listing", async () => {
+      const token = requireOperator();
+      if (!address || !publicClient || !selectedListingCredit) {
+        throw new Error("Select an owned credit and connect its owner wallet");
+      }
+      if (
+        selectedListingCredit.currentOwnerWallet?.toLowerCase() !==
+        address.toLowerCase()
+      ) {
+        throw new Error("The connected wallet does not own this credit");
+      }
+
+      const amount = Number(listingForm.amount);
+      const minPurchaseAmount = Number(listingForm.minPurchaseAmount);
+      const durationDays = Number(listingForm.durationDays);
+      if (!Number.isSafeInteger(amount) || amount <= 0) {
+        throw new Error("Listing amount must be a positive whole unit");
+      }
+      if (amount > selectedListingCredit.creditsIssued) {
+        throw new Error("Listing amount exceeds the wallet balance");
+      }
+      if (
+        !Number.isSafeInteger(minPurchaseAmount) ||
+        minPurchaseAmount <= 0 ||
+        minPurchaseAmount > amount
+      ) {
+        throw new Error("Minimum purchase must be within the listing amount");
+      }
+      if (
+        !Number.isSafeInteger(durationDays) ||
+        durationDays < 0 ||
+        durationDays > 365
+      ) {
+        throw new Error("Listing duration must be between 0 and 365 days");
+      }
+
+      const pricePerUnit = parseEther(listingForm.priceAeth);
+      if (pricePerUnit <= 0n) {
+        throw new Error("Price per unit must be greater than zero");
+      }
+      const approved = await publicClient.readContract({
+        address: CONTRACTS.carbonCredit,
+        abi: CarbonCreditABI,
+        functionName: "isApprovedForAll",
+        args: [address, CONTRACTS.carbonMarketplace],
+      });
+      if (!approved) {
+        const approvalHash = await writeContractAsync({
+          address: CONTRACTS.carbonCredit,
+          abi: CarbonCreditABI,
+          functionName: "setApprovalForAll",
+          args: [CONTRACTS.carbonMarketplace, true],
+          chainId: CHAIN_ID,
+        });
+        const approvalReceipt = await publicClient.waitForTransactionReceipt({
+          hash: approvalHash,
+          confirmations: 1,
+        });
+        if (approvalReceipt.status !== "success") {
+          throw new Error("Marketplace approval reverted on-chain");
+        }
+      }
+
+      const txHash = await writeContractAsync({
+        address: CONTRACTS.carbonMarketplace,
+        abi: CarbonMarketplaceABI,
+        functionName: "createListing",
+        args: [
+          BigInt(selectedListingCredit.tokenId),
+          BigInt(amount),
+          pricePerUnit,
+          BigInt(minPurchaseAmount),
+          BigInt(durationDays * 86_400),
+        ],
+        chainId: CHAIN_ID,
+      });
+      const chainReceipt = await publicClient.waitForTransactionReceipt({
+        hash: txHash,
+        confirmations: 1,
+      });
+      if (chainReceipt.status !== "success") {
+        throw new Error("Marketplace listing reverted on-chain");
+      }
+
+      const listing = await terraquraApi<MarketplaceListing>(
+        "/v1/marketplace/listings",
+        {
+          method: "POST",
+          token,
+          body: JSON.stringify({
+            tokenId: BigInt(selectedListingCredit.tokenId).toString(),
+            amount,
+            pricePerUnit: pricePerUnit.toString(),
+            minPurchaseAmount,
+            durationDays,
+            txHash,
+          }),
+        },
+      );
+      setReceipt({
+        label: `Listed ${tonnesFromUnits(amount)} tCO₂e`,
+        hash: listing.txHash,
+        explorerUrl: listing.explorerUrl,
+        blockNumber: chainReceipt.blockNumber
+          ? Number(chainReceipt.blockNumber)
+          : undefined,
+      });
+      setListingForm((current) => ({
+        ...current,
+        creditId: "",
+        amount: "",
+      }));
+      await loadPortfolio();
+      addNotification({
+        type: "success",
+        title: "Inventory listed",
+        message: `${tonnesFromUnits(amount)} tCO₂e is in contract escrow.`,
+      });
+    });
+  };
+
+  const purchaseListing = async (event: React.FormEvent) => {
+    event.preventDefault();
+    await runOperation("Marketplace purchase", async () => {
+      const token = requireOperator();
+      if (!address || !publicClient || !selectedPurchaseListing) {
+        throw new Error("Select a listing and connect the buyer wallet");
+      }
+      if (
+        selectedPurchaseListing.sellerWallet.toLowerCase() ===
+        address.toLowerCase()
+      ) {
+        throw new Error("The seller cannot purchase their own listing");
+      }
+      const amount = Number(purchaseForm.amount);
+      if (
+        !Number.isSafeInteger(amount) ||
+        amount < selectedPurchaseListing.minPurchaseAmount ||
+        amount > selectedPurchaseListing.remainingAmount
+      ) {
+        throw new Error("Purchase amount is outside the listing limits");
+      }
+      const totalPrice =
+        BigInt(selectedPurchaseListing.pricePerUnit) * BigInt(amount);
+      const txHash = await writeContractAsync({
+        address: CONTRACTS.carbonMarketplace,
+        abi: CarbonMarketplaceABI,
+        functionName: "purchase",
+        args: [BigInt(selectedPurchaseListing.listingId), BigInt(amount)],
+        value: totalPrice,
+        chainId: CHAIN_ID,
+      });
+      const chainReceipt = await publicClient.waitForTransactionReceipt({
+        hash: txHash,
+        confirmations: 1,
+      });
+      if (chainReceipt.status !== "success") {
+        throw new Error("Marketplace purchase reverted on-chain");
+      }
+      const purchase = await terraquraApi<{
+        txHash: string;
+        explorerUrl?: string;
+      }>(`/v1/marketplace/listings/${selectedPurchaseListing.id}/purchase`, {
+        method: "POST",
+        token,
+        body: JSON.stringify({ amount, txHash }),
+      });
+      setReceipt({
+        label: `Purchased ${tonnesFromUnits(amount)} tCO₂e`,
+        hash: purchase.txHash,
+        explorerUrl: purchase.explorerUrl,
+        blockNumber: chainReceipt.blockNumber
+          ? Number(chainReceipt.blockNumber)
+          : undefined,
+      });
+      setPurchaseForm({ listingId: "", amount: "" });
+      await loadPortfolio();
+      addNotification({
+        type: "success",
+        title: "Purchase finalized",
+        message: "The acquired units are now indexed to the buyer wallet.",
+      });
+    });
+  };
+
+  const cancelListing = async (listing: MarketplaceListing) => {
+    await runOperation("Listing cancellation", async () => {
+      const token = requireOperator();
+      if (!address || !publicClient) {
+        throw new Error("Connect the listing owner wallet");
+      }
+      if (listing.sellerWallet.toLowerCase() !== address.toLowerCase()) {
+        throw new Error("Only the listing seller can cancel it");
+      }
+      const txHash = await writeContractAsync({
+        address: CONTRACTS.carbonMarketplace,
+        abi: CarbonMarketplaceABI,
+        functionName: "cancelListing",
+        args: [BigInt(listing.listingId)],
+        chainId: CHAIN_ID,
+      });
+      const chainReceipt = await publicClient.waitForTransactionReceipt({
+        hash: txHash,
+        confirmations: 1,
+      });
+      if (chainReceipt.status !== "success") {
+        throw new Error("Listing cancellation reverted on-chain");
+      }
+      const cancelled = await terraquraApi<MarketplaceListing>(
+        `/v1/marketplace/listings/${listing.id}/cancel`,
+        {
+          method: "POST",
+          token,
+          body: JSON.stringify({ txHash }),
+        },
+      );
+      setReceipt({
+        label: `Cancelled listing ${cancelled.listingId}`,
+        hash: txHash,
+        blockNumber: chainReceipt.blockNumber
+          ? Number(chainReceipt.blockNumber)
+          : undefined,
+      });
+      await loadPortfolio();
+      addNotification({
+        type: "success",
+        title: "Listing cancelled",
+        message: "Unsold inventory returned to the seller wallet.",
+      });
+    });
+  };
+
   const retireCredit = async (event: React.FormEvent) => {
     event.preventDefault();
     await runOperation("Credit retirement", async () => {
@@ -729,7 +1109,11 @@ export function TerraQuraWorkbench() {
   };
 
   const totalIssued = credits.reduce(
-    (sum, credit) => sum + credit.creditsIssued + credit.retiredAmount,
+    (sum, credit) =>
+      sum +
+      credit.creditsIssued +
+      (credit.escrowedAmount ?? 0) +
+      credit.retiredAmount,
     0,
   );
   const totalRetired = credits.reduce(
@@ -784,7 +1168,7 @@ export function TerraQuraWorkbench() {
             </h1>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-white/50">
               Operate the complete Direct Air Capture credit lifecycle against
-              TerraQura&apos;s production API and Aethelred contracts. Every
+              TerraQura&apos;s configured API and Aethelred contracts. Every
               state shown below is loaded from the registry, sensor store,
               verification engine, or chain receipt.
             </p>
@@ -820,7 +1204,7 @@ export function TerraQuraWorkbench() {
               {pageError.includes("KYC") && (
                 <p className="mt-2 text-xs text-white/40">
                   This is a real production gate; TerraQura does not bypass
-                  operator identity controls for demonstrations.
+                  operator identity controls for controlled testnet operations.
                 </p>
               )}
             </div>
@@ -868,7 +1252,62 @@ export function TerraQuraWorkbench() {
               );
             });
           }}
+          onStartKyc={() => {
+            setPageError(null);
+            setShowKyc(true);
+            const action =
+              kyc.status.state === "not_started" ||
+              kyc.status.state === "unavailable"
+                ? kyc.initiateKyc()
+                : kyc.refreshToken().then(() => undefined);
+            void action.catch((cause) => {
+              setPageError(
+                cause instanceof Error
+                  ? cause.message
+                  : "Identity review could not be opened",
+              );
+            });
+          }}
         />
+
+        {showKyc && operator.token && (
+          <div className="mt-6 border border-white/[0.08] bg-[#050b0a] p-5">
+            <div className="mb-4 flex items-center justify-between gap-4">
+              <div>
+                <p className="text-sm font-medium text-white">
+                  Operator identity review
+                </p>
+                <p className="mt-1 text-xs text-white/45">
+                  Complete the hosted verification, then sign in again to issue
+                  a session with updated compliance claims.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowKyc(false)}
+                className="text-xs text-white/45 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+            {kyc.status.accessToken ? (
+              <SumsubWidget
+                accessToken={kyc.status.accessToken}
+                onTokenExpired={kyc.refreshToken}
+                onComplete={() => {
+                  void kyc.refetch();
+                  operator.signOut();
+                  setShowKyc(false);
+                }}
+                onError={(error) => setPageError(error.message)}
+              />
+            ) : (
+              <p className="text-sm text-white/50">
+                {kyc.error || "Preparing the secure identity review…"}
+              </p>
+            )}
+          </div>
+        )}
 
         <div className="mt-6 grid gap-6 xl:grid-cols-[300px_minmax(0,1fr)]">
           <aside className="space-y-5">
@@ -1153,6 +1592,18 @@ export function TerraQuraWorkbench() {
                       </div>
                     ))}
                   </div>
+                  {operator.session?.userType === "admin" &&
+                    projectDetail?.status === "pending" && (
+                      <div className="mt-5">
+                        <ActionButton
+                          disabled={busy !== null}
+                          onClick={() => void whitelistProject()}
+                        >
+                          <ShieldCheck className="h-4 w-4" />
+                          Whitelist on Aethelred
+                        </ActionButton>
+                      </div>
+                    )}
                 </div>
               </div>
             </Panel>
@@ -1160,7 +1611,7 @@ export function TerraQuraWorkbench() {
             <Panel
               id="mrv"
               eyebrow="02 · Measurement, reporting, verification"
-              title="Submit signed sensor evidence"
+              title="Submit authenticated sensor evidence"
               action={
                 summary ? (
                   <span className="font-mono text-xs text-white/45">
@@ -1177,7 +1628,7 @@ export function TerraQuraWorkbench() {
                   <label className={`${labelClass} sm:col-span-2`}>
                     Provisioned sensor API key
                     <input
-                      type="password"
+                      type={sensorCredentialIssued ? "text" : "password"}
                       autoComplete="off"
                       value={sensorForm.apiKey}
                       onChange={(event) =>
@@ -1190,6 +1641,25 @@ export function TerraQuraWorkbench() {
                       required
                       className={fieldClass}
                     />
+                    <span className="mt-2 flex flex-wrap items-center gap-3">
+                      <ActionButton
+                        tone="secondary"
+                        disabled={
+                          !mutationAllowed ||
+                          !selectedProjectId ||
+                          busy !== null
+                        }
+                        onClick={() => void provisionSensorCredential()}
+                      >
+                        Provision credential
+                      </ActionButton>
+                      {sensorCredentialIssued && (
+                        <span className="text-xs text-amber-200/70">
+                          Copy this credential now; it cannot be retrieved
+                          later.
+                        </span>
+                      )}
+                    </span>
                   </label>
                   <label className={labelClass}>
                     Sensor ID
@@ -1266,6 +1736,24 @@ export function TerraQuraWorkbench() {
                         setSensorForm((form) => ({
                           ...form,
                           co2PurityPercentage: event.target.value,
+                        }))
+                      }
+                      required
+                      className={fieldClass}
+                    />
+                  </label>
+                  <label className={labelClass}>
+                    Measurement interval (seconds)
+                    <input
+                      type="number"
+                      min="1"
+                      max="86400"
+                      step="1"
+                      value={sensorForm.measurementDurationSeconds}
+                      onChange={(event) =>
+                        setSensorForm((form) => ({
+                          ...form,
+                          measurementDurationSeconds: event.target.value,
                         }))
                       }
                       required
@@ -1544,6 +2032,7 @@ export function TerraQuraWorkbench() {
                       <tr>
                         <th className="px-3 py-3 font-medium">Token</th>
                         <th className="px-3 py-3 font-medium">Available</th>
+                        <th className="px-3 py-3 font-medium">Escrow</th>
                         <th className="px-3 py-3 font-medium">Retired</th>
                         <th className="px-3 py-3 font-medium">State</th>
                       </tr>
@@ -1552,7 +2041,7 @@ export function TerraQuraWorkbench() {
                       {projectCredits.length === 0 ? (
                         <tr>
                           <td
-                            colSpan={4}
+                            colSpan={5}
                             className="px-3 py-8 text-center text-white/30"
                           >
                             No on-chain issuance for this project
@@ -1570,6 +2059,9 @@ export function TerraQuraWorkbench() {
                             <td className="px-3 py-3 font-mono text-white/65">
                               {tonnesFromUnits(credit.creditsIssued)} t
                             </td>
+                            <td className="px-3 py-3 font-mono text-amber-200/70">
+                              {tonnesFromUnits(credit.escrowedAmount ?? 0)} t
+                            </td>
                             <td className="px-3 py-3 font-mono text-white/65">
                               {tonnesFromUnits(credit.retiredAmount)} t
                             </td>
@@ -1586,8 +2078,328 @@ export function TerraQuraWorkbench() {
             </Panel>
 
             <Panel
+              id="market"
+              eyebrow="05 · Contract marketplace"
+              title="List and acquire verified removal inventory"
+              action={
+                <span className="font-mono text-xs text-white/40">
+                  {projectListings.length} active
+                </span>
+              }
+            >
+              <div className="grid gap-6 xl:grid-cols-[0.9fr_1.1fr]">
+                <div className="space-y-6">
+                  <form
+                    onSubmit={createListing}
+                    className="border border-white/[0.08] p-4"
+                  >
+                    <p className="mb-4 text-xs font-semibold uppercase tracking-[0.16em] text-emerald-300">
+                      Sell owned inventory
+                    </p>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label className={`${labelClass} sm:col-span-2`}>
+                        Owned credit
+                        <select
+                          value={
+                            listingForm.creditId ||
+                            selectedListingCredit?.id ||
+                            ""
+                          }
+                          onChange={(event) => {
+                            const credit = projectCredits.find(
+                              (candidate) =>
+                                candidate.id === event.target.value,
+                            );
+                            setListingForm((form) => ({
+                              ...form,
+                              creditId: event.target.value,
+                              amount: credit
+                                ? String(credit.creditsIssued)
+                                : "",
+                            }));
+                          }}
+                          className={fieldClass}
+                        >
+                          <option value="">Select inventory</option>
+                          {projectCredits
+                            .filter(
+                              (credit) =>
+                                credit.creditsIssued > 0 &&
+                                credit.currentOwnerWallet?.toLowerCase() ===
+                                  address?.toLowerCase(),
+                            )
+                            .map((credit) => (
+                              <option key={credit.id} value={credit.id}>
+                                {shortHash(credit.tokenId)} ·{" "}
+                                {tonnesFromUnits(credit.creditsIssued)} tCO₂e
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                      <label className={labelClass}>
+                        Amount (kgCO₂ units)
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          max={selectedListingCredit?.creditsIssued}
+                          value={listingForm.amount}
+                          onChange={(event) =>
+                            setListingForm((form) => ({
+                              ...form,
+                              amount: event.target.value,
+                            }))
+                          }
+                          required
+                          className={fieldClass}
+                        />
+                      </label>
+                      <label className={labelClass}>
+                        AETH per unit
+                        <input
+                          type="number"
+                          min="0.000000000000000001"
+                          step="0.000000000000000001"
+                          value={listingForm.priceAeth}
+                          onChange={(event) =>
+                            setListingForm((form) => ({
+                              ...form,
+                              priceAeth: event.target.value,
+                            }))
+                          }
+                          required
+                          className={fieldClass}
+                        />
+                      </label>
+                      <label className={labelClass}>
+                        Minimum purchase
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
+                          value={listingForm.minPurchaseAmount}
+                          onChange={(event) =>
+                            setListingForm((form) => ({
+                              ...form,
+                              minPurchaseAmount: event.target.value,
+                            }))
+                          }
+                          required
+                          className={fieldClass}
+                        />
+                      </label>
+                      <label className={labelClass}>
+                        Duration (days)
+                        <input
+                          type="number"
+                          min="0"
+                          max="365"
+                          step="1"
+                          value={listingForm.durationDays}
+                          onChange={(event) =>
+                            setListingForm((form) => ({
+                              ...form,
+                              durationDays: event.target.value,
+                            }))
+                          }
+                          required
+                          className={fieldClass}
+                        />
+                      </label>
+                    </div>
+                    <div className="mt-4">
+                      <ActionButton
+                        type="submit"
+                        disabled={
+                          !mutationAllowed ||
+                          !selectedListingCredit ||
+                          busy !== null
+                        }
+                      >
+                        <LockKeyhole className="h-4 w-4" />
+                        Approve escrow and list
+                      </ActionButton>
+                    </div>
+                  </form>
+
+                  <form
+                    onSubmit={purchaseListing}
+                    className="border border-white/[0.08] p-4"
+                  >
+                    <p className="mb-4 text-xs font-semibold uppercase tracking-[0.16em] text-cyan-200">
+                      Buy listed inventory
+                    </p>
+                    <div className="grid gap-4 sm:grid-cols-2">
+                      <label className={`${labelClass} sm:col-span-2`}>
+                        Active listing
+                        <select
+                          value={
+                            purchaseForm.listingId ||
+                            selectedPurchaseListing?.id ||
+                            ""
+                          }
+                          onChange={(event) => {
+                            const listing = projectListings.find(
+                              (candidate) =>
+                                candidate.id === event.target.value,
+                            );
+                            setPurchaseForm({
+                              listingId: event.target.value,
+                              amount: listing
+                                ? String(listing.minPurchaseAmount)
+                                : "",
+                            });
+                          }}
+                          className={fieldClass}
+                        >
+                          <option value="">Select listing</option>
+                          {projectListings
+                            .filter(
+                              (listing) =>
+                                listing.sellerWallet.toLowerCase() !==
+                                address?.toLowerCase(),
+                            )
+                            .map((listing) => (
+                              <option key={listing.id} value={listing.id}>
+                                #{listing.listingId} ·{" "}
+                                {tonnesFromUnits(listing.remainingAmount)} t ·{" "}
+                                {formatEther(BigInt(listing.pricePerUnit))} AETH
+                              </option>
+                            ))}
+                        </select>
+                      </label>
+                      <label className={labelClass}>
+                        Amount (kgCO₂ units)
+                        <input
+                          type="number"
+                          min={selectedPurchaseListing?.minPurchaseAmount ?? 1}
+                          max={selectedPurchaseListing?.remainingAmount}
+                          step="1"
+                          value={purchaseForm.amount}
+                          onChange={(event) =>
+                            setPurchaseForm((form) => ({
+                              ...form,
+                              amount: event.target.value,
+                            }))
+                          }
+                          required
+                          className={fieldClass}
+                        />
+                      </label>
+                      <div className="border border-white/[0.07] bg-white/[0.025] p-3">
+                        <p className="text-[10px] uppercase tracking-[0.13em] text-white/35">
+                          Wallet payment
+                        </p>
+                        <p className="mt-2 font-mono text-sm text-cyan-200">
+                          {selectedPurchaseListing && purchaseForm.amount
+                            ? formatEther(
+                                BigInt(selectedPurchaseListing.pricePerUnit) *
+                                  BigInt(Number(purchaseForm.amount || "0")),
+                              )
+                            : "0"}{" "}
+                          AETH
+                        </p>
+                      </div>
+                    </div>
+                    <div className="mt-4">
+                      <ActionButton
+                        type="submit"
+                        disabled={
+                          !mutationAllowed ||
+                          !selectedPurchaseListing ||
+                          busy !== null
+                        }
+                      >
+                        <WalletCards className="h-4 w-4" />
+                        Sign purchase
+                      </ActionButton>
+                    </div>
+                  </form>
+                </div>
+
+                <div className="overflow-x-auto border border-white/[0.08]">
+                  <table className="w-full text-left text-xs">
+                    <thead className="border-b border-white/[0.08] bg-white/[0.025] text-[10px] uppercase tracking-[0.13em] text-white/35">
+                      <tr>
+                        <th className="px-3 py-3 font-medium">Listing</th>
+                        <th className="px-3 py-3 font-medium">Seller</th>
+                        <th className="px-3 py-3 font-medium">Remaining</th>
+                        <th className="px-3 py-3 font-medium">Price / unit</th>
+                        <th className="px-3 py-3 font-medium">Expiry</th>
+                        <th className="px-3 py-3 font-medium">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {projectListings.length === 0 ? (
+                        <tr>
+                          <td
+                            colSpan={6}
+                            className="px-3 py-10 text-center text-white/30"
+                          >
+                            No confirmed active listings for this project
+                          </td>
+                        </tr>
+                      ) : (
+                        projectListings.map((listing) => (
+                          <tr
+                            key={listing.id}
+                            className="border-b border-white/[0.05] last:border-0"
+                          >
+                            <td className="px-3 py-3 font-mono text-white/65">
+                              #{listing.listingId}
+                            </td>
+                            <td className="px-3 py-3 font-mono text-white/50">
+                              {shortHash(listing.sellerWallet)}
+                            </td>
+                            <td className="px-3 py-3 font-mono text-white/65">
+                              {tonnesFromUnits(listing.remainingAmount)} t
+                            </td>
+                            <td className="px-3 py-3 font-mono text-emerald-300">
+                              {formatEther(BigInt(listing.pricePerUnit))} AETH
+                            </td>
+                            <td className="px-3 py-3 text-white/45">
+                              {listing.expiresAt
+                                ? new Date(
+                                    listing.expiresAt,
+                                  ).toLocaleDateString()
+                                : "Open"}
+                            </td>
+                            <td className="px-3 py-3">
+                              {listing.sellerWallet.toLowerCase() ===
+                              address?.toLowerCase() ? (
+                                <button
+                                  type="button"
+                                  onClick={() => void cancelListing(listing)}
+                                  disabled={busy !== null}
+                                  className="text-xs font-semibold text-amber-200 hover:text-amber-100 disabled:opacity-40"
+                                >
+                                  Cancel
+                                </button>
+                              ) : listing.explorerUrl ? (
+                                <a
+                                  href={listing.explorerUrl}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-emerald-300 hover:text-emerald-200"
+                                >
+                                  Receipt
+                                </a>
+                              ) : (
+                                "—"
+                              )}
+                            </td>
+                          </tr>
+                        ))
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </Panel>
+
+            <Panel
               id="retirement"
-              eyebrow="05 · Claims and retirement"
+              eyebrow="06 · Claims and retirement"
               title="Permanently retire units with the owner wallet"
             >
               <div className="grid gap-6 lg:grid-cols-[1fr_0.9fr]">
@@ -1617,7 +2429,12 @@ export function TerraQuraWorkbench() {
                     >
                       <option value="">Select inventory</option>
                       {projectCredits
-                        .filter((credit) => credit.creditsIssued > 0)
+                        .filter(
+                          (credit) =>
+                            credit.creditsIssued > 0 &&
+                            credit.currentOwnerWallet?.toLowerCase() ===
+                              address?.toLowerCase(),
+                        )
                         .map((credit) => (
                           <option key={credit.id} value={credit.id}>
                             {shortHash(credit.tokenId)} ·{" "}

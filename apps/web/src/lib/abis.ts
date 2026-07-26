@@ -35,6 +35,26 @@ export const CarbonCreditABI = [
     outputs: [{ type: "uint256" }],
   },
   {
+    name: "isApprovedForAll",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "account", type: "address" },
+      { name: "operator", type: "address" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
+  {
+    name: "setApprovalForAll",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "operator", type: "address" },
+      { name: "approved", type: "bool" },
+    ],
+    outputs: [],
+  },
+  {
     name: "totalCreditsMinted",
     type: "function",
     stateMutability: "view",
@@ -178,6 +198,36 @@ export const CarbonCreditABI = [
 
 export const CarbonMarketplaceABI = [
   {
+    name: "createListing",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "tokenId", type: "uint256" },
+      { name: "amount", type: "uint256" },
+      { name: "pricePerUnit", type: "uint256" },
+      { name: "minPurchaseAmount", type: "uint256" },
+      { name: "duration", type: "uint256" },
+    ],
+    outputs: [{ name: "listingId", type: "uint256" }],
+  },
+  {
+    name: "purchase",
+    type: "function",
+    stateMutability: "payable",
+    inputs: [
+      { name: "listingId", type: "uint256" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [],
+  },
+  {
+    name: "cancelListing",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "listingId", type: "uint256" }],
+    outputs: [],
+  },
+  {
     name: "platformFeeBps",
     type: "function",
     stateMutability: "view",
@@ -235,12 +285,15 @@ export const CarbonMarketplaceABI = [
       {
         type: "tuple",
         components: [
+          { name: "listingId", type: "uint256" },
           { name: "seller", type: "address" },
           { name: "tokenId", type: "uint256" },
           { name: "amount", type: "uint256" },
           { name: "pricePerUnit", type: "uint256" },
+          { name: "minPurchaseAmount", type: "uint256" },
           { name: "isActive", type: "bool" },
           { name: "createdAt", type: "uint256" },
+          { name: "expiresAt", type: "uint256" },
         ],
       },
     ],
@@ -255,6 +308,14 @@ export const CarbonMarketplaceABI = [
       { name: "tokenId", type: "uint256", indexed: true },
       { name: "amount", type: "uint256", indexed: false },
       { name: "pricePerUnit", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    name: "ListingCancelled",
+    type: "event",
+    inputs: [
+      { name: "listingId", type: "uint256", indexed: true },
+      { name: "seller", type: "address", indexed: true },
     ],
   },
   {

@@ -19,13 +19,16 @@ export function getAuthContext(request: { user?: unknown }): AuthContext {
   const user = request.user as AuthUserClaims | undefined;
 
   return {
-    address: typeof user?.address === "string" ? user.address.toLowerCase() : null,
+    address:
+      typeof user?.address === "string" ? user.address.toLowerCase() : null,
     userType: user?.userType ?? "operator",
     kycStatus: user?.kycStatus ?? "pending",
   };
 }
 
-export function getAuthenticatedAddress(request: { user?: unknown }): string | null {
+export function getAuthenticatedAddress(request: {
+  user?: unknown;
+}): string | null {
   return getAuthContext(request).address;
 }
 
@@ -39,10 +42,12 @@ export function ensureApprovedKyc(
   options?: {
     allowAdminBypass?: boolean;
     message?: string;
-  }
+  },
 ): boolean {
-  const { allowAdminBypass = true, message = "KYC approval is required for this action" } =
-    options ?? {};
+  const {
+    allowAdminBypass = true,
+    message = "KYC approval is required for this action",
+  } = options ?? {};
   const authContext = getAuthContext(request);
 
   if (allowAdminBypass && authContext.userType === "admin") {

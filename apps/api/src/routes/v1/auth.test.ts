@@ -113,7 +113,7 @@ describe("Auth routes", () => {
       expect(body.user.address).toBe(
         "0x1234567890abcdef1234567890abcdef12345678",
       );
-      expect(body.user.chainId).toBe(78432);
+      expect(body.user.chainId).toBe(7332);
     });
 
     it("normalizes the returned address to lowercase", async () => {
@@ -121,7 +121,7 @@ describe("Auth routes", () => {
         success: true,
         data: {
           address: "0xABCDef1234567890ABCDEF1234567890abcdef12",
-          chainId: 78432,
+          chainId: 7332,
           domain: "localhost",
           nonce: "test-nonce",
         },
@@ -172,7 +172,7 @@ describe("Auth routes", () => {
         success: true,
         data: {
           address: "0x1234567890abcdef1234567890abcdef12345678",
-          chainId: 78432,
+          chainId: 7332,
           domain: "evil-site.com",
           nonce: "test-nonce",
         },

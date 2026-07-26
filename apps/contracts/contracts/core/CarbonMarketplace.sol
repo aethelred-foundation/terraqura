@@ -11,6 +11,10 @@ import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
 import "../interfaces/ICircuitBreaker.sol";
 
+interface IKycRegistry {
+    function isKycVerified(address account) external view returns (bool);
+}
+
 /**
  * @title CarbonMarketplace
  * @author TerraQura
@@ -207,6 +211,7 @@ contract CarbonMarketplace is
     error CannotOfferOnOwnCredits();
     error NotAuthorizedToReject();
     error InvalidCircuitBreaker();
+    error InvalidKycRegistry();
     error CircuitBreakerBlocked();
     error CircuitBreakerRateLimited();
     error CircuitBreakerVolumeExceeded();
@@ -215,8 +220,11 @@ contract CarbonMarketplace is
 
     modifier onlyKycVerified() {
         address sender = _msgSender();
-        if (kycRequired && !isKycVerified[sender]) {
-            revert KycNotVerified();
+        if (kycRequired) {
+            bool verified = kycRegistry == address(0)
+                ? isKycVerified[sender]
+                : IKycRegistry(kycRegistry).isKycVerified(sender);
+            if (!verified) revert KycNotVerified();
         }
         _;
     }
@@ -1009,6 +1017,14 @@ if (_owner != msg.sender) {
      */
     function setKycRequired(bool required) external onlyOwner {
         kycRequired = required;
+    }
+
+    /**
+     * @notice Set the protocol identity registry used for marketplace checks.
+     */
+    function setKycRegistry(address registry) external onlyOwner {
+        if (registry == address(0)) revert InvalidKycRegistry();
+        kycRegistry = registry;
     }
 
     /**

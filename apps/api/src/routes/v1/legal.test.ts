@@ -4,10 +4,11 @@ import {
   buildTermsAcceptanceMessage,
 } from "@terraqura/types";
 import { Wallet } from "ethers";
-import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 
 import { createTestServer, resetStateStore } from "../../../test/helpers.js";
+
+import type { FastifyInstance } from "fastify";
 
 describe("legal acceptance routes", () => {
   let server: FastifyInstance;

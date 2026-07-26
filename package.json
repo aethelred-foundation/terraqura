@@ -2,7 +2,7 @@
   "name": "@aethelred/terraqura",
   "version": "1.0.0",
   "private": true,
-  "description": "Institutional-Grade Carbon Asset Platform with Proof-of-Physics Verification — Aethelred dApp #5",
+  "description": "Auditable carbon-removal lifecycle operations on Aethelred",
   "repository": {
     "type": "git",
     "url": "https://github.com/aethelred-io/terraqura.git"
@@ -15,8 +15,7 @@
     "packages/config/*"
   ],
   "scripts": {
-    "build": "turbo build --filter=!@terraqura/subgraph",
-    "build:subgraph": "pnpm --filter @terraqura/subgraph build",
+    "build": "turbo build",
     "dev": "turbo dev",
     "lint": "turbo lint",
     "lint:fix": "turbo lint:fix",
@@ -24,10 +23,7 @@
     "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,json,md}\"",
     "test": "turbo test",
     "test:coverage": "turbo test:coverage",
-    "test:python": "cd apps/analytics && python -m pytest tests/ -v",
-    "test:rust": "cd apps/verifier && cargo test",
-    "test:go": "cd apps/indexer && go test ./...",
-    "test:all": "turbo test && pnpm test:python && pnpm test:rust && pnpm test:go",
+    "test:all": "turbo test",
     "clean": "turbo clean && rm -rf node_modules",
     "typecheck": "turbo typecheck",
     "prepare": "husky"
@@ -94,6 +90,8 @@
       "immutable": ">=5.1.2",
       "svgo": "4.0.2",
       "@hono/node-server": ">=1.14.1",
+      "@metamask/sdk": "0.33.1",
+      "@metamask/sdk-communication-layer": "0.33.1",
       "hono": "4.12.27",
       "serialize-javascript": "7.0.5",
       "uuid": "11.1.1",

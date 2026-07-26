@@ -46,7 +46,7 @@ vi.mock("../../services/blockchain/contracts.js", () => ({
   mintVerifiedCreditsOnChain: mockMintVerifiedCreditsOnChain,
   verifyRetirementOnChain: mockVerifyRetirementOnChain,
   getExplorerTxLink: (txHash: string) =>
-    `https://explorer-testnet.aethelred.network/tx/${txHash}`,
+    `https://explorer.test.invalid/tx/${txHash}`,
 }));
 
 import { creditsRoutes } from "./credits.js";
@@ -59,6 +59,7 @@ const WALLET_A = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const WALLET_B = "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
 const JWT_SECRET = "a]ks8d7f6g5h4j3k2l1m0n9b8v7c6x5z4";
 const RETIREMENT_TX_HASH = "0x" + "9".repeat(64);
+const TEST_CID = `Qm${"a".repeat(44)}`;
 const DAC_UNITS_STORE_KEY = "dac-units:v1";
 
 async function buildApp() {
@@ -189,6 +190,7 @@ describe("credits routes", () => {
     mockMintVerifiedCreditsOnChain.mockResolvedValue({
       txHash: "0x" + "1".repeat(64),
       tokenId: "0x" + "2".repeat(64),
+      amount: 100,
     });
     mockVerifyRetirementOnChain.mockReset();
     mockVerifyRetirementOnChain.mockResolvedValue({
@@ -324,7 +326,7 @@ describe("credits routes", () => {
       payload: {
         verificationId: "ver_1",
         recipientWallet: WALLET_A,
-        ipfsMetadataCid: "QmTest",
+        ipfsMetadataCid: TEST_CID,
       },
     });
     expect(res.statusCode).toBe(401);
@@ -339,7 +341,7 @@ describe("credits routes", () => {
       payload: {
         verificationId: "ver_missing",
         recipientWallet: WALLET_A,
-        ipfsMetadataCid: "QmTest",
+        ipfsMetadataCid: TEST_CID,
       },
     });
     expect(res.statusCode).toBe(404);
@@ -356,7 +358,7 @@ describe("credits routes", () => {
       payload: {
         verificationId: "ver_fail",
         recipientWallet: WALLET_A,
-        ipfsMetadataCid: "QmTest",
+        ipfsMetadataCid: TEST_CID,
       },
     });
     expect(res.statusCode).toBe(400);
@@ -374,7 +376,7 @@ describe("credits routes", () => {
       payload: {
         verificationId: "ver_ok",
         recipientWallet: WALLET_A,
-        ipfsMetadataCid: "QmMinted",
+        ipfsMetadataCid: TEST_CID,
       },
     });
     expect(res.statusCode).toBe(201);
@@ -395,7 +397,7 @@ describe("credits routes", () => {
       payload: {
         verificationId: "ver_dup",
         recipientWallet: WALLET_A,
-        ipfsMetadataCid: "QmFirst",
+        ipfsMetadataCid: TEST_CID,
       },
     });
 
@@ -406,7 +408,7 @@ describe("credits routes", () => {
       payload: {
         verificationId: "ver_dup",
         recipientWallet: WALLET_A,
-        ipfsMetadataCid: "QmSecond",
+        ipfsMetadataCid: TEST_CID,
       },
     });
     expect(res2.statusCode).toBe(409);
@@ -423,7 +425,7 @@ describe("credits routes", () => {
       payload: {
         verificationId: "ver_other",
         recipientWallet: WALLET_B,
-        ipfsMetadataCid: "QmOther",
+        ipfsMetadataCid: TEST_CID,
       },
     });
     expect(res.statusCode).toBe(403);
@@ -441,7 +443,7 @@ describe("credits routes", () => {
       payload: {
         verificationId: "ver_kyc",
         recipientWallet: WALLET_A,
-        ipfsMetadataCid: "QmKyc",
+        ipfsMetadataCid: TEST_CID,
       },
     });
 
@@ -461,7 +463,7 @@ describe("credits routes", () => {
       payload: {
         verificationId: "ver_owner",
         recipientWallet: WALLET_A,
-        ipfsMetadataCid: "QmOwner",
+        ipfsMetadataCid: TEST_CID,
       },
     });
 

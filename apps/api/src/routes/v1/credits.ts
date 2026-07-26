@@ -1,3 +1,5 @@
+import { randomUUID } from "node:crypto";
+
 import {
   CreditStatus,
   DACStatus,
@@ -16,6 +18,11 @@ import {
   bearerAuthRateLimit,
   verifyBearerAuth,
 } from "../../lib/bearer-auth.js";
+import {
+  CREDITS_STORE_KEY,
+  DEFAULT_CREDITS_STATE,
+  type StoredCredit,
+} from "../../lib/carbon-state.js";
 import { mutateState, readState } from "../../lib/state-store.js";
 import {
   getExplorerTxLink,
@@ -23,11 +30,25 @@ import {
   verifyRetirementOnChain,
 } from "../../services/blockchain/contracts.js";
 
+const IpfsCidSchema = z
+  .string()
+  .trim()
+  .transform((value) => value.replace(/^ipfs:\/\//i, ""))
+  .refine(
+    (value) =>
+      /^Qm[1-9A-HJ-NP-Za-km-z]{44}$/.test(value) ||
+      /^b[a-z2-7]{20,}$/.test(value),
+    "ipfsMetadataCid must be a valid CIDv0 or base32 CIDv1",
+  );
+
 const MintCreditsSchema = z.object({
   verificationId: z.string().min(1),
   recipientWallet: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
-  ipfsMetadataCid: z.string().min(1),
-  arweaveTxId: z.string().optional(),
+  ipfsMetadataCid: IpfsCidSchema,
+  arweaveTxId: z
+    .string()
+    .regex(/^[A-Za-z0-9_-]{43}$/)
+    .optional(),
 });
 
 const RetireCreditsSchema = z.object({
@@ -35,41 +56,6 @@ const RetireCreditsSchema = z.object({
   reason: z.string().min(1).max(500),
   txHash: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
 });
-
-interface StoredCredit {
-  id: string;
-  tokenId: string;
-  verificationId: string;
-  dacUnitId: string;
-  captureStartTime: string;
-  captureEndTime: string;
-  co2CapturedKg: number;
-  energyConsumedKwh: number;
-  creditsIssued: number;
-  initialCreditsIssued: number;
-  retiredAmount: number;
-  sourceDataHash: string;
-  verificationStatus: CreditStatus;
-  efficiencyFactor: number;
-  mintTxHash: string | null;
-  ipfsMetadataCid: string | null;
-  arweaveTxId: string | null;
-  currentOwnerId: string | null;
-  currentOwnerWallet: string | null;
-  isRetired: boolean;
-  retiredAt: string | null;
-  retirementReason: string | null;
-  retirementTxHash?: string | null;
-  retirementTxHashes?: string[];
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface CreditsState {
-  credits: Record<string, StoredCredit>;
-  verificationToCredit: Record<string, string>;
-  nextTokenId: number;
-}
 
 interface VerificationsState {
   verifications: Record<
@@ -105,12 +91,6 @@ interface DacUnitsState {
   units: Record<string, StoredDacUnit>;
 }
 
-const CREDITS_STORE_KEY = "credits:v1";
-const DEFAULT_CREDITS_STATE: CreditsState = {
-  credits: {},
-  verificationToCredit: {},
-  nextTokenId: 1,
-};
 const VERIFICATIONS_STORE_KEY = "verification:v1";
 const DEFAULT_VERIFICATIONS_STATE: VerificationsState = {
   verifications: {},
@@ -162,6 +142,7 @@ export async function creditsRoutes(
                     dacUnitId: { type: "string" },
                     co2CapturedKg: { type: "number" },
                     creditsIssued: { type: "number" },
+                    escrowedAmount: { type: "number" },
                     retiredAmount: { type: "number" },
                     verificationStatus: { type: "string" },
                     isRetired: { type: "boolean" },
@@ -219,6 +200,7 @@ export async function creditsRoutes(
           dacUnitId: credit.dacUnitId,
           co2CapturedKg: credit.co2CapturedKg,
           creditsIssued: credit.creditsIssued,
+          escrowedAmount: credit.escrowedAmount ?? 0,
           retiredAmount: credit.retiredAmount,
           verificationStatus: credit.verificationStatus,
           isRetired: credit.isRetired,
@@ -264,6 +246,7 @@ export async function creditsRoutes(
                   co2CapturedKg: { type: "number" },
                   energyConsumedKwh: { type: "number" },
                   creditsIssued: { type: "number" },
+                  escrowedAmount: { type: "number" },
                   initialCreditsIssued: { type: "number" },
                   retiredAmount: { type: "number" },
                   efficiencyFactor: { type: "number" },
@@ -578,8 +561,6 @@ export async function creditsRoutes(
           error: "Verification does not have mintable credits",
         });
       }
-      const creditsToMint = verification.creditsToMint;
-
       const dacUnitsState = await readState(
         DAC_UNITS_STORE_KEY,
         DEFAULT_DAC_UNITS_STATE,
@@ -624,7 +605,7 @@ export async function creditsRoutes(
         });
       }
 
-      const reservationId = `pending:${Date.now()}:${Math.random().toString(36).slice(2, 8)}`;
+      const reservationId = `pending:${randomUUID()}`;
       const reserved = await mutateState(
         CREDITS_STORE_KEY,
         DEFAULT_CREDITS_STATE,
@@ -645,7 +626,7 @@ export async function creditsRoutes(
         });
       }
 
-      let onChainMint: { txHash: string; tokenId: string };
+      let onChainMint: { txHash: string; tokenId: string; amount: number };
       try {
         onChainMint = await mintVerifiedCreditsOnChain({
           recipient: recipientWallet,
@@ -697,7 +678,7 @@ export async function creditsRoutes(
           }
 
           const nowIso = new Date().toISOString();
-          const id = `cred_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          const id = `cred_${randomUUID()}`;
           const credits = new Map(Object.entries(state.credits));
 
           const credit: StoredCredit = {
@@ -709,8 +690,9 @@ export async function creditsRoutes(
             captureEndTime: verification.endTime,
             co2CapturedKg: verification.totalCo2CapturedKg,
             energyConsumedKwh: verification.totalEnergyKwh,
-            creditsIssued: creditsToMint,
-            initialCreditsIssued: creditsToMint,
+            creditsIssued: onChainMint.amount,
+            escrowedAmount: 0,
+            initialCreditsIssued: onChainMint.amount,
             retiredAmount: 0,
             sourceDataHash: verification.sourceDataHash,
             verificationStatus: CreditStatus.MINTED,
@@ -974,7 +956,8 @@ export async function creditsRoutes(
 
           stored.creditsIssued -= body.amount;
           stored.retiredAmount += body.amount;
-          stored.isRetired = stored.creditsIssued === 0;
+          stored.isRetired =
+            stored.creditsIssued === 0 && (stored.escrowedAmount ?? 0) === 0;
           stored.verificationStatus = stored.isRetired
             ? CreditStatus.RETIRED
             : CreditStatus.MINTED;

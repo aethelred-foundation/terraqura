@@ -57,5 +57,5 @@ bin/
 .DS_Store
 Thumbs.db
 
-# Claude
-.claude/
+*.tsbuildinfo
+packages/subgraph/.runtime/

@@ -28,7 +28,7 @@ interface SumsubSdkPayload {
 interface SumsubSdkBuilder {
   on: (
     event: string,
-    callback: (payload: SumsubSdkPayload) => void | Promise<void>
+    callback: (payload: SumsubSdkPayload) => void | Promise<void>,
   ) => SumsubSdkBuilder;
   build: () => { launch: (containerId: string) => void };
 }
@@ -43,7 +43,7 @@ declare global {
           email?: string;
           phone?: string;
           theme?: string;
-        }
+        },
       ) => {
         withConf: (conf: {
           lang?: string;
@@ -53,7 +53,7 @@ declare global {
           withOptions: (options: { addViewportTag?: boolean }) => {
             on: (
               event: string,
-              callback: (payload: SumsubSdkPayload) => void | Promise<void>
+              callback: (payload: SumsubSdkPayload) => void | Promise<void>,
             ) => SumsubSdkBuilder;
             build: () => { launch: (containerId: string) => void };
           };
@@ -132,9 +132,20 @@ export function SumsubWidget({
       setIsInitialized(true);
     } catch (error) {
       console.error("[Sumsub] Init error:", error);
-      onError?.(error instanceof Error ? error : new Error("Failed to initialize Sumsub"));
+      onError?.(
+        error instanceof Error
+          ? error
+          : new Error("Failed to initialize Sumsub"),
+      );
     }
-  }, [accessToken, sdkLoaded, isInitialized, onComplete, onError, onTokenExpired]);
+  }, [
+    accessToken,
+    sdkLoaded,
+    isInitialized,
+    onComplete,
+    onError,
+    onTokenExpired,
+  ]);
 
   useEffect(() => {
     if (sdkLoaded && accessToken) {

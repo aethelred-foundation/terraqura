@@ -71,7 +71,7 @@ contract TerraQuraAccessControl is
         KycStatus status;
         uint256 verifiedAt;
         uint256 expiresAt;
-        string provider; // sumsub, onfido, etc.
+        string provider; // Identity-verification provider identifier
         bytes32 applicantIdHash; // Hashed for privacy
         bool sanctionsCleared;
     }
@@ -186,6 +186,39 @@ contract TerraQuraAccessControl is
         });
 
         emit KycStatusUpdated(account, status, provider, expiresAt);
+    }
+
+    /**
+     * @notice Atomically update identity and sanctions status for a wallet.
+     * @dev Used by the managed compliance service after a signed provider
+     * webhook has been validated.
+     */
+    function updateComplianceStatus(
+        address account,
+        KycStatus status,
+        string calldata provider,
+        bytes32 applicantIdHash,
+        bool sanctionsCleared
+    ) external onlyRole(COMPLIANCE_ROLE) {
+        if (bytes(provider).length == 0 && status == KycStatus.VERIFIED) {
+            revert InvalidKycProvider();
+        }
+
+        uint256 expiresAt = status == KycStatus.VERIFIED
+            ? block.timestamp + kycValidityPeriod
+            : 0;
+
+        kycRegistry[account] = KycInfo({
+            status: status,
+            verifiedAt: status == KycStatus.VERIFIED ? block.timestamp : 0,
+            expiresAt: expiresAt,
+            provider: provider,
+            applicantIdHash: applicantIdHash,
+            sanctionsCleared: sanctionsCleared
+        });
+
+        emit KycStatusUpdated(account, status, provider, expiresAt);
+        emit SanctionsStatusUpdated(account, sanctionsCleared);
     }
 
     /**

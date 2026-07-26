@@ -1,145 +1,65 @@
-import { randomBytes, scryptSync } from "crypto";
+import { randomBytes, randomUUID } from "node:crypto";
 
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
-import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
+import {
+  API_KEYS_STORE_KEY,
+  DEFAULT_API_KEYS_STATE,
+  hashApiKey,
+  type ApiKeyType,
+  type StoredApiKey,
+} from "../../lib/api-key-store.js";
+import {
+  ensureApprovedKyc,
+  getAuthenticatedAddress,
+  isAdmin,
+} from "../../lib/auth-context.js";
+import {
+  bearerAuthRateLimit,
+  verifyBearerAuth,
+} from "../../lib/bearer-auth.js";
 import { mutateState, readState } from "../../lib/state-store.js";
 
-const ApiKeyType = z.enum(["sensor", "read-only", "full-access"]);
+const ApiKeyTypeSchema = z.literal("sensor");
 
-const CreateApiKeySchema = z.object({
-  name: z.string().min(1).max(100),
-  type: ApiKeyType,
-  description: z.string().max(500).optional(),
-  permissions: z
-    .array(
-      z.enum([
-        "credits:read",
-        "credits:write",
-        "marketplace:read",
-        "marketplace:write",
-        "sensors:write",
-        "verification:read",
-        "analytics:read",
-        "activity:read",
-        "webhooks:manage",
-      ])
-    )
-    .optional(),
-  expiresInDays: z.number().int().min(1).max(365).optional(),
-});
+const CreateApiKeySchema = z
+  .object({
+    name: z.string().min(1).max(100),
+    type: ApiKeyTypeSchema,
+    dacUnitId: z.string().min(1).optional(),
+    description: z.string().max(500).optional(),
+    expiresInDays: z.number().int().min(1).max(365).optional(),
+  })
+  .superRefine((value, context) => {
+    if (value.type === "sensor" && !value.dacUnitId) {
+      context.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["dacUnitId"],
+        message: "dacUnitId is required for sensor credentials",
+      });
+    }
+  });
 
 const UpdateApiKeySchema = z.object({
   name: z.string().min(1).max(100).optional(),
   description: z.string().max(500).optional(),
-  permissions: z
-    .array(
-      z.enum([
-        "credits:read",
-        "credits:write",
-        "marketplace:read",
-        "marketplace:write",
-        "sensors:write",
-        "verification:read",
-        "analytics:read",
-        "activity:read",
-        "webhooks:manage",
-      ])
-    )
-    .optional(),
-  rateLimitOverride: z
-    .object({
-      maxRequests: z.number().int().min(1).max(100000),
-      windowMs: z.number().int().min(1000).max(3600000),
-    })
-    .optional(),
-  isActive: z.boolean().optional(),
 });
 
-type ApiKeyTypeValue = z.infer<typeof ApiKeyType>;
-
-interface StoredApiKey {
-  id: string;
-  userId: string;
-  name: string;
-  type: ApiKeyTypeValue;
-  description: string | null;
-  keyHash: string;
-  keySalt: string;
-  keyPrefix: string;
-  permissions: string[];
-  rateLimit: {
-    maxRequests: number;
-    windowMs: number;
-  };
-  isActive: boolean;
-  expiresAt: string | null;
-  lastUsedAt: string | null;
-  totalRequests: number;
-  createdAt: string;
-  updatedAt: string;
-}
-
-interface ApiKeysState {
-  keys: Record<string, StoredApiKey>;
-}
-
-const API_KEYS_STORE_KEY = "api-keys:v1";
-const DEFAULT_API_KEYS_STATE: ApiKeysState = {
-  keys: {},
-};
-
-const DEFAULT_RATE_LIMITS: Record<
-  ApiKeyTypeValue,
-  { maxRequests: number; windowMs: number }
-> = {
-  sensor: { maxRequests: 10000, windowMs: 60000 },
-  "read-only": { maxRequests: 1000, windowMs: 60000 },
-  "full-access": { maxRequests: 5000, windowMs: 60000 },
-};
-
-const DEFAULT_PERMISSIONS: Record<ApiKeyTypeValue, string[]> = {
+const DEFAULT_PERMISSIONS: Record<ApiKeyType, string[]> = {
   sensor: ["sensors:write"],
-  "read-only": [
-    "credits:read",
-    "marketplace:read",
-    "verification:read",
-    "analytics:read",
-    "activity:read",
-  ],
-  "full-access": [
-    "credits:read",
-    "credits:write",
-    "marketplace:read",
-    "marketplace:write",
-    "sensors:write",
-    "verification:read",
-    "analytics:read",
-    "activity:read",
-    "webhooks:manage",
-  ],
+};
+const DAC_UNITS_STORE_KEY = "dac-units:v1";
+const DEFAULT_DAC_UNITS_STATE = {
+  units: {} as Record<string, { id: string; operatorWallet: string }>,
 };
 
-function getAuthenticatedUserId(request: { user?: unknown }): string | null {
-  const user = request.user as { address?: string } | undefined;
-  return typeof user?.address === "string"
-    ? `user_${user.address.toLowerCase().slice(2, 10)}`
-    : null;
-}
-
-function generateApiKey(type: ApiKeyTypeValue): string {
-  const prefixMap: Record<ApiKeyTypeValue, string> = {
+function generateApiKey(type: ApiKeyType): string {
+  const prefixMap: Record<ApiKeyType, string> = {
     sensor: "tqs",
-    "read-only": "tqr",
-    "full-access": "tqf",
   };
   const prefix = prefixMap[type];
   return `${prefix}_${randomBytes(32).toString("hex")}`;
-}
-
-function hashApiKey(key: string, salt: string): string {
-  return scryptSync(key, salt, 64).toString("hex");
 }
 
 function maskApiKey(prefix: string): string {
@@ -148,7 +68,7 @@ function maskApiKey(prefix: string): string {
 
 export async function apiKeysRoutes(
   fastify: FastifyInstance,
-  _options: FastifyPluginOptions
+  _options: FastifyPluginOptions,
 ) {
   // POST /v1/api-keys — Create new API key
   fastify.post(
@@ -165,32 +85,23 @@ export async function apiKeysRoutes(
           required: ["name", "type"],
           properties: {
             name: { type: "string" },
+            dacUnitId: { type: "string" },
             type: {
               type: "string",
-              enum: ["sensor", "read-only", "full-access"],
+              enum: ["sensor"],
             },
             description: { type: "string" },
-            permissions: {
-              type: "array",
-              items: {
-                type: "string",
-                enum: [
-                  "credits:read",
-                  "credits:write",
-                  "marketplace:read",
-                  "marketplace:write",
-                  "sensors:write",
-                  "verification:read",
-                  "analytics:read",
-                  "activity:read",
-                  "webhooks:manage",
-                ],
-              },
-            },
             expiresInDays: { type: "integer" },
           },
         },
         response: {
+          400: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
           201: {
             type: "object",
             properties: {
@@ -202,16 +113,10 @@ export async function apiKeysRoutes(
                   key: { type: "string" },
                   name: { type: "string" },
                   type: { type: "string" },
+                  dacUnitId: { type: "string", nullable: true },
                   permissions: {
                     type: "array",
                     items: { type: "string" },
-                  },
-                  rateLimit: {
-                    type: "object",
-                    properties: {
-                      maxRequests: { type: "integer" },
-                      windowMs: { type: "integer" },
-                    },
                   },
                   expiresAt: { type: "string", nullable: true },
                   createdAt: { type: "string" },
@@ -227,45 +132,88 @@ export async function apiKeysRoutes(
               error: { type: "string" },
             },
           },
+          403: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
+          404: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
         },
       },
       config: bearerAuthRateLimit,
       preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
-      const userId = getAuthenticatedUserId(request);
-      if (!userId) {
+      const walletAddress = getAuthenticatedAddress(request);
+      if (!walletAddress) {
         return reply.status(401).send({
           success: false,
           error: "Missing authenticated wallet",
         });
       }
+      if (!ensureApprovedKyc(request, reply)) return;
 
       const body = CreateApiKeySchema.parse(request.body);
+      const dacUnitId = body.dacUnitId;
+      if (!dacUnitId) {
+        return reply.status(400).send({
+          success: false,
+          error: "dacUnitId is required for sensor credentials",
+        });
+      }
+      const units = await readState(
+        DAC_UNITS_STORE_KEY,
+        DEFAULT_DAC_UNITS_STATE,
+      );
+      const unit = units.units[dacUnitId];
+      if (!unit) {
+        return reply.status(404).send({
+          success: false,
+          error: "DAC unit not found",
+        });
+      }
+      if (
+        !isAdmin(request) &&
+        unit.operatorWallet.toLowerCase() !== walletAddress
+      ) {
+        return reply.status(403).send({
+          success: false,
+          error:
+            "Only the facility operator can provision its sensor credential",
+        });
+      }
       const rawKey = generateApiKey(body.type);
       const keySalt = randomBytes(16).toString("hex");
       const keyHash = hashApiKey(rawKey, keySalt);
       const keyPrefix = rawKey.slice(0, 8);
 
-      const permissions = body.permissions || DEFAULT_PERMISSIONS[body.type];
-      const rateLimit = DEFAULT_RATE_LIMITS[body.type];
+      const permissions = DEFAULT_PERMISSIONS[body.type];
 
       const apiKey = await mutateState(
         API_KEYS_STORE_KEY,
         DEFAULT_API_KEYS_STATE,
         async (state) => {
-          const id = `key_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          const id = `key_${randomUUID()}`;
           const nowIso = new Date().toISOString();
 
           const expiresAt = body.expiresInDays
             ? new Date(
-                Date.now() + body.expiresInDays * 24 * 60 * 60 * 1000
+                Date.now() + body.expiresInDays * 24 * 60 * 60 * 1000,
               ).toISOString()
             : null;
 
           const created: StoredApiKey = {
             id,
-            userId,
+            walletAddress,
+            dacUnitId,
             name: body.name,
             type: body.type,
             description: body.description || null,
@@ -273,7 +221,6 @@ export async function apiKeysRoutes(
             keySalt,
             keyPrefix,
             permissions,
-            rateLimit,
             isActive: true,
             expiresAt,
             lastUsedAt: null,
@@ -284,7 +231,7 @@ export async function apiKeysRoutes(
 
           state.keys[id] = created;
           return created;
-        }
+        },
       );
 
       return reply.status(201).send({
@@ -294,15 +241,14 @@ export async function apiKeysRoutes(
           key: rawKey,
           name: apiKey.name,
           type: apiKey.type,
+          dacUnitId: apiKey.dacUnitId,
           permissions: apiKey.permissions,
-          rateLimit: apiKey.rateLimit,
           expiresAt: apiKey.expiresAt,
           createdAt: apiKey.createdAt,
-          warning:
-            "Store this key securely. It will not be shown again.",
+          warning: "Store this key securely. It will not be shown again.",
         },
       });
-    }
+    },
   );
 
   // GET /v1/api-keys — List API keys (masked)
@@ -320,7 +266,7 @@ export async function apiKeysRoutes(
           properties: {
             type: {
               type: "string",
-              enum: ["sensor", "read-only", "full-access"],
+              enum: ["sensor"],
             },
             isActive: { type: "boolean" },
             limit: { type: "integer", default: 50 },
@@ -340,17 +286,11 @@ export async function apiKeysRoutes(
                     id: { type: "string" },
                     name: { type: "string" },
                     type: { type: "string" },
+                    dacUnitId: { type: "string", nullable: true },
                     maskedKey: { type: "string" },
                     permissions: {
                       type: "array",
                       items: { type: "string" },
-                    },
-                    rateLimit: {
-                      type: "object",
-                      properties: {
-                        maxRequests: { type: "integer" },
-                        windowMs: { type: "integer" },
-                      },
                     },
                     isActive: { type: "boolean" },
                     expiresAt: { type: "string", nullable: true },
@@ -383,8 +323,8 @@ export async function apiKeysRoutes(
       preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
-      const userId = getAuthenticatedUserId(request);
-      if (!userId) {
+      const walletAddress = getAuthenticatedAddress(request);
+      if (!walletAddress) {
         return reply.status(401).send({
           success: false,
           error: "Missing authenticated wallet",
@@ -400,7 +340,7 @@ export async function apiKeysRoutes(
 
       const state = await readState(API_KEYS_STORE_KEY, DEFAULT_API_KEYS_STATE);
       let keys = Object.values(state.keys).filter(
-        (key) => key.userId === userId
+        (key) => key.walletAddress.toLowerCase() === walletAddress,
       );
 
       if (query.type) {
@@ -413,7 +353,7 @@ export async function apiKeysRoutes(
 
       keys.sort(
         (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
 
       const total = keys.length;
@@ -427,9 +367,9 @@ export async function apiKeysRoutes(
           id: key.id,
           name: key.name,
           type: key.type,
+          dacUnitId: key.dacUnitId,
           maskedKey: maskApiKey(key.keyPrefix),
           permissions: key.permissions,
-          rateLimit: key.rateLimit,
           isActive: key.isActive,
           expiresAt: key.expiresAt,
           lastUsedAt: key.lastUsedAt,
@@ -438,7 +378,7 @@ export async function apiKeysRoutes(
         })),
         pagination: { total, limit, offset },
       };
-    }
+    },
   );
 
   // DELETE /v1/api-keys/:id — Revoke an API key
@@ -505,8 +445,8 @@ export async function apiKeysRoutes(
       preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
-      const userId = getAuthenticatedUserId(request);
-      if (!userId) {
+      const walletAddress = getAuthenticatedAddress(request);
+      if (!walletAddress) {
         return reply.status(401).send({
           success: false,
           error: "Missing authenticated wallet",
@@ -525,7 +465,7 @@ export async function apiKeysRoutes(
             return { kind: "not_found" as const };
           }
 
-          if (key.userId !== userId) {
+          if (key.walletAddress.toLowerCase() !== walletAddress) {
             return { kind: "forbidden" as const };
           }
 
@@ -538,7 +478,7 @@ export async function apiKeysRoutes(
           keys.set(params.id, key);
           state.keys = Object.fromEntries(keys);
           return { kind: "success" as const, key };
-        }
+        },
       );
 
       if (result.kind === "not_found") {
@@ -570,18 +510,17 @@ export async function apiKeysRoutes(
           revokedAt: new Date().toISOString(),
         },
       };
-    }
+    },
   );
 
-  // PUT /v1/api-keys/:id — Update key permissions/rate limits
+  // PUT /v1/api-keys/:id — Update sensor credential metadata
   fastify.put(
     "/:id",
     {
       schema: {
         tags: ["API Keys"],
         summary: "Update an API key",
-        description:
-          "Update the name, description, permissions, or rate limits of an API key",
+        description: "Update a sensor credential name or description",
         security: [{ bearerAuth: [] }],
         params: {
           type: "object",
@@ -594,31 +533,6 @@ export async function apiKeysRoutes(
           properties: {
             name: { type: "string" },
             description: { type: "string" },
-            permissions: {
-              type: "array",
-              items: {
-                type: "string",
-                enum: [
-                  "credits:read",
-                  "credits:write",
-                  "marketplace:read",
-                  "marketplace:write",
-                  "sensors:write",
-                  "verification:read",
-                  "analytics:read",
-                  "activity:read",
-                  "webhooks:manage",
-                ],
-              },
-            },
-            rateLimitOverride: {
-              type: "object",
-              properties: {
-                maxRequests: { type: "integer" },
-                windowMs: { type: "integer" },
-              },
-            },
-            isActive: { type: "boolean" },
           },
         },
         response: {
@@ -635,13 +549,6 @@ export async function apiKeysRoutes(
                   permissions: {
                     type: "array",
                     items: { type: "string" },
-                  },
-                  rateLimit: {
-                    type: "object",
-                    properties: {
-                      maxRequests: { type: "integer" },
-                      windowMs: { type: "integer" },
-                    },
                   },
                   isActive: { type: "boolean" },
                   updatedAt: { type: "string" },
@@ -676,8 +583,8 @@ export async function apiKeysRoutes(
       preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
-      const userId = getAuthenticatedUserId(request);
-      if (!userId) {
+      const walletAddress = getAuthenticatedAddress(request);
+      if (!walletAddress) {
         return reply.status(401).send({
           success: false,
           error: "Missing authenticated wallet",
@@ -697,7 +604,7 @@ export async function apiKeysRoutes(
             return { kind: "not_found" as const };
           }
 
-          if (key.userId !== userId) {
+          if (key.walletAddress.toLowerCase() !== walletAddress) {
             return { kind: "forbidden" as const };
           }
 
@@ -711,23 +618,11 @@ export async function apiKeysRoutes(
             key.description = body.description;
           }
 
-          if (body.permissions !== undefined) {
-            key.permissions = body.permissions;
-          }
-
-          if (body.rateLimitOverride !== undefined) {
-            key.rateLimit = body.rateLimitOverride;
-          }
-
-          if (body.isActive !== undefined) {
-            key.isActive = body.isActive;
-          }
-
           key.updatedAt = nowIso;
           keys.set(params.id, key);
           state.keys = Object.fromEntries(keys);
           return { kind: "success" as const, key };
-        }
+        },
       );
 
       if (result.kind === "not_found") {
@@ -751,11 +646,10 @@ export async function apiKeysRoutes(
           name: result.key.name,
           type: result.key.type,
           permissions: result.key.permissions,
-          rateLimit: result.key.rateLimit,
           isActive: result.key.isActive,
           updatedAt: result.key.updatedAt,
         },
       };
-    }
+    },
   );
 }

@@ -9,6 +9,7 @@ import { terraquraApi } from "@/lib/terraquraApi";
 export type KycState =
   | "disconnected"
   | "checking"
+  | "unavailable"
   | "not_started"
   | "in_progress"
   | "pending_review"
@@ -54,7 +55,9 @@ interface KycTokenResponse {
   expiresAt: string;
 }
 
-export function useKycStatus(): UseKycStatusReturn {
+export function useKycStatus(
+  operatorToken?: string | null,
+): UseKycStatusReturn {
   const { address, isConnected } = useAccount();
   const [status, setStatus] = useState<KycStatus>({ state: "disconnected" });
   const [isLoading, setIsLoading] = useState(false);
@@ -79,6 +82,7 @@ export function useKycStatus(): UseKycStatusReturn {
         verifiedAt,
       } = await terraquraApi<KycStatusResponse>(
         `/v1/kyc/status/${encodeURIComponent(address)}`,
+        { token: operatorToken },
       );
 
       let state: KycState;
@@ -104,11 +108,11 @@ export function useKycStatus(): UseKycStatusReturn {
       });
     } catch (err) {
       setError(err instanceof Error ? err.message : "Unknown error");
-      setStatus({ state: "not_started" });
+      setStatus({ state: "unavailable" });
     } finally {
       setIsLoading(false);
     }
-  }, [address]);
+  }, [address, operatorToken]);
 
   // Initiate KYC verification
   const initiateKyc = useCallback(async () => {
@@ -125,6 +129,7 @@ export function useKycStatus(): UseKycStatusReturn {
         "/v1/kyc/initiate",
         {
           method: "POST",
+          token: operatorToken,
           body: JSON.stringify({ walletAddress: address }),
         },
       );
@@ -141,7 +146,7 @@ export function useKycStatus(): UseKycStatusReturn {
     } finally {
       setIsLoading(false);
     }
-  }, [address]);
+  }, [address, operatorToken]);
 
   // Refresh access token
   const refreshToken = useCallback(async (): Promise<string | null> => {
@@ -152,6 +157,7 @@ export function useKycStatus(): UseKycStatusReturn {
         `/v1/kyc/refresh-token/${encodeURIComponent(address)}`,
         {
           method: "POST",
+          token: operatorToken,
         },
       );
 
@@ -166,17 +172,17 @@ export function useKycStatus(): UseKycStatusReturn {
       setError(err instanceof Error ? err.message : "Unknown error");
       return null;
     }
-  }, [address]);
+  }, [address, operatorToken]);
 
   // Auto-fetch status when wallet connects
   useEffect(() => {
-    if (isConnected && address) {
+    if (isConnected && address && operatorToken) {
       setStatus({ state: "checking" });
       fetchStatus();
     } else {
       setStatus({ state: "disconnected" });
     }
-  }, [isConnected, address, fetchStatus]);
+  }, [isConnected, address, operatorToken, fetchStatus]);
 
   return {
     status,

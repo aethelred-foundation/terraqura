@@ -1,8 +1,8 @@
 # TerraQura VPS production deployment
 
-This runbook deploys the TerraQura API, worker, PostgreSQL/TimescaleDB, and
-Redis as a private backend stack. Only the API is bound to the host loopback
-interface on port `4000`; TLS must terminate at the existing reverse proxy.
+This runbook deploys the TerraQura API and PostgreSQL as a private backend
+stack. Only the API is bound to the host loopback interface on port `4000`; TLS
+must terminate at the existing reverse proxy.
 
 ## Prerequisites
 
@@ -11,9 +11,15 @@ interface on port `4000`; TLS must terminate at the existing reverse proxy.
   `api.terraqura.aethelred.network`
 - DNS for that hostname pointing to the backend host
 - A reverse proxy forwarding HTTPS traffic to `127.0.0.1:4000`
-- Production KYC, signer, sensor, database, Redis, and JWT secrets
+- Production KYC, signer, database, and JWT secrets
 
-Do not expose ports 5432 or 6379 on the host firewall.
+Do not expose port 5432 on the host firewall.
+
+The operator signing key must be generated, rotated, and audited by the
+organization's custody or secrets-management service. Materialize it only as a
+mode-`0400` file for the deployment service account. Compose mounts it into the
+API as a read-only secret at `/run/secrets/terraqura_operator_signer`; it is
+never accepted through a production environment variable.
 
 ## Configure
 
@@ -31,6 +37,8 @@ against the current testnet deployment manifest before starting the stack.
 ```bash
 docker compose --env-file .env -f docker-compose.production.yml config --quiet
 docker compose --env-file .env -f docker-compose.production.yml build
+docker compose --env-file .env -f docker-compose.production.yml run --rm \
+  api node dist/scripts/migrate.js
 docker compose --env-file .env -f docker-compose.production.yml up -d
 docker compose --env-file .env -f docker-compose.production.yml ps
 ```
@@ -64,9 +72,15 @@ docker compose --env-file .env -f docker-compose.production.yml up -d
 docker compose --env-file .env -f docker-compose.production.yml ps
 ```
 
-Never run multiple worker revisions against the same queues during a schema or
-job-payload migration. Add an explicit compatibility handler before such an
-upgrade.
+Run database migrations before directing traffic to code that depends on the
+new schema:
+
+```bash
+docker compose --env-file .env -f docker-compose.production.yml run --rm \
+  api node dist/scripts/migrate.js
+```
+
+Use a tested compatibility window when an upgrade changes stored state.
 
 ## Rollback
 

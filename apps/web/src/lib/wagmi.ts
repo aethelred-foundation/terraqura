@@ -1,51 +1,46 @@
-/**
- * TerraQura Wagmi Configuration
- *
- * Enterprise Tier-1 Web3 Configuration with:
- * - Multi-provider RPC failover with health checks
- * - Intelligent retry with exponential backoff
- * - Request batching for optimal throughput
- * - Connection state management
- * - Automatic provider rotation on failures
- * - Comprehensive error handling
- *
- * Network: Aethelred Sovereign Chain (TerraQura's own blockchain)
- *
- * @version 3.0.0 - Aethelred Sovereign Deployment
- * @author TerraQura Engineering
- */
-
 "use client";
 
 import { getDefaultConfig } from "@rainbow-me/rainbowkit";
 import { defineChain } from "viem";
-import { http, fallback, type Transport } from "wagmi";
+import { http } from "wagmi";
+
 import { aethelredWallet } from "./aethelredWallet";
+import { BLOCKCHAIN_CONFIGURATION_ERROR, CHAIN_ID } from "./contracts";
 import { metaMaskInjectedWallet } from "./metaMaskWallet";
 import { TERRAQURA_PUBLIC_URL } from "./publicUrl";
 
-// ============================================
-// Environment Configuration
-// ============================================
-
-const isTestnet = process.env.NEXT_PUBLIC_USE_TESTNET !== "false";
-// WalletConnect project IDs are public browser identifiers, not secrets. This
-// Aethelred ecosystem project keeps injected wallet support available in
-// production even when a deployment has not overridden the identifier.
-const AETHELRED_WALLETCONNECT_PROJECT_ID =
-  "7a4f9c2e1b8d43c6a095f2e7d4b1c830";
+const rpcUrl = process.env.NEXT_PUBLIC_AETHELRED_TESTNET_RPC_URL?.trim() || "";
+const explorerUrl =
+  process.env.NEXT_PUBLIC_AETHELRED_TESTNET_EXPLORER_URL?.trim().replace(
+    /\/+$/,
+    "",
+  ) || "";
 const walletConnectProjectId =
-  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim() ||
-  AETHELRED_WALLETCONNECT_PROJECT_ID;
+  process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim() || "";
 
-// ============================================
-// Aethelred Sovereign Network Definition
-// TerraQura's own sovereign blockchain protocol
-// ============================================
+function configurationFailure(): Error | null {
+  if (!rpcUrl) {
+    return new Error(
+      "NEXT_PUBLIC_AETHELRED_TESTNET_RPC_URL is required for wallet operations.",
+    );
+  }
+  if (process.env.NODE_ENV === "production" && !rpcUrl.startsWith("https://")) {
+    return new Error("Production wallet RPC must use HTTPS.");
+  }
+  if (BLOCKCHAIN_CONFIGURATION_ERROR) {
+    return new Error(BLOCKCHAIN_CONFIGURATION_ERROR);
+  }
+  if (!walletConnectProjectId) {
+    return new Error(
+      "NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID is required for wallet operations.",
+    );
+  }
+  return null;
+}
 
-export const aethelred = defineChain({
-  id: parseInt(process.env.NEXT_PUBLIC_AETHELRED_CHAIN_ID || "123456"),
-  name: "Aethelred Mainnet",
+export const aethelredTestnet = defineChain({
+  id: CHAIN_ID,
+  name: "Aethelred Testnet",
   nativeCurrency: {
     decimals: 18,
     name: "Aethelred",
@@ -53,326 +48,100 @@ export const aethelred = defineChain({
   },
   rpcUrls: {
     default: {
-      http: [
-        process.env.NEXT_PUBLIC_AETHELRED_RPC_URL ||
-          "https://rpc.aethelred.network",
-      ],
+      http: [rpcUrl || "http://127.0.0.1:8545"],
     },
   },
-  blockExplorers: {
-    default: {
-      name: "Aethelred Explorer",
-      url:
-        process.env.NEXT_PUBLIC_AETHELRED_EXPLORER_URL ||
-        "https://explorer.aethelred.network",
-    },
-  },
-  contracts: {
-    // Deployed contract addresses on Aethelred (populated after deployment)
-    // multicall3: { address: "0x..." },
-  },
-});
-
-export const aethelredTestnet = defineChain({
-  id: parseInt(process.env.NEXT_PUBLIC_AETHELRED_TESTNET_CHAIN_ID || "78432"),
-  name: "Aethelred Testnet",
-  nativeCurrency: {
-    decimals: 18,
-    name: "Test Aethelred",
-    symbol: "tAETH",
-  },
-  rpcUrls: {
-    default: {
-      http: [
-        process.env.NEXT_PUBLIC_AETHELRED_TESTNET_RPC_URL ||
-          "https://rpc-testnet.aethelred.network",
-      ],
-    },
-  },
-  blockExplorers: {
-    default: {
-      name: "Aethelred Testnet Explorer",
-      url:
-        process.env.NEXT_PUBLIC_AETHELRED_TESTNET_EXPLORER_URL ||
-        "https://explorer-testnet.aethelred.network",
-    },
-  },
+  ...(explorerUrl
+    ? {
+        blockExplorers: {
+          default: {
+            name: "Aethelred Testnet Explorer",
+            url: explorerUrl,
+          },
+        },
+      }
+    : {}),
   testnet: true,
 });
 
-// ============================================
-// RPC Provider Configuration
-// Enterprise-grade with multiple fallback tiers
-// ============================================
+let configError = configurationFailure();
+let config: ReturnType<typeof getDefaultConfig> | null = null;
 
-interface RPCEndpoint {
-  url: string;
-  priority: number;
-  provider: string;
-  rateLimit?: number; // requests per second
-  timeout?: number;
-}
-
-// ============================================
-// Transport Factory
-// Creates optimized HTTP transports with retry logic
-// ============================================
-
-interface TransportOptions {
-  retryCount?: number;
-  retryDelay?: number;
-  timeout?: number;
-  batch?: boolean | { batchSize?: number; wait?: number };
-}
-
-/**
- * Creates an enterprise-grade HTTP transport with:
- * - Configurable retry with exponential backoff
- * - Request batching for efficiency
- * - Timeout handling
- */
-function createEnterpriseTransport(
-  endpoint: RPCEndpoint,
-  options: TransportOptions = {},
-): ReturnType<typeof http> {
-  const {
-    retryCount = 3,
-    retryDelay = 500,
-    timeout = endpoint.timeout || 10000,
-    batch = { batchSize: 20, wait: 50 },
-  } = options;
-
-  return http(endpoint.url, {
-    batch,
-    retryCount,
-    retryDelay,
-    timeout,
-    // Custom fetch with headers for better provider handling
-    fetchOptions: {
-      headers: {
-        "Content-Type": "application/json",
-        "X-Client": "TerraQura-Dashboard",
-      },
-    },
-  });
-}
-
-/**
- * Creates a fallback transport chain from RPC configs
- * Sorted by priority for optimal failover
- */
-function createFallbackTransport(configs: RPCEndpoint[]): Transport {
-  // Sort by priority (lower = higher priority)
-  const sortedConfigs = [...configs].sort((a, b) => a.priority - b.priority);
-
-  const transports = sortedConfigs.map((config) =>
-    createEnterpriseTransport(config, {
-      retryCount: config.priority === 1 ? 5 : 3, // More retries for premium providers
-      retryDelay: config.priority === 1 ? 300 : 500,
-      timeout: config.timeout,
-    }),
-  );
-
-  return fallback(transports, {
-    rank: true, // Enable ranking for automatic best-provider selection
-    retryCount: 2, // Retry across fallbacks
-    retryDelay: 1000,
-  });
-}
-
-// NOTE: We intentionally omit a custom `wallets` array here.
-// RainbowKit's getDefaultConfig provides sensible wallet defaults.
-// Importing individual wallet factories (e.g., injectedWallet) at module
-// scope caused "originalFactory.call" errors during SSR because those
-// factories attempt to access browser APIs (window.ethereum) that don't
-// exist in Node.js.
-
-// ============================================
-// Aethelred RPC Configuration
-// Enterprise-grade with dedicated + public fallback
-// ============================================
-
-const AETHELRED_RPC_CONFIG: RPCEndpoint[] = [
-  // Tier 1: Dedicated RPC (via env)
-  ...(process.env.NEXT_PUBLIC_AETHELRED_RPC_URL
-    ? [
+if (!configError) {
+  try {
+    config = getDefaultConfig({
+      appName: "TerraQura",
+      appDescription:
+        "Carbon project, MRV, verification, issuance, trading, and retirement on Aethelred",
+      appUrl: TERRAQURA_PUBLIC_URL,
+      wallets: [
         {
-          url: process.env.NEXT_PUBLIC_AETHELRED_RPC_URL,
-          priority: 1,
-          provider: "Aethelred Dedicated",
-          rateLimit: 500,
-          timeout: 8000,
+          groupName: "Aethelred ecosystem",
+          wallets: [aethelredWallet],
         },
-      ]
-    : []),
-
-  // Tier 2: Default public RPC
-  {
-    url: "https://rpc.aethelred.network",
-    priority: 2,
-    provider: "Aethelred Public",
-    rateLimit: 100,
-    timeout: 12000,
-  },
-];
-
-const AETHELRED_TESTNET_RPC_CONFIG: RPCEndpoint[] = [
-  {
-    url:
-      process.env.NEXT_PUBLIC_AETHELRED_TESTNET_RPC_URL ||
-      "https://rpc-testnet.aethelred.network",
-    priority: 1,
-    provider: "Aethelred Testnet",
-    rateLimit: 100,
-    timeout: 12000,
-  },
-];
-
-// ============================================
-// Chain Configuration
-// Aethelred is the sole supported network
-// ============================================
-
-function getActiveChains() {
-  return isTestnet
-    ? ([aethelredTestnet, aethelred] as const)
-    : ([aethelred, aethelredTestnet] as const);
-}
-
-const activeChains = getActiveChains();
-
-// ============================================
-// Main Wagmi Configuration
-// ============================================
-
-// Build transport map for Aethelred chains
-function buildTransports(): Record<number, Transport> {
-  return {
-    [aethelred.id]: createFallbackTransport(AETHELRED_RPC_CONFIG),
-    [aethelredTestnet.id]: createFallbackTransport(
-      AETHELRED_TESTNET_RPC_CONFIG,
-    ),
-  };
-}
-
-// Wrap config creation in try-catch so a wallet factory error
-// (e.g. "originalFactory.call") doesn't crash the entire app.
-// If it fails, the marketing site renders without Web3 providers.
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-let _config: any = null;
-let _configError: Error | null = null;
-
-try {
-  _config = getDefaultConfig({
-    appName: "TerraQura",
-    appDescription:
-      "Carbon project, MRV, verification, issuance, and retirement on Aethelred",
-    appUrl: TERRAQURA_PUBLIC_URL,
-    wallets: [
-      {
-        groupName: "Aethelred ecosystem",
-        wallets: [aethelredWallet],
+        {
+          groupName: "Other compatible wallets",
+          wallets: [metaMaskInjectedWallet],
+        },
+      ],
+      projectId: walletConnectProjectId,
+      chains: [aethelredTestnet],
+      transports: {
+        [aethelredTestnet.id]: http(rpcUrl, {
+          batch: { batchSize: 20, wait: 50 },
+          retryCount: 3,
+          retryDelay: 500,
+          timeout: 12_000,
+        }),
       },
-      {
-        groupName: "Other compatible wallets",
-        wallets: [metaMaskInjectedWallet],
-      },
-    ],
-    projectId: walletConnectProjectId,
-    chains: activeChains,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    transports: buildTransports() as any,
-    ssr: true,
-  });
-} catch (err) {
-  _configError = err instanceof Error ? err : new Error(String(err));
-  console.warn(
-    "[TerraQura] Wagmi config creation failed:",
-    _configError.message,
-  );
+      ssr: true,
+    });
+  } catch (cause) {
+    configError =
+      cause instanceof Error ? cause : new Error("Wallet setup failed");
+  }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export const config: any = _config;
-export const configError: Error | null = _configError;
-
-// ============================================
-// Chain Information Export
-// ============================================
+export { config, configError };
 
 export const SUPPORTED_CHAINS = {
-  aethelred: {
-    id: aethelred.id,
-    name: aethelred.name,
-    isTestnet: false,
-    explorerUrl: aethelred.blockExplorers.default.url,
-    nativeCurrency: aethelred.nativeCurrency,
-    rpcEndpoints: AETHELRED_RPC_CONFIG.length,
-  },
   aethelredTestnet: {
     id: aethelredTestnet.id,
     name: aethelredTestnet.name,
     isTestnet: true,
-    explorerUrl: aethelredTestnet.blockExplorers.default.url,
+    explorerUrl,
     nativeCurrency: aethelredTestnet.nativeCurrency,
-    rpcEndpoints: AETHELRED_TESTNET_RPC_CONFIG.length,
+    rpcEndpoints: rpcUrl ? 1 : 0,
   },
 } as const;
 
-// Current active network based on environment
-export const ACTIVE_NETWORK = isTestnet
-  ? SUPPORTED_CHAINS.aethelredTestnet
-  : SUPPORTED_CHAINS.aethelred;
+export const ACTIVE_NETWORK = SUPPORTED_CHAINS.aethelredTestnet;
 
-// ============================================
-// Explorer URL Helpers
-// ============================================
-
-/**
- * Resolve chain info from chain ID
- */
-function resolveChain(chainId?: number) {
-  switch (chainId) {
-    case aethelred.id:
-      return SUPPORTED_CHAINS.aethelred;
-    case aethelredTestnet.id:
-      return SUPPORTED_CHAINS.aethelredTestnet;
-    default:
-      return ACTIVE_NETWORK;
-  }
-}
-
-export function getExplorerTxUrl(txHash: string, chainId?: number): string {
-  const chain = resolveChain(chainId);
-  return `${chain.explorerUrl}/tx/${txHash}`;
+export function getExplorerTxUrl(txHash: string, _chainId?: number): string {
+  return explorerUrl ? `${explorerUrl}/tx/${txHash}` : "";
 }
 
 export function getExplorerAddressUrl(
   address: string,
-  chainId?: number,
+  _chainId?: number,
 ): string {
-  const chain = resolveChain(chainId);
-  return `${chain.explorerUrl}/address/${address}`;
+  return explorerUrl ? `${explorerUrl}/address/${address}` : "";
 }
 
 export function getExplorerTokenUrl(
   address: string,
   tokenId?: string,
-  chainId?: number,
+  _chainId?: number,
 ): string {
-  const chain = resolveChain(chainId);
-  const url = new URL(`/token/${address}`, chain.explorerUrl);
+  if (!explorerUrl) return "";
+  const url = new URL(`/token/${address}`, explorerUrl);
   if (tokenId) {
     url.searchParams.set("a", tokenId);
   }
   return url.toString();
 }
 
-// ============================================
-// RPC Health Check Utility
-// ============================================
-
-interface RPCHealthStatus {
+export interface RPCHealthStatus {
   url: string;
   provider: string;
   healthy: boolean;
@@ -381,14 +150,13 @@ interface RPCHealthStatus {
   error?: string;
 }
 
-/**
- * Check health of a single RPC endpoint
- */
-async function checkRPCHealth(endpoint: RPCEndpoint): Promise<RPCHealthStatus> {
+export async function checkChainRPCHealth(
+  chainId: number,
+): Promise<RPCHealthStatus[]> {
+  if (chainId !== CHAIN_ID || !rpcUrl) return [];
   const startTime = Date.now();
-
   try {
-    const response = await fetch(endpoint.url, {
+    const response = await fetch(rpcUrl, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -397,78 +165,45 @@ async function checkRPCHealth(endpoint: RPCEndpoint): Promise<RPCHealthStatus> {
         params: [],
         id: 1,
       }),
-      signal: AbortSignal.timeout(5000),
+      signal: AbortSignal.timeout(5_000),
     });
-
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}`);
     }
-
-    const data = await response.json();
-    const latency = Date.now() - startTime;
-
-    if (data.error) {
-      throw new Error(data.error.message);
+    const body = (await response.json()) as {
+      result?: string;
+      error?: { message?: string };
+    };
+    if (!body.result || body.error) {
+      throw new Error(body.error?.message || "RPC returned no block number");
     }
-
-    return {
-      url: endpoint.url,
-      provider: endpoint.provider,
-      healthy: true,
-      latency,
-      blockNumber: parseInt(data.result, 16),
-    };
-  } catch (error) {
-    return {
-      url: endpoint.url,
-      provider: endpoint.provider,
-      healthy: false,
-      latency: Date.now() - startTime,
-      error: error instanceof Error ? error.message : "Unknown error",
-    };
+    return [
+      {
+        url: rpcUrl,
+        provider: "Aethelred Testnet",
+        healthy: true,
+        latency: Date.now() - startTime,
+        blockNumber: Number.parseInt(body.result, 16),
+      },
+    ];
+  } catch (cause) {
+    return [
+      {
+        url: rpcUrl,
+        provider: "Aethelred Testnet",
+        healthy: false,
+        latency: Date.now() - startTime,
+        error: cause instanceof Error ? cause.message : "RPC request failed",
+      },
+    ];
   }
 }
 
-/**
- * Check health of all RPC endpoints for a chain
- * Useful for diagnostics and monitoring
- */
-export async function checkChainRPCHealth(
-  chainId: number,
-): Promise<RPCHealthStatus[]> {
-  let configs: RPCEndpoint[];
-  switch (chainId) {
-    case aethelred.id:
-      configs = AETHELRED_RPC_CONFIG;
-      break;
-    case aethelredTestnet.id:
-      configs = AETHELRED_TESTNET_RPC_CONFIG;
-      break;
-    default:
-      configs = AETHELRED_TESTNET_RPC_CONFIG;
-  }
-  return Promise.all(configs.map(checkRPCHealth));
-}
-
-/**
- * Get the best available RPC for a chain
- * Based on health check results
- */
 export async function getBestRPC(
   chainId: number,
 ): Promise<RPCHealthStatus | null> {
-  const healthStatuses = await checkChainRPCHealth(chainId);
-  const healthyEndpoints = healthStatuses
-    .filter((s) => s.healthy)
-    .sort((a, b) => (a.latency || Infinity) - (b.latency || Infinity));
-
-  return healthyEndpoints[0] || null;
+  const statuses = await checkChainRPCHealth(chainId);
+  return statuses.find((status) => status.healthy) || null;
 }
 
-// ============================================
-// Type Exports
-// ============================================
-
-export type SupportedChainId = typeof aethelred.id | typeof aethelredTestnet.id;
-
-export type { RPCHealthStatus, RPCEndpoint };
+export type SupportedChainId = typeof aethelredTestnet.id;

@@ -1,29 +1,89 @@
 import { z } from "zod";
 
-const KycProviderSchema = z.enum(["sumsub", "onfido", "disabled"]);
+const KycProviderSchema = z.enum(["sumsub", "disabled"]);
+const DatabaseSslModeSchema = z.enum(["disable", "require", "verify-full"]);
+const AddressSchema = z
+  .string()
+  .regex(
+    /^0x[a-fA-F0-9]{40}$/,
+    "Contract address must be a 20-byte hex address",
+  )
+  .refine(
+    (value) =>
+      value.toLowerCase() !== "0x0000000000000000000000000000000000000000",
+    "Contract address cannot be the zero address",
+  );
+const HttpsUrlSchema = z
+  .string()
+  .url()
+  .refine((value) => new URL(value).protocol === "https:", {
+    message: "Production network endpoints must use HTTPS",
+  });
 
 const RawApiRuntimeEnvSchema = z.object({
+  NODE_ENV: z
+    .enum(["development", "test", "production"])
+    .default("development"),
   DATABASE_URL: z.string().trim().min(1, "DATABASE_URL must be configured"),
+  DATABASE_SSL_MODE: DatabaseSslModeSchema.default("require"),
   JWT_SECRET: z
     .string()
     .min(32, "JWT_SECRET must be configured and at least 32 characters"),
   SIWE_DOMAIN: z.string().trim().min(1, "SIWE_DOMAIN must be configured"),
+  ADMIN_WALLETS: z.string().default(""),
+  AUDITOR_WALLETS: z.string().default(""),
+  CHAIN_ID: z.coerce.number().int().positive(),
+  AETHELRED_RPC_URL: z.string().url(),
+  AETHELRED_EXPLORER_URL: z.string().url(),
+  ACCESS_CONTROL_ADDRESS: AddressSchema,
+  VERIFICATION_ENGINE_ADDRESS: AddressSchema,
+  CARBON_CREDIT_ADDRESS: AddressSchema,
+  CARBON_MARKETPLACE_ADDRESS: AddressSchema,
+  CIRCUIT_BREAKER_ADDRESS: AddressSchema,
+  OPERATOR_SIGNER_KEY_FILE: z.string().trim().min(1).optional(),
+  PRIVATE_KEY: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{64}$/)
+    .optional(),
+  FORWARDER_CONTRACT: AddressSchema.optional(),
+  RELAYER_SIGNER_KEY_FILE: z.string().trim().min(1).optional(),
+  RELAYER_PRIVATE_KEY: z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{64}$/)
+    .optional(),
   KYC_PROVIDER: KycProviderSchema.default("sumsub"),
   SUMSUB_APP_TOKEN: z.string().optional(),
   SUMSUB_SECRET_KEY: z.string().optional(),
-  ONFIDO_API_TOKEN: z.string().optional(),
+  SUMSUB_WEBHOOK_SECRET: z.string().min(32).optional(),
 });
 
 export type KycProvider = z.infer<typeof KycProviderSchema>;
 
 export interface ApiRuntimeEnv {
+  NODE_ENV: "development" | "test" | "production";
   DATABASE_URL: string;
+  DATABASE_SSL_MODE: z.infer<typeof DatabaseSslModeSchema>;
   JWT_SECRET: string;
   SIWE_DOMAIN: string;
+  ADMIN_WALLETS: string[];
+  AUDITOR_WALLETS: string[];
+  CHAIN_ID: number;
+  AETHELRED_RPC_URL: string;
+  AETHELRED_EXPLORER_URL: string;
+  ACCESS_CONTROL_ADDRESS: string;
+  VERIFICATION_ENGINE_ADDRESS: string;
+  CARBON_CREDIT_ADDRESS: string;
+  CARBON_MARKETPLACE_ADDRESS: string;
+  CIRCUIT_BREAKER_ADDRESS: string;
+  OPERATOR_SIGNER_KEY_FILE?: string;
+  PRIVATE_KEY?: string;
+  FORWARDER_CONTRACT?: string;
+  RELAYER_SIGNER_KEY_FILE?: string;
+  RELAYER_PRIVATE_KEY?: string;
   KYC_PROVIDER: KycProvider;
   SUMSUB_APP_TOKEN?: string;
   SUMSUB_SECRET_KEY?: string;
-  ONFIDO_API_TOKEN?: string;
+  SUMSUB_WEBHOOK_SECRET?: string;
 }
 
 let cachedEnv: ApiRuntimeEnv | null = null;
@@ -46,6 +106,32 @@ function ensurePostgresConnectionString(databaseUrl: string): void {
   }
 }
 
+function parseWalletList(value: string, name: string): string[] {
+  const wallets = value
+    .split(",")
+    .map((wallet) => wallet.trim().toLowerCase())
+    .filter(Boolean);
+  for (const wallet of wallets) {
+    AddressSchema.parse(wallet);
+  }
+  if (name === "ADMIN_WALLETS" && wallets.length === 0) {
+    throw new Error(
+      "ADMIN_WALLETS must contain at least one governance wallet",
+    );
+  }
+  return [...new Set(wallets)];
+}
+
+function isPrivateDatabaseHost(hostname: string): boolean {
+  return (
+    hostname === "localhost" ||
+    hostname === "127.0.0.1" ||
+    hostname === "::1" ||
+    hostname === "postgres" ||
+    hostname.endsWith(".internal")
+  );
+}
+
 function parseRawApiRuntimeEnv() {
   const result = RawApiRuntimeEnvSchema.safeParse(process.env);
   if (result.success) {
@@ -65,29 +151,92 @@ export function getApiRuntimeEnv(): ApiRuntimeEnv {
   ensurePostgresConnectionString(rawEnv.DATABASE_URL);
 
   const normalizedSiweDomain = normalizeSiweDomain(rawEnv.SIWE_DOMAIN);
+  const databaseHost = new URL(rawEnv.DATABASE_URL).hostname;
+
+  if (
+    rawEnv.NODE_ENV === "production" &&
+    rawEnv.DATABASE_SSL_MODE === "disable" &&
+    !isPrivateDatabaseHost(databaseHost)
+  ) {
+    throw new Error(
+      "DATABASE_SSL_MODE=disable is allowed only for a private in-stack database",
+    );
+  }
+
+  if (rawEnv.NODE_ENV === "production") {
+    HttpsUrlSchema.parse(rawEnv.AETHELRED_RPC_URL);
+    HttpsUrlSchema.parse(rawEnv.AETHELRED_EXPLORER_URL);
+
+    if (rawEnv.PRIVATE_KEY) {
+      throw new Error(
+        "PRIVATE_KEY is not accepted in production; mount OPERATOR_SIGNER_KEY_FILE as a runtime secret",
+      );
+    }
+    if (!rawEnv.OPERATOR_SIGNER_KEY_FILE) {
+      throw new Error(
+        "OPERATOR_SIGNER_KEY_FILE must be configured in production",
+      );
+    }
+    if (rawEnv.RELAYER_PRIVATE_KEY) {
+      throw new Error(
+        "RELAYER_PRIVATE_KEY is not accepted in production; mount RELAYER_SIGNER_KEY_FILE as a runtime secret",
+      );
+    }
+    if (rawEnv.FORWARDER_CONTRACT && !rawEnv.RELAYER_SIGNER_KEY_FILE) {
+      throw new Error(
+        "RELAYER_SIGNER_KEY_FILE is required when the gasless forwarder is enabled in production",
+      );
+    }
+    if (!rawEnv.ADMIN_WALLETS.trim()) {
+      throw new Error("ADMIN_WALLETS must be configured in production");
+    }
+    if (rawEnv.KYC_PROVIDER === "disabled") {
+      throw new Error("KYC_PROVIDER cannot be disabled in production");
+    }
+  }
 
   if (rawEnv.KYC_PROVIDER === "sumsub") {
-    if (!rawEnv.SUMSUB_APP_TOKEN || !rawEnv.SUMSUB_SECRET_KEY) {
+    if (
+      !rawEnv.SUMSUB_APP_TOKEN ||
+      !rawEnv.SUMSUB_SECRET_KEY ||
+      !rawEnv.SUMSUB_WEBHOOK_SECRET
+    ) {
       throw new Error(
-        "SUMSUB_APP_TOKEN and SUMSUB_SECRET_KEY must be configured when KYC_PROVIDER=sumsub"
+        "SUMSUB_APP_TOKEN, SUMSUB_SECRET_KEY, and SUMSUB_WEBHOOK_SECRET must be configured when KYC_PROVIDER=sumsub",
       );
     }
   }
 
-  if (rawEnv.KYC_PROVIDER === "onfido" && !rawEnv.ONFIDO_API_TOKEN) {
-    throw new Error(
-      "ONFIDO_API_TOKEN must be configured when KYC_PROVIDER=onfido"
-    );
-  }
-
   cachedEnv = {
+    NODE_ENV: rawEnv.NODE_ENV,
     DATABASE_URL: rawEnv.DATABASE_URL,
+    DATABASE_SSL_MODE: rawEnv.DATABASE_SSL_MODE,
     JWT_SECRET: rawEnv.JWT_SECRET,
     SIWE_DOMAIN: normalizedSiweDomain,
+    ADMIN_WALLETS:
+      rawEnv.NODE_ENV === "production" || rawEnv.ADMIN_WALLETS.trim()
+        ? parseWalletList(rawEnv.ADMIN_WALLETS, "ADMIN_WALLETS")
+        : [],
+    AUDITOR_WALLETS: rawEnv.AUDITOR_WALLETS.trim()
+      ? parseWalletList(rawEnv.AUDITOR_WALLETS, "AUDITOR_WALLETS")
+      : [],
+    CHAIN_ID: rawEnv.CHAIN_ID,
+    AETHELRED_RPC_URL: rawEnv.AETHELRED_RPC_URL,
+    AETHELRED_EXPLORER_URL: rawEnv.AETHELRED_EXPLORER_URL.replace(/\/+$/, ""),
+    ACCESS_CONTROL_ADDRESS: rawEnv.ACCESS_CONTROL_ADDRESS,
+    VERIFICATION_ENGINE_ADDRESS: rawEnv.VERIFICATION_ENGINE_ADDRESS,
+    CARBON_CREDIT_ADDRESS: rawEnv.CARBON_CREDIT_ADDRESS,
+    CARBON_MARKETPLACE_ADDRESS: rawEnv.CARBON_MARKETPLACE_ADDRESS,
+    CIRCUIT_BREAKER_ADDRESS: rawEnv.CIRCUIT_BREAKER_ADDRESS,
+    OPERATOR_SIGNER_KEY_FILE: rawEnv.OPERATOR_SIGNER_KEY_FILE,
+    PRIVATE_KEY: rawEnv.PRIVATE_KEY,
+    FORWARDER_CONTRACT: rawEnv.FORWARDER_CONTRACT,
+    RELAYER_SIGNER_KEY_FILE: rawEnv.RELAYER_SIGNER_KEY_FILE,
+    RELAYER_PRIVATE_KEY: rawEnv.RELAYER_PRIVATE_KEY,
     KYC_PROVIDER: rawEnv.KYC_PROVIDER,
     SUMSUB_APP_TOKEN: rawEnv.SUMSUB_APP_TOKEN,
     SUMSUB_SECRET_KEY: rawEnv.SUMSUB_SECRET_KEY,
-    ONFIDO_API_TOKEN: rawEnv.ONFIDO_API_TOKEN,
+    SUMSUB_WEBHOOK_SECRET: rawEnv.SUMSUB_WEBHOOK_SECRET,
   };
 
   return cachedEnv;

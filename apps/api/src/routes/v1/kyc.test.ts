@@ -14,6 +14,7 @@ let mockSumsubSecretKey: string | undefined = "test-secret-key";
 vi.mock("../../lib/runtime-env.js", () => ({
   getApiRuntimeEnv: () => ({
     DATABASE_URL: "postgres://localhost:5432/test",
+    DATABASE_SSL_MODE: "disable",
     JWT_SECRET: "a]ks8d7f6g5h4j3k2l1m0n9b8v7c6x5z4",
     SIWE_DOMAIN: "localhost",
     KYC_PROVIDER: mockKycProvider,
@@ -29,6 +30,9 @@ const mockGetVerificationStatus = vi.fn();
 const mockVerifyWebhookSignature = vi.fn();
 const mockHandleWebhook = vi.fn();
 const mockRequestSanctionsCheck = vi.fn();
+const { mockSyncComplianceStatusOnChain } = vi.hoisted(() => ({
+  mockSyncComplianceStatusOnChain: vi.fn(),
+}));
 
 let mockSumsubServiceInstance: object | null = {
   createApplicant: mockCreateApplicant,
@@ -44,6 +48,10 @@ vi.mock("../../services/kyc/sumsub.service.js", () => ({
   createSumsubService: () => mockSumsubServiceInstance,
 }));
 
+vi.mock("../../services/blockchain/contracts.js", () => ({
+  syncComplianceStatusOnChain: mockSyncComplianceStatusOnChain,
+}));
+
 import { kycRoutes } from "./kyc.js";
 
 const WALLET_A = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
@@ -52,6 +60,22 @@ const JWT_SECRET = "a]ks8d7f6g5h4j3k2l1m0n9b8v7c6x5z4";
 
 async function buildApp() {
   const app = Fastify({ logger: false });
+  app.removeContentTypeParser("application/json");
+  app.addContentTypeParser(
+    "application/json",
+    { parseAs: "buffer" },
+    (request, body, done) => {
+      Object.defineProperty(request, "rawBody", {
+        value: body,
+        enumerable: false,
+      });
+      try {
+        done(null, JSON.parse(body.toString("utf8")));
+      } catch (error) {
+        done(error as Error, undefined);
+      }
+    },
+  );
   await app.register(rateLimit, {
     max: 100,
     timeWindow: "1 minute",
@@ -64,7 +88,9 @@ async function buildApp() {
 }
 
 function sign(app: ReturnType<typeof Fastify>, payload: object) {
-  return (app as unknown as { jwt: { sign: (p: object) => string } }).jwt.sign(payload);
+  return (app as unknown as { jwt: { sign: (p: object) => string } }).jwt.sign(
+    payload,
+  );
 }
 
 describe("kyc routes", () => {
@@ -76,6 +102,10 @@ describe("kyc routes", () => {
     mockKycProvider = "sumsub";
     mockSumsubAppToken = "test-app-token";
     mockSumsubSecretKey = "test-secret-key";
+    mockSyncComplianceStatusOnChain.mockResolvedValue({
+      txHash: `0x${"1".repeat(64)}`,
+      blockNumber: 100,
+    });
     mockSumsubServiceInstance = {
       createApplicant: mockCreateApplicant,
       getApplicantByExternalId: mockGetApplicantByExternalId,
@@ -185,6 +215,10 @@ describe("kyc routes", () => {
       status: "verified",
       rejectLabels: [],
     });
+    mockRequestSanctionsCheck.mockResolvedValue({
+      hit: false,
+      matchedLists: [],
+    });
 
     const token = sign(app, { address: WALLET_A });
     const res = await app.inject({
@@ -244,6 +278,10 @@ describe("kyc routes", () => {
       action: "update_status",
       status: "verified",
     });
+    mockRequestSanctionsCheck.mockResolvedValue({
+      hit: false,
+      matchedLists: [],
+    });
 
     const res = await app.inject({
       method: "POST",
@@ -259,6 +297,13 @@ describe("kyc routes", () => {
     expect(res.statusCode).toBe(200);
     expect(res.json().success).toBe(true);
     expect(res.json().action).toBe("update_status");
+    expect(mockSyncComplianceStatusOnChain).toHaveBeenCalledWith({
+      wallet: WALLET_A,
+      status: "verified",
+      provider: "sumsub",
+      applicantId: "app_123",
+      sanctionsCleared: true,
+    });
   });
 
   it("rejects webhook with invalid signature", async () => {

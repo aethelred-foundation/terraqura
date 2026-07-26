@@ -1,4 +1,4 @@
-import { createHash } from "crypto";
+import { createHash, randomUUID } from "node:crypto";
 
 import {
   DACStatus,
@@ -17,6 +17,10 @@ import {
   bearerAuthRateLimit,
   verifyBearerAuth,
 } from "../../lib/bearer-auth.js";
+import {
+  listSensorReadings,
+  type SensorEvidenceReading,
+} from "../../lib/sensor-reading-store.js";
 import { mutateState, readState } from "../../lib/state-store.js";
 
 const VerificationRequestSchema = z.object({
@@ -54,18 +58,6 @@ interface VerificationsState {
   verifications: Record<string, StoredVerification>;
 }
 
-interface SensorsState {
-  readings: Array<{
-    time: string;
-    dacUnitId: string;
-    sensorId: string;
-    co2CaptureRateKgHour: number;
-    energyConsumptionKwh: number;
-    co2PurityPercentage: number;
-    dataHash?: string;
-  }>;
-}
-
 interface StoredDacUnit {
   id: string;
   operatorWallet: string;
@@ -80,18 +72,12 @@ const VERIFICATIONS_STORE_KEY = "verification:v1";
 const DEFAULT_VERIFICATIONS_STATE: VerificationsState = {
   verifications: {},
 };
-const SENSORS_STORE_KEY = "sensors:v1";
-const DEFAULT_SENSORS_STATE: SensorsState = {
-  readings: [],
-};
 const DAC_UNITS_STORE_KEY = "dac-units:v1";
 const DEFAULT_DAC_UNITS_STATE: DacUnitsState = {
   units: {},
 };
 
-function normalizeReadingHash(
-  reading: SensorsState["readings"][number],
-): string {
+function normalizeReadingHash(reading: SensorEvidenceReading): string {
   if (reading.dataHash) {
     return reading.dataHash.toLowerCase();
   }
@@ -104,6 +90,7 @@ function normalizeReadingHash(
         co2CaptureRateKgHour: reading.co2CaptureRateKgHour,
         energyConsumptionKwh: reading.energyConsumptionKwh,
         co2PurityPercentage: reading.co2PurityPercentage,
+        measurementDurationSeconds: reading.measurementDurationSeconds ?? 3600,
       }),
     )
     .digest("hex")}`;
@@ -111,7 +98,7 @@ function normalizeReadingHash(
 
 function buildVerificationHash(
   dacUnitId: string,
-  readings: SensorsState["readings"],
+  readings: SensorEvidenceReading[],
 ): string {
   const digest = createHash("sha256");
   digest.update(dacUnitId.toLowerCase());
@@ -132,7 +119,7 @@ function computeVerificationResult(input: {
   dacUnitId: string;
   startTime: string;
   endTime: string;
-  readings: SensorsState["readings"];
+  readings: SensorEvidenceReading[];
   existingSourceHashes: Set<string>;
 }): Omit<
   StoredVerification,
@@ -197,7 +184,10 @@ function computeVerificationResult(input: {
   }
 
   const totalCo2CapturedKg = scopedReadings.reduce(
-    (sum, reading) => sum + reading.co2CaptureRateKgHour,
+    (sum, reading) =>
+      sum +
+      reading.co2CaptureRateKgHour *
+        ((reading.measurementDurationSeconds ?? 3600) / 3600),
     0,
   );
   const totalEnergyKwh = scopedReadings.reduce(
@@ -395,10 +385,18 @@ export async function verificationRoutes(
     },
     async (request, reply) => {
       const body = VerificationRequestSchema.parse(request.body);
-      if (new Date(body.endTime) <= new Date(body.startTime)) {
+      const startTime = new Date(body.startTime);
+      const endTime = new Date(body.endTime);
+      if (endTime <= startTime) {
         return reply.status(400).send({
           success: false,
           error: "endTime must be after startTime",
+        });
+      }
+      if (endTime.getTime() - startTime.getTime() > 31 * 24 * 60 * 60 * 1000) {
+        return reply.status(400).send({
+          success: false,
+          error: "Verification periods cannot exceed 31 days",
         });
       }
 
@@ -447,9 +445,10 @@ export async function verificationRoutes(
         });
       }
 
-      const sensorsState = await readState(
-        SENSORS_STORE_KEY,
-        DEFAULT_SENSORS_STATE,
+      const sensorReadings = await listSensorReadings(
+        body.dacUnitId,
+        startTime,
+        endTime,
       );
       const verification = await mutateState(
         VERIFICATIONS_STORE_KEY,
@@ -461,13 +460,13 @@ export async function verificationRoutes(
               .map((entry) => entry.sourceDataHash),
           );
 
-          const id = `ver_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          const id = `ver_${randomUUID()}`;
           const requestedAt = new Date().toISOString();
           const result = computeVerificationResult({
             dacUnitId: body.dacUnitId,
             startTime: body.startTime,
             endTime: body.endTime,
-            readings: sensorsState.readings,
+            readings: sensorReadings,
             existingSourceHashes,
           });
 

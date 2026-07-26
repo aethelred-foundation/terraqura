@@ -5,6 +5,7 @@ import { FastifyInstance, FastifyReply } from "fastify";
 
 import { getAuthenticatedAddress, isAdmin } from "../../lib/auth-context.js";
 import { verifyBearerAuth } from "../../lib/bearer-auth.js";
+import { getApiRuntimeEnv } from "../../lib/runtime-env.js";
 import { getGaslessRelayer } from "../../services/gasless/relayer.service.js";
 
 interface BuildRequestBody {
@@ -60,6 +61,7 @@ function ensureAuthorizedAddress(
 }
 
 export async function gaslessRoutes(fastify: FastifyInstance) {
+  const env = getApiRuntimeEnv();
   const relayer = getGaslessRelayer();
 
   // ============================================
@@ -509,10 +511,7 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
           data: forwardRequest.data,
         };
 
-        // Use Defender relay in production, direct relay otherwise
-        const result = process.env.DEFENDER_RELAYER_API_KEY
-          ? await relayer.relayViaDefender(typedRequest, signature)
-          : await relayer.relay(typedRequest, signature);
+        const result = await relayer.relay(typedRequest, signature);
 
         if (!result.success) {
           return reply.status(400).send({
@@ -596,8 +595,8 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
         success: true,
         data: {
           enabled: relayer !== null,
-          forwarderAddress: process.env.FORWARDER_CONTRACT || null,
-          chainId: parseInt(process.env.CHAIN_ID || "137", 10),
+          forwarderAddress: env.FORWARDER_CONTRACT || null,
+          chainId: env.CHAIN_ID,
         },
       };
     },

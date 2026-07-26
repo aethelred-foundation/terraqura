@@ -1,6 +1,9 @@
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 
-import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
+import {
+  bearerAuthRateLimit,
+  verifyBearerAuth,
+} from "../../lib/bearer-auth.js";
 import { readState } from "../../lib/state-store.js";
 
 interface CreditsState {
@@ -66,7 +69,7 @@ function weiToUsd(wei: string): number {
 
 export async function analyticsRoutes(
   fastify: FastifyInstance,
-  _options: FastifyPluginOptions
+  _options: FastifyPluginOptions,
 ) {
   // GET /v1/analytics/portfolio — User portfolio metrics
   fastify.get(
@@ -135,25 +138,25 @@ export async function analyticsRoutes(
 
       const creditsState = await readState(
         CREDITS_STORE_KEY,
-        DEFAULT_CREDITS_STATE
+        DEFAULT_CREDITS_STATE,
       );
       const marketState = await readState(
         MARKETPLACE_STORE_KEY,
-        DEFAULT_MARKETPLACE_STATE
+        DEFAULT_MARKETPLACE_STATE,
       );
 
       const ownedCredits = Object.values(creditsState.credits).filter(
-        (credit) => credit.currentOwnerId === userId
+        (credit) => credit.currentOwnerId === userId,
       );
 
       const totalCreditsOwned = ownedCredits.reduce(
         (sum, credit) => sum + credit.creditsIssued,
-        0
+        0,
       );
 
       const totalCreditsRetired = ownedCredits.reduce(
         (sum, credit) => sum + (credit.retiredAmount ?? 0),
-        0
+        0,
       );
 
       const totalCo2OffsetKg = ownedCredits
@@ -161,17 +164,17 @@ export async function analyticsRoutes(
         .reduce((sum, credit) => sum + credit.co2CapturedKg, 0);
 
       const userPurchases = marketState.purchases.filter(
-        (purchase) => purchase.buyerId === userId
+        (purchase) => purchase.buyerId === userId,
       );
 
       const totalSpentBigInt = userPurchases.reduce(
         (sum, purchase) => sum + BigInt(purchase.totalPrice),
-        BigInt(0)
+        BigInt(0),
       );
       const totalSpentWei = totalSpentBigInt.toString();
       const totalCreditsPurchased = userPurchases.reduce(
         (sum, purchase) => sum + purchase.amount,
-        0
+        0,
       );
 
       const avgPurchasePriceWei =
@@ -202,7 +205,7 @@ export async function analyticsRoutes(
           portfolioBreakdown,
         },
       };
-    }
+    },
   );
 
   // GET /v1/analytics/protocol — Protocol-wide metrics
@@ -247,42 +250,42 @@ export async function analyticsRoutes(
     async (_request, _reply) => {
       const creditsState = await readState(
         CREDITS_STORE_KEY,
-        DEFAULT_CREDITS_STATE
+        DEFAULT_CREDITS_STATE,
       );
       const marketState = await readState(
         MARKETPLACE_STORE_KEY,
-        DEFAULT_MARKETPLACE_STATE
+        DEFAULT_MARKETPLACE_STATE,
       );
 
       const creditValues = Object.values(creditsState.credits);
       const totalCreditsMinted = creditValues.reduce(
         (sum, credit) =>
           sum + (credit.initialCreditsIssued ?? credit.creditsIssued),
-        0
+        0,
       );
       const totalCreditsRetired = creditValues.reduce(
         (sum, credit) => sum + (credit.retiredAmount ?? 0),
-        0
+        0,
       );
 
       const activeListings = Object.values(marketState.listings).filter(
-        (listing) => listing.status === "active"
+        (listing) => listing.status === "active",
       );
 
       const tvlBigInt = activeListings.reduce(
         (sum, listing) =>
           sum + BigInt(listing.pricePerUnit) * BigInt(listing.remainingAmount),
-        BigInt(0)
+        BigInt(0),
       );
 
       const totalTradingVolumeBigInt = marketState.purchases.reduce(
         (sum, purchase) => sum + BigInt(purchase.totalPrice),
-        BigInt(0)
+        BigInt(0),
       );
 
       const totalCreditsTraded = marketState.purchases.reduce(
         (sum, purchase) => sum + purchase.amount,
-        0
+        0,
       );
 
       const protocolFeeCollected = (
@@ -291,10 +294,10 @@ export async function analyticsRoutes(
       ).toString();
 
       const buyerSet = new Set(
-        marketState.purchases.map((purchase) => purchase.buyerId)
+        marketState.purchases.map((purchase) => purchase.buyerId),
       );
       const sellerSet = new Set(
-        marketState.purchases.map((purchase) => purchase.sellerId)
+        marketState.purchases.map((purchase) => purchase.sellerId),
       );
       const allUsers = new Set([...buyerSet, ...sellerSet]);
 
@@ -318,7 +321,7 @@ export async function analyticsRoutes(
           protocolFeeCollectedUsd: weiToUsd(protocolFeeCollected),
         },
       };
-    }
+    },
   );
 
   // GET /v1/analytics/carbon-price — Historical carbon credit pricing
@@ -388,7 +391,7 @@ export async function analyticsRoutes(
 
       const marketState = await readState(
         MARKETPLACE_STORE_KEY,
-        DEFAULT_MARKETPLACE_STATE
+        DEFAULT_MARKETPLACE_STATE,
       );
 
       const intervalMs: Record<string, number> = {
@@ -400,7 +403,7 @@ export async function analyticsRoutes(
       };
 
       const interval = query.interval || "1d";
-      const bucketMs = intervalMs[interval] ?? intervalMs["1d"]!;
+      const bucketMs = intervalMs[interval] ?? 24 * 60 * 60 * 1000;
 
       const now = Date.now();
       const endDate = query.endDate ? new Date(query.endDate).getTime() : now;
@@ -416,7 +419,7 @@ export async function analyticsRoutes(
         .sort(
           (a, b) =>
             new Date(a.purchasedAt).getTime() -
-            new Date(b.purchasedAt).getTime()
+            new Date(b.purchasedAt).getTime(),
         );
 
       // Group purchases into time buckets
@@ -458,17 +461,13 @@ export async function analyticsRoutes(
       // Calculate current price from the most recent purchase
       const allPurchasesSorted = [...marketState.purchases].sort(
         (a, b) =>
-          new Date(b.purchasedAt).getTime() -
-          new Date(a.purchasedAt).getTime()
+          new Date(b.purchasedAt).getTime() - new Date(a.purchasedAt).getTime(),
       );
-      const currentPriceWei =
-        allPurchasesSorted.length > 0
-          ? allPurchasesSorted[0]!.pricePerUnit
-          : "0";
+      const currentPriceWei = allPurchasesSorted.at(0)?.pricePerUnit ?? "0";
 
       // Calculate all-time high/low
       const allPrices = marketState.purchases.map((purchase) =>
-        BigInt(purchase.pricePerUnit)
+        BigInt(purchase.pricePerUnit),
       );
       const allTimeHighWei =
         allPrices.length > 0
@@ -488,7 +487,7 @@ export async function analyticsRoutes(
       const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
 
       const recentPurchases = allPurchasesSorted.filter(
-        (purchase) => new Date(purchase.purchasedAt).getTime() > oneDayAgo
+        (purchase) => new Date(purchase.purchasedAt).getTime() > oneDayAgo,
       );
       const olderPurchases = allPurchasesSorted.filter((purchase) => {
         const ts = new Date(purchase.purchasedAt).getTime();
@@ -500,8 +499,8 @@ export async function analyticsRoutes(
           ? Number(
               recentPurchases.reduce(
                 (sum, purchase) => sum + BigInt(purchase.pricePerUnit),
-                BigInt(0)
-              ) / BigInt(recentPurchases.length)
+                BigInt(0),
+              ) / BigInt(recentPurchases.length),
             )
           : 0;
       const avgOlder =
@@ -509,8 +508,8 @@ export async function analyticsRoutes(
           ? Number(
               olderPurchases.reduce(
                 (sum, purchase) => sum + BigInt(purchase.pricePerUnit),
-                BigInt(0)
-              ) / BigInt(olderPurchases.length)
+                BigInt(0),
+              ) / BigInt(olderPurchases.length),
             )
           : 0;
 
@@ -518,7 +517,7 @@ export async function analyticsRoutes(
         avgOlder > 0 ? ((avgRecent - avgOlder) / avgOlder) * 100 : 0;
 
       const purchases7dRecent = allPurchasesSorted.filter(
-        (purchase) => new Date(purchase.purchasedAt).getTime() > sevenDaysAgo
+        (purchase) => new Date(purchase.purchasedAt).getTime() > sevenDaysAgo,
       );
       const purchases7dOlder = allPurchasesSorted.filter((purchase) => {
         const ts = new Date(purchase.purchasedAt).getTime();
@@ -532,8 +531,8 @@ export async function analyticsRoutes(
           ? Number(
               purchases7dRecent.reduce(
                 (sum, purchase) => sum + BigInt(purchase.pricePerUnit),
-                BigInt(0)
-              ) / BigInt(purchases7dRecent.length)
+                BigInt(0),
+              ) / BigInt(purchases7dRecent.length),
             )
           : 0;
       const avg7dOlder =
@@ -541,8 +540,8 @@ export async function analyticsRoutes(
           ? Number(
               purchases7dOlder.reduce(
                 (sum, purchase) => sum + BigInt(purchase.pricePerUnit),
-                BigInt(0)
-              ) / BigInt(purchases7dOlder.length)
+                BigInt(0),
+              ) / BigInt(purchases7dOlder.length),
             )
           : 0;
 
@@ -564,7 +563,7 @@ export async function analyticsRoutes(
           dataPoints,
         },
       };
-    }
+    },
   );
 
   // GET /v1/analytics/leaderboard — Top offsetters leaderboard
@@ -626,7 +625,7 @@ export async function analyticsRoutes(
 
       const creditsState = await readState(
         CREDITS_STORE_KEY,
-        DEFAULT_CREDITS_STATE
+        DEFAULT_CREDITS_STATE,
       );
 
       const period = query.period || "all";
@@ -704,7 +703,7 @@ export async function analyticsRoutes(
           totalParticipants: sorted.length,
         },
       };
-    }
+    },
   );
 
   // GET /v1/analytics/impact — Environmental impact metrics
@@ -762,14 +761,14 @@ export async function analyticsRoutes(
     async (_request, _reply) => {
       const creditsState = await readState(
         CREDITS_STORE_KEY,
-        DEFAULT_CREDITS_STATE
+        DEFAULT_CREDITS_STATE,
       );
 
       const creditValues = Object.values(creditsState.credits);
 
       const totalCo2CapturedKg = creditValues.reduce(
         (sum, credit) => sum + credit.co2CapturedKg,
-        0
+        0,
       );
       const totalCo2RetiredKg = creditValues
         .filter((credit) => credit.isRetired)
@@ -777,11 +776,11 @@ export async function analyticsRoutes(
       const totalCreditsIssued = creditValues.reduce(
         (sum, credit) =>
           sum + (credit.initialCreditsIssued ?? credit.creditsIssued),
-        0
+        0,
       );
       const totalCreditsRetired = creditValues.reduce(
         (sum, credit) => sum + (credit.retiredAmount ?? 0),
-        0
+        0,
       );
 
       const totalCo2RetiredTonnes = totalCo2RetiredKg / 1000;
@@ -847,6 +846,6 @@ export async function analyticsRoutes(
           monthlyTrend,
         },
       };
-    }
+    },
   );
 }

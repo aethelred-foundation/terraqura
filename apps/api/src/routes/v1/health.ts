@@ -1,32 +1,22 @@
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
-import { Pool } from "pg";
+
+import { ensureDatabaseSchema } from "../../lib/database-schema.js";
+import { databasePool } from "../../lib/database.js";
+import { getApiRuntimeEnv } from "../../lib/runtime-env.js";
 
 async function checkDatabase(): Promise<boolean> {
-  const connectionString = process.env.DATABASE_URL;
-  if (!connectionString) {
-    return false;
-  }
-
-  const pool = new Pool({
-    connectionString,
-    max: 1,
-    connectionTimeoutMillis: 1500,
-    idleTimeoutMillis: 1500,
-  });
-
   try {
-    await pool.query("SELECT 1");
+    await ensureDatabaseSchema();
+    await databasePool.query("SELECT 1");
     return true;
   } catch {
     return false;
-  } finally {
-    await pool.end();
   }
 }
 
 async function checkBlockchain(): Promise<boolean> {
-  const rpcUrl = process.env.AETHELRED_RPC_URL;
-  if (!rpcUrl) {
+  const env = getApiRuntimeEnv();
+  if (!env.AETHELRED_RPC_URL) {
     return false;
   }
 
@@ -34,7 +24,7 @@ async function checkBlockchain(): Promise<boolean> {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 1500);
     try {
-      const response = await fetch(rpcUrl, {
+      const response = await fetch(env.AETHELRED_RPC_URL, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -51,9 +41,8 @@ async function checkBlockchain(): Promise<boolean> {
       }
 
       const payload = (await response.json()) as { result?: string };
-      const expectedChainId = parseInt(process.env.CHAIN_ID || "78432", 10);
       return typeof payload.result === "string"
-        ? parseInt(payload.result, 16) === expectedChainId
+        ? parseInt(payload.result, 16) === env.CHAIN_ID
         : false;
     } finally {
       clearTimeout(timeout);
@@ -65,7 +54,7 @@ async function checkBlockchain(): Promise<boolean> {
 
 export async function healthRoutes(
   fastify: FastifyInstance,
-  _options: FastifyPluginOptions
+  _options: FastifyPluginOptions,
 ) {
   fastify.get(
     "/health",
@@ -94,7 +83,7 @@ export async function healthRoutes(
         version: "1.0.0",
         uptime: process.uptime(),
       };
-    }
+    },
   );
 
   fastify.get(
@@ -154,6 +143,6 @@ export async function healthRoutes(
       }
 
       return body;
-    }
+    },
   );
 }

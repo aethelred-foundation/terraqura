@@ -1,7 +1,8 @@
-import type { FastifyInstance } from "fastify";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
 import { createTestServer } from "../test/helpers.js";
+
+import type { FastifyInstance } from "fastify";
 
 describe("API documentation", () => {
   let server: FastifyInstance;
