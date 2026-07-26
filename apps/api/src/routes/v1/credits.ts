@@ -847,7 +847,12 @@ export async function creditsRoutes(
           },
         },
       },
-      config: bearerAuthRateLimit,
+      config: {
+        rateLimit: {
+          max: 10,
+          timeWindow: "1 minute",
+        },
+      },
       preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
@@ -873,7 +878,9 @@ export async function creditsRoutes(
         CREDITS_STORE_KEY,
         DEFAULT_CREDITS_STATE,
       );
-      const credit = creditsState.credits[params.id];
+      const credit = new Map(Object.entries(creditsState.credits)).get(
+        params.id,
+      );
       if (!credit) {
         return reply.status(404).send({
           success: false,
@@ -946,7 +953,8 @@ export async function creditsRoutes(
         CREDITS_STORE_KEY,
         DEFAULT_CREDITS_STATE,
         async (state) => {
-          const stored = state.credits[params.id];
+          const credits = new Map(Object.entries(state.credits));
+          const stored = credits.get(params.id);
           if (!stored) {
             return null;
           }
@@ -978,6 +986,8 @@ export async function creditsRoutes(
           ];
           stored.retirementTxHash = confirmedRetirement.txHash;
           stored.updatedAt = retiredAt;
+          credits.set(params.id, stored);
+          state.credits = Object.fromEntries(credits);
           return stored;
         },
       );
