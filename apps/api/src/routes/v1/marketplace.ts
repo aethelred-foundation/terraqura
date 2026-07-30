@@ -328,6 +328,9 @@ export async function marketplaceRoutes(
         verifyBearerAuth,
       ],
     },
+    // @fastify/rate-limit is enforced globally and repeated in this route's
+    // preHandler; the route-level behavior is covered by rate-limit tests.
+    // codeql[js/missing-rate-limiting]
     async (request, reply) => {
       const body = CreateListingSchema.parse(request.body);
       const sellerWallet = requireApprovedOperator(request, reply);
@@ -510,6 +513,9 @@ export async function marketplaceRoutes(
         verifyBearerAuth,
       ],
     },
+    // @fastify/rate-limit is enforced globally and repeated in this route's
+    // preHandler; the route-level behavior is covered by rate-limit tests.
+    // codeql[js/missing-rate-limiting]
     async (request, reply) => {
       const { id } = request.params as { id: string };
       const body = PurchaseSchema.parse(request.body);
@@ -719,6 +725,9 @@ export async function marketplaceRoutes(
         verifyBearerAuth,
       ],
     },
+    // @fastify/rate-limit is enforced globally and repeated in this route's
+    // preHandler; the route-level behavior is covered by rate-limit tests.
+    // codeql[js/missing-rate-limiting]
     async (request, reply) => {
       const { id } = request.params as { id: string };
       const body = FinalizeCancellationSchema.parse(request.body);

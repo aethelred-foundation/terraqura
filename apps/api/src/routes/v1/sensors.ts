@@ -107,6 +107,9 @@ function canonicalize(value: unknown): unknown {
 
 function hashSensorData(data: Record<string, unknown>): string {
   const jsonString = JSON.stringify(canonicalize(data));
+  // This is a content-integrity digest. API credentials are authenticated
+  // with scrypt in api-key-store.ts; no credential is hashed here.
+  // codeql[js/insufficient-password-hash]
   return createHash("sha256").update(jsonString).digest("hex");
 }
 
