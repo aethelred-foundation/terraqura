@@ -31,7 +31,7 @@ const MIN_PURITY_PERCENTAGE = 90;
 
 async function resolveSensorApiKey(
   headers: FastifyRequest["headers"],
-): Promise<{ apiKey: string; dacUnitId: string } | null> {
+): Promise<{ dacUnitId: string } | null> {
   const headerValue = headers["x-sensor-api-key"];
   const keyCandidate = Array.isArray(headerValue)
     ? headerValue[0]
@@ -47,7 +47,7 @@ async function resolveSensorApiKey(
   }
 
   const identity = await authenticateSensorApiKey(apiKey);
-  return identity ? { apiKey, dacUnitId: identity.dacUnitId } : null;
+  return identity ? { dacUnitId: identity.dacUnitId } : null;
 }
 
 /**

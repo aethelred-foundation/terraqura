@@ -106,6 +106,27 @@ const DEFAULT_MARKETPLACE_STATE: MarketplaceState = {
   processedTxHashes: {},
 };
 
+function getOwnRecordValue<T>(
+  record: Record<string, T>,
+  key: string,
+): T | undefined {
+  const descriptor = Object.getOwnPropertyDescriptor(record, key);
+  return descriptor?.value as T | undefined;
+}
+
+function setOwnRecordValue<T>(
+  record: Record<string, T>,
+  key: string,
+  value: T,
+): void {
+  Object.defineProperty(record, key, {
+    value,
+    configurable: true,
+    enumerable: true,
+    writable: true,
+  });
+}
+
 function isExpired(dateIso: string | null): boolean {
   return dateIso ? Date.now() > new Date(dateIso).getTime() : false;
 }
@@ -299,7 +320,13 @@ export async function marketplaceRoutes(
         security: [{ bearerAuth: [] }],
       },
       config: bearerAuthRateLimit,
-      preHandler: verifyBearerAuth,
+      preHandler: [
+        fastify.rateLimit({
+          max: bearerAuthRateLimit.rateLimit.max,
+          timeWindow: bearerAuthRateLimit.rateLimit.timeWindow,
+        }),
+        verifyBearerAuth,
+      ],
     },
     async (request, reply) => {
       const body = CreateListingSchema.parse(request.body);
@@ -341,10 +368,12 @@ export async function marketplaceRoutes(
           defaultState: DEFAULT_CREDITS_STATE,
         },
         async (market, credits) => {
-          const existingId =
-            market.processedTxHashes[body.txHash.toLowerCase()];
+          const existingId = getOwnRecordValue(
+            market.processedTxHashes,
+            body.txHash.toLowerCase(),
+          );
           if (existingId) {
-            const existing = market.listings[existingId];
+            const existing = getOwnRecordValue(market.listings, existingId);
             return existing
               ? {
                   kind: "existing" as const,
@@ -398,8 +427,12 @@ export async function marketplaceRoutes(
           sellerCredit.escrowedAmount =
             (sellerCredit.escrowedAmount ?? 0) + body.amount;
           sellerCredit.updatedAt = nowIso;
-          market.listings[id] = listing;
-          market.processedTxHashes[body.txHash.toLowerCase()] = id;
+          setOwnRecordValue(market.listings, id, listing);
+          setOwnRecordValue(
+            market.processedTxHashes,
+            body.txHash.toLowerCase(),
+            id,
+          );
           return { kind: "success" as const, listing };
         },
       );
@@ -449,7 +482,7 @@ export async function marketplaceRoutes(
         MARKETPLACE_STORE_KEY,
         DEFAULT_MARKETPLACE_STATE,
       );
-      const listing = state.listings[id];
+      const listing = getOwnRecordValue(state.listings, id);
       if (!listing) {
         return reply.status(404).send({
           success: false,
@@ -469,7 +502,13 @@ export async function marketplaceRoutes(
         security: [{ bearerAuth: [] }],
       },
       config: bearerAuthRateLimit,
-      preHandler: verifyBearerAuth,
+      preHandler: [
+        fastify.rateLimit({
+          max: bearerAuthRateLimit.rateLimit.max,
+          timeWindow: bearerAuthRateLimit.rateLimit.timeWindow,
+        }),
+        verifyBearerAuth,
+      ],
     },
     async (request, reply) => {
       const { id } = request.params as { id: string };
@@ -481,7 +520,7 @@ export async function marketplaceRoutes(
         MARKETPLACE_STORE_KEY,
         DEFAULT_MARKETPLACE_STATE,
       );
-      const listingSnapshot = marketSnapshot.listings[id];
+      const listingSnapshot = getOwnRecordValue(marketSnapshot.listings, id);
       if (!listingSnapshot) {
         return reply.status(404).send({
           success: false,
@@ -526,8 +565,10 @@ export async function marketplaceRoutes(
           defaultState: DEFAULT_CREDITS_STATE,
         },
         async (market, credits) => {
-          const existingId =
-            market.processedTxHashes[body.txHash.toLowerCase()];
+          const existingId = getOwnRecordValue(
+            market.processedTxHashes,
+            body.txHash.toLowerCase(),
+          );
           if (existingId) {
             const existing = market.purchases.find(
               (purchase) => purchase.id === existingId,
@@ -537,7 +578,7 @@ export async function marketplaceRoutes(
               : { kind: "replayed" as const };
           }
 
-          const listing = market.listings[id];
+          const listing = getOwnRecordValue(market.listings, id);
           if (!listing) return { kind: "not_found" as const };
           if (getEffectiveStatus(listing) !== ListingStatus.ACTIVE) {
             return { kind: "not_active" as const };
@@ -555,7 +596,10 @@ export async function marketplaceRoutes(
             return { kind: "seller_mismatch" as const };
           }
 
-          const sellerCredit = credits.credits[listing.creditId];
+          const sellerCredit = getOwnRecordValue(
+            credits.credits,
+            listing.creditId,
+          );
           if (
             !sellerCredit ||
             (sellerCredit.escrowedAmount ?? 0) < body.amount
@@ -582,7 +626,7 @@ export async function marketplaceRoutes(
               body.amount,
               nowIso,
             );
-            credits.credits[created.id] = created;
+            setOwnRecordValue(credits.credits, created.id, created);
           }
 
           listing.remainingAmount -= body.amount;
@@ -614,7 +658,11 @@ export async function marketplaceRoutes(
             purchasedAt: nowIso,
           };
           market.purchases.push(purchase);
-          market.processedTxHashes[body.txHash.toLowerCase()] = purchase.id;
+          setOwnRecordValue(
+            market.processedTxHashes,
+            body.txHash.toLowerCase(),
+            purchase.id,
+          );
           return { kind: "success" as const, purchase };
         },
       );
@@ -663,7 +711,13 @@ export async function marketplaceRoutes(
         security: [{ bearerAuth: [] }],
       },
       config: bearerAuthRateLimit,
-      preHandler: verifyBearerAuth,
+      preHandler: [
+        fastify.rateLimit({
+          max: bearerAuthRateLimit.rateLimit.max,
+          timeWindow: bearerAuthRateLimit.rateLimit.timeWindow,
+        }),
+        verifyBearerAuth,
+      ],
     },
     async (request, reply) => {
       const { id } = request.params as { id: string };
@@ -675,7 +729,7 @@ export async function marketplaceRoutes(
         MARKETPLACE_STORE_KEY,
         DEFAULT_MARKETPLACE_STATE,
       );
-      const listingSnapshot = snapshot.listings[id];
+      const listingSnapshot = getOwnRecordValue(snapshot.listings, id);
       if (!listingSnapshot) {
         return reply.status(404).send({
           success: false,
@@ -725,10 +779,12 @@ export async function marketplaceRoutes(
           defaultState: DEFAULT_CREDITS_STATE,
         },
         async (market, credits) => {
-          const existingId =
-            market.processedTxHashes[body.txHash.toLowerCase()];
+          const existingId = getOwnRecordValue(
+            market.processedTxHashes,
+            body.txHash.toLowerCase(),
+          );
           if (existingId === id) {
-            const existingListing = market.listings[id];
+            const existingListing = getOwnRecordValue(market.listings, id);
             if (!existingListing) {
               return { kind: "replayed" as const };
             }
@@ -739,7 +795,7 @@ export async function marketplaceRoutes(
           }
           if (existingId) return { kind: "replayed" as const };
 
-          const listing = market.listings[id];
+          const listing = getOwnRecordValue(market.listings, id);
           if (!listing) return { kind: "not_found" as const };
           if (
             listing.status !== ListingStatus.ACTIVE &&
@@ -747,7 +803,10 @@ export async function marketplaceRoutes(
           ) {
             return { kind: "not_cancellable" as const };
           }
-          const sellerCredit = credits.credits[listing.creditId];
+          const sellerCredit = getOwnRecordValue(
+            credits.credits,
+            listing.creditId,
+          );
           if (
             !sellerCredit ||
             (sellerCredit.escrowedAmount ?? 0) < listing.remainingAmount
@@ -762,7 +821,11 @@ export async function marketplaceRoutes(
           listing.status = ListingStatus.CANCELLED;
           listing.cancelledAt = nowIso;
           listing.cancellationTxHash = confirmed.txHash;
-          market.processedTxHashes[body.txHash.toLowerCase()] = id;
+          setOwnRecordValue(
+            market.processedTxHashes,
+            body.txHash.toLowerCase(),
+            id,
+          );
           return { kind: "success" as const, listing };
         },
       );
@@ -792,6 +855,16 @@ export async function marketplaceRoutes(
   fastify.get(
     "/stats",
     {
+      config: {
+        rateLimit: {
+          max: 60,
+          timeWindow: "1 minute",
+        },
+      },
+      preHandler: fastify.rateLimit({
+        max: 60,
+        timeWindow: "1 minute",
+      }),
       schema: {
         tags: ["Marketplace"],
         summary: "Get confirmed marketplace statistics",

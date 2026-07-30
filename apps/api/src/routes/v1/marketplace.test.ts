@@ -245,6 +245,54 @@ describe("marketplace routes", () => {
     expect(pendingKyc.statusCode).toBe(403);
   });
 
+  it("rejects inherited record keys without traversing object prototypes", async () => {
+    for (const id of ["__proto__", "constructor", "prototype"]) {
+      const detail = await app.inject({
+        method: "GET",
+        url: `/v1/marketplace/listings/${id}`,
+      });
+      expect(detail.statusCode).toBe(404);
+
+      const cancellation = await app.inject({
+        method: "POST",
+        url: `/v1/marketplace/listings/${id}/cancel`,
+        headers: { authorization: `Bearer ${sign(app, SELLER)}` },
+        payload: { txHash: transactionHash("a") },
+      });
+      expect(cancellation.statusCode).toBe(404);
+    }
+  });
+
+  it("applies explicit limits to protected writes and aggregate reads", async () => {
+    const writeResponses = await Promise.all(
+      Array.from({ length: 21 }, () =>
+        app.inject({
+          method: "POST",
+          url: "/v1/marketplace/listings",
+          payload: {
+            tokenId: "1",
+            amount: 1,
+            pricePerUnit: "1",
+            txHash: transactionHash("b"),
+          },
+        }),
+      ),
+    );
+    expect(writeResponses.at(-1)?.statusCode).toBe(429);
+
+    const freshApp = await buildApp();
+    const readResponses = await Promise.all(
+      Array.from({ length: 61 }, () =>
+        freshApp.inject({
+          method: "GET",
+          url: "/v1/marketplace/stats",
+        }),
+      ),
+    );
+    expect(readResponses.at(-1)?.statusCode).toBe(429);
+    await freshApp.close();
+  });
+
   it("rejects an unconfirmed or mismatched listing receipt", async () => {
     const response = await createListing(app, {
       txHash: transactionHash("f"),
