@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 
+import { weiToUsd } from "../../lib/aethel-price.js";
 import {
   bearerAuthRateLimit,
   verifyBearerAuth,
@@ -61,11 +62,9 @@ function getAuthenticatedUserId(request: { user?: unknown }): string | null {
     : null;
 }
 
-function weiToUsd(wei: string): number {
-  const maticUsd = Number.parseFloat(process.env.MATIC_USD_PRICE || "0.5");
-  const matic = Number(wei) / 1e18;
-  return Number.isFinite(matic) ? matic * maticUsd : 0;
-}
+const NULLABLE_NUMBER_SCHEMA = {
+  anyOf: [{ type: "number" }, { type: "null" }],
+};
 
 export async function analyticsRoutes(
   fastify: FastifyInstance,
@@ -95,9 +94,9 @@ export async function analyticsRoutes(
                   totalCo2OffsetKg: { type: "number" },
                   totalCo2OffsetTonnes: { type: "number" },
                   avgPurchasePriceWei: { type: "string" },
-                  avgPurchasePriceUsd: { type: "number" },
+                  avgPurchasePriceUsd: NULLABLE_NUMBER_SCHEMA,
                   totalSpentWei: { type: "string" },
-                  totalSpentUsd: { type: "number" },
+                  totalSpentUsd: NULLABLE_NUMBER_SCHEMA,
                   totalTransactions: { type: "integer" },
                   portfolioBreakdown: {
                     type: "array",
@@ -226,12 +225,12 @@ export async function analyticsRoutes(
                 type: "object",
                 properties: {
                   totalValueLockedWei: { type: "string" },
-                  totalValueLockedUsd: { type: "number" },
+                  totalValueLockedUsd: NULLABLE_NUMBER_SCHEMA,
                   totalCreditsMinted: { type: "number" },
                   totalCreditsRetired: { type: "number" },
                   totalCreditsTraded: { type: "number" },
                   totalTradingVolumeWei: { type: "string" },
-                  totalTradingVolumeUsd: { type: "number" },
+                  totalTradingVolumeUsd: NULLABLE_NUMBER_SCHEMA,
                   activeListings: { type: "integer" },
                   totalListingsCreated: { type: "integer" },
                   totalTransactions: { type: "integer" },
@@ -239,7 +238,7 @@ export async function analyticsRoutes(
                   uniqueSellers: { type: "integer" },
                   activeUsers: { type: "integer" },
                   protocolFeeCollectedWei: { type: "string" },
-                  protocolFeeCollectedUsd: { type: "number" },
+                  protocolFeeCollectedUsd: NULLABLE_NUMBER_SCHEMA,
                 },
               },
             },
@@ -355,13 +354,13 @@ export async function analyticsRoutes(
                 properties: {
                   interval: { type: "string" },
                   currentPriceWei: { type: "string" },
-                  currentPriceUsd: { type: "number" },
+                  currentPriceUsd: NULLABLE_NUMBER_SCHEMA,
                   priceChange24hPercent: { type: "number" },
                   priceChange7dPercent: { type: "number" },
                   allTimeHighWei: { type: "string" },
-                  allTimeHighUsd: { type: "number" },
+                  allTimeHighUsd: NULLABLE_NUMBER_SCHEMA,
                   allTimeLowWei: { type: "string" },
-                  allTimeLowUsd: { type: "number" },
+                  allTimeLowUsd: NULLABLE_NUMBER_SCHEMA,
                   dataPoints: {
                     type: "array",
                     items: {
@@ -369,7 +368,7 @@ export async function analyticsRoutes(
                       properties: {
                         timestamp: { type: "string" },
                         avgPriceWei: { type: "string" },
-                        avgPriceUsd: { type: "number" },
+                        avgPriceUsd: NULLABLE_NUMBER_SCHEMA,
                         volume: { type: "number" },
                         transactions: { type: "integer" },
                       },

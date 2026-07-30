@@ -6,10 +6,6 @@ const addressEnvironment = {
   carbonCredit: process.env.NEXT_PUBLIC_CARBON_CREDIT_ADDRESS,
   carbonMarketplace: process.env.NEXT_PUBLIC_CARBON_MARKETPLACE_ADDRESS,
   circuitBreaker: process.env.NEXT_PUBLIC_CIRCUIT_BREAKER_ADDRESS,
-  multisig: process.env.NEXT_PUBLIC_MULTISIG_ADDRESS,
-  timelock: process.env.NEXT_PUBLIC_TIMELOCK_ADDRESS,
-  gaslessMarketplace: process.env.NEXT_PUBLIC_GASLESS_MARKETPLACE_ADDRESS,
-  nativeIoTOracle: process.env.NEXT_PUBLIC_ORACLE_ADDRESS,
 } as const;
 
 function configuredAddress(value: string | undefined): Address {
@@ -25,10 +21,6 @@ export const CONTRACTS = {
   carbonCredit: configuredAddress(addressEnvironment.carbonCredit),
   carbonMarketplace: configuredAddress(addressEnvironment.carbonMarketplace),
   circuitBreaker: configuredAddress(addressEnvironment.circuitBreaker),
-  multisig: configuredAddress(addressEnvironment.multisig),
-  timelock: configuredAddress(addressEnvironment.timelock),
-  gaslessMarketplace: configuredAddress(addressEnvironment.gaslessMarketplace),
-  nativeIoTOracle: configuredAddress(addressEnvironment.nativeIoTOracle),
 } as const;
 
 export const CHAIN_ID = Number.parseInt(
@@ -71,9 +63,6 @@ export const VERIFIED_IMPLEMENTATIONS = {
   carbonCredit: contractExplorerUrl(CONTRACTS.carbonCredit),
   carbonMarketplace: contractExplorerUrl(CONTRACTS.carbonMarketplace),
   circuitBreaker: contractExplorerUrl(CONTRACTS.circuitBreaker),
-  gaslessMarketplace: contractExplorerUrl(CONTRACTS.gaslessMarketplace),
-  multisig: contractExplorerUrl(CONTRACTS.multisig),
-  timelock: contractExplorerUrl(CONTRACTS.timelock),
 } as const;
 
 export type ContractName = keyof typeof CONTRACTS;

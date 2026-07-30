@@ -33,7 +33,7 @@ surfaces are not shipped.
 
 ## Local verification
 
-Requirements: Node.js 20+, pnpm 9+, Docker, and Docker Compose.
+Requirements: Node.js 20.18.x, pnpm 9.0.0, Docker, and Docker Compose.
 
 ```bash
 pnpm install
@@ -52,19 +52,23 @@ API. The web app runs on port `3007`; the API runs on port `4000`.
 
 ## Controlled testnet deployment
 
-Contract deployment is deliberately blocked unless all governance, signer,
-metadata, RPC, and confirmation inputs are explicit:
+The candidate contains exactly five proxies: access control, circuit breaker,
+verification engine, carbon credit, and carbon marketplace. Removed legacy
+contracts and deployment scripts must not be mixed with it.
+
+Start with the read-only preflight:
 
 ```bash
-pnpm --filter @terraqura/contracts deploy:testnet
+pnpm contracts:preflight
 ```
 
-The deployment script verifies chain ID `7332`, signer balance, HTTPS RPC,
-governance ownership, and role transfer before writing a deployment manifest.
-Never commit signer material or provider credentials.
+Bootstrap and finalize are separate, explicitly confirmed phases with a
+deterministic resumable checkpoint. The authoritative procedure is
+[the public-testnet deployment runbook](docs/deployment/PUBLIC_TESTNET_DEPLOYMENT.md).
+Never commit signer material, provider credentials, checkpoints, or manifests.
 
-For the production API, use `deploy/terraqura.production.env.example` as the
-configuration checklist. Managed signer files must be mounted read-only.
+Use the separate sanitized contract, API, and web env examples in `deploy/`.
+Managed signer files must be mounted read-only.
 
 ## Security
 

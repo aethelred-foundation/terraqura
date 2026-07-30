@@ -20,6 +20,34 @@ const HttpsUrlSchema = z
     message: "Production network endpoints must use HTTPS",
   });
 
+function emptyToUndefined(value: unknown): unknown {
+  return typeof value === "string" && value.trim() === "" ? undefined : value;
+}
+
+const OptionalAddressSchema = z.preprocess(
+  emptyToUndefined,
+  AddressSchema.optional(),
+);
+const OptionalSecretFileSchema = z.preprocess(
+  emptyToUndefined,
+  z.string().trim().min(1).optional(),
+);
+const OptionalPrivateKeySchema = z.preprocess(
+  emptyToUndefined,
+  z
+    .string()
+    .regex(/^0x[a-fA-F0-9]{64}$/)
+    .optional(),
+);
+const OptionalWebhookSecretSchema = z.preprocess(
+  emptyToUndefined,
+  z.string().min(32).optional(),
+);
+const OptionalPositivePriceSchema = z.preprocess(
+  emptyToUndefined,
+  z.coerce.number().finite().positive().optional(),
+);
+
 const RawApiRuntimeEnvSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
@@ -40,21 +68,16 @@ const RawApiRuntimeEnvSchema = z.object({
   CARBON_CREDIT_ADDRESS: AddressSchema,
   CARBON_MARKETPLACE_ADDRESS: AddressSchema,
   CIRCUIT_BREAKER_ADDRESS: AddressSchema,
-  OPERATOR_SIGNER_KEY_FILE: z.string().trim().min(1).optional(),
-  PRIVATE_KEY: z
-    .string()
-    .regex(/^0x[a-fA-F0-9]{64}$/)
-    .optional(),
-  FORWARDER_CONTRACT: AddressSchema.optional(),
-  RELAYER_SIGNER_KEY_FILE: z.string().trim().min(1).optional(),
-  RELAYER_PRIVATE_KEY: z
-    .string()
-    .regex(/^0x[a-fA-F0-9]{64}$/)
-    .optional(),
+  OPERATOR_SIGNER_KEY_FILE: OptionalSecretFileSchema,
+  PRIVATE_KEY: OptionalPrivateKeySchema,
+  FORWARDER_CONTRACT: OptionalAddressSchema,
+  RELAYER_SIGNER_KEY_FILE: OptionalSecretFileSchema,
+  RELAYER_PRIVATE_KEY: OptionalPrivateKeySchema,
+  AETHEL_USD_PRICE: OptionalPositivePriceSchema,
   KYC_PROVIDER: KycProviderSchema.default("sumsub"),
   SUMSUB_APP_TOKEN: z.string().optional(),
   SUMSUB_SECRET_KEY: z.string().optional(),
-  SUMSUB_WEBHOOK_SECRET: z.string().min(32).optional(),
+  SUMSUB_WEBHOOK_SECRET: OptionalWebhookSecretSchema,
 });
 
 export type KycProvider = z.infer<typeof KycProviderSchema>;
@@ -80,6 +103,7 @@ export interface ApiRuntimeEnv {
   FORWARDER_CONTRACT?: string;
   RELAYER_SIGNER_KEY_FILE?: string;
   RELAYER_PRIVATE_KEY?: string;
+  AETHEL_USD_PRICE?: number;
   KYC_PROVIDER: KycProvider;
   SUMSUB_APP_TOKEN?: string;
   SUMSUB_SECRET_KEY?: string;
@@ -233,6 +257,7 @@ export function getApiRuntimeEnv(): ApiRuntimeEnv {
     FORWARDER_CONTRACT: rawEnv.FORWARDER_CONTRACT,
     RELAYER_SIGNER_KEY_FILE: rawEnv.RELAYER_SIGNER_KEY_FILE,
     RELAYER_PRIVATE_KEY: rawEnv.RELAYER_PRIVATE_KEY,
+    AETHEL_USD_PRICE: rawEnv.AETHEL_USD_PRICE,
     KYC_PROVIDER: rawEnv.KYC_PROVIDER,
     SUMSUB_APP_TOKEN: rawEnv.SUMSUB_APP_TOKEN,
     SUMSUB_SECRET_KEY: rawEnv.SUMSUB_SECRET_KEY,

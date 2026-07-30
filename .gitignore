@@ -18,6 +18,9 @@ coverage/
 cache/
 artifacts/
 typechain-types/
+apps/contracts/deployments/*.checkpoint.json
+apps/contracts/deployments/*.manifest.json
+apps/contracts/deployments/*.lock
 
 # Environment
 .env

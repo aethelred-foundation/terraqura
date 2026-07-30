@@ -16,6 +16,18 @@
   ],
   "scripts": {
     "build": "turbo build",
+    "build:api": "pnpm --filter @terraqura/types build && pnpm --filter @terraqura/api build",
+    "build:web": "pnpm --filter @terraqura/types build && pnpm --filter @aethelred/terraqura-web build",
+    "start:api": "pnpm --filter @terraqura/api start",
+    "start:web": "pnpm --filter @aethelred/terraqura-web start",
+    "db:migrate": "pnpm --filter @terraqura/api db:migrate",
+    "contracts:compile": "pnpm --filter @terraqura/contracts compile",
+    "contracts:test": "pnpm --filter @terraqura/contracts test",
+    "contracts:preflight": "pnpm --filter @terraqura/contracts deploy:testnet:preflight",
+    "contracts:bootstrap": "pnpm --filter @terraqura/contracts deploy:testnet:bootstrap",
+    "contracts:finalize": "pnpm --filter @terraqura/contracts deploy:testnet:finalize",
+    "contracts:verify": "pnpm --filter @terraqura/contracts deploy:testnet:verify",
+    "compose:config": "docker compose --env-file .env -f docker-compose.production.yml config --quiet",
     "dev": "turbo dev",
     "lint": "turbo lint",
     "lint:fix": "turbo lint:fix",
@@ -38,8 +50,8 @@
   },
   "packageManager": "pnpm@9.0.0",
   "engines": {
-    "node": ">=20.0.0",
-    "pnpm": ">=9.0.0"
+    "node": "20.18.x",
+    "pnpm": "9.0.0"
   },
   "lint-staged": {
     "*.{ts,tsx,js,jsx}": [
