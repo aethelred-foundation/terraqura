@@ -26,6 +26,7 @@ import {
   readCheckpoint,
   writeCheckpoint,
 } from "./lib/deployment-checkpoint";
+import { assertSupportedRuntime } from "./lib/runtime-preflight";
 
 type RequestedPhase = "preflight" | "bootstrap" | "finalize" | "verify";
 
@@ -100,19 +101,6 @@ function currentSourceCommit(): string {
   return current.toLowerCase();
 }
 
-function assertSupportedRuntime(): void {
-  const [major, minor] = process.versions.node
-    .split(".")
-    .map((part) => Number.parseInt(part, 10));
-  if (major !== 20 || minor !== 18) {
-    throw new Error(`Node 20.18.x is required; found ${process.version}`);
-  }
-  const packageManager = process.env.npm_config_user_agent || "";
-  if (!packageManager.startsWith("pnpm/9.0.0 ")) {
-    throw new Error("pnpm 9.0.0 is required for the deployment ceremony");
-  }
-}
-
 function assertSignerKeyFile(): void {
   if (process.env.PRIVATE_KEY?.trim()) {
     throw new Error(
@@ -141,7 +129,9 @@ async function loadConfiguration(): Promise<{
   configuration: CandidateConfiguration;
   checkpointPath: string;
 }> {
-  assertSupportedRuntime();
+  assertSupportedRuntime({
+    repositoryRoot: resolve(__dirname, "../../.."),
+  });
   assertSignerKeyFile();
   if (network.name !== "aethelredTestnet") {
     throw new Error("This ceremony only supports the aethelredTestnet network");

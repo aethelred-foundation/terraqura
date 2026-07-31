@@ -34,8 +34,17 @@ surfaces are not shipped.
 ## Local verification
 
 Requirements: Node.js 20.18.x, pnpm 9.0.0, Docker, and Docker Compose.
+The reviewed operator runtime is pinned to Node `20.18.3` in both `.nvmrc`
+and `.node-version`; do not substitute a newer Node major.
 
 ```bash
+nvm install
+nvm use
+test "$(node --version)" = "v$(cat .nvmrc)"
+test "$(cat .node-version)" = "$(cat .nvmrc)"
+corepack enable
+corepack prepare "$(node -p 'require("./package.json").packageManager')" --activate
+test "$(pnpm --version)" = "9.0.0"
 pnpm install
 cp apps/api/.env.example apps/api/.env
 cp apps/web/.env.example apps/web/.env.local

@@ -58,14 +58,20 @@ test -z "$(git status --porcelain)"
 
 A branch name is not a release identifier. Record the remote and exact SHA.
 
-Install Node `20.18.x` and pnpm `9.0.0`. Preflight rejects other Node major
-versions and Node 20 releases older than 20.18.
+The supported runtime line is Node `20.18.x`; the deployment ceremony requires
+the reviewed `20.18.3` patch pinned in both `.nvmrc` and `.node-version` and
+rejects Node 25 or any other drift. Preflight also proves that both version
+files, the engine range, the root `packageManager` field, and the running pnpm
+`9.0.0` agree.
 
 ```bash
-node --version
+nvm install
+nvm use
+test "$(node --version)" = "v$(cat .nvmrc)"
+test "$(cat .node-version)" = "$(cat .nvmrc)"
 corepack enable
-corepack prepare pnpm@9.0.0 --activate
-pnpm --version
+corepack prepare "$(node -p 'require("./package.json").packageManager')" --activate
+test "$(pnpm --version)" = "9.0.0"
 ```
 
 ## 2. Source validation
