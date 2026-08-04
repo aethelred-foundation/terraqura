@@ -3,9 +3,10 @@
 ## Status and scope
 
 This is the operator runbook for validating and, only after a separate release
-approval, deploying the TerraQura public-testnet candidate. Preflight commands
-are read-only. Bootstrap and finalize broadcast transactions and require
-explicit interlocks; do not run them merely because this document exists.
+approval, deploying the TerraQura public-testnet candidate. Preflight is
+non-broadcasting but creates or reconciles a local checkpoint. Bootstrap and
+finalize broadcast transactions and require explicit interlocks; do not run
+them merely because this document exists.
 
 The candidate contains exactly five UUPS proxies:
 
@@ -25,7 +26,7 @@ old address to the candidate environment, or reuse an old manifest.
 ## Release inputs and responsibilities
 
 The release owner supplies the approved 40-character Git SHA, expected chain
-ID and HTTPS RPC, and these custody-controlled addresses:
+ID and RPC identity evidence, and these custody-controlled addresses:
 
 - a temporary deployment signer with testnet AETH;
 - `PROTOCOL_OWNER_ADDRESS`, independent of the deployer;
@@ -98,6 +99,7 @@ release evidence.
 Copy the sanitized template outside the repository:
 
 ```bash
+install -d -m 0700 /secure/operator
 install -m 0600 \
   deploy/terraqura.contracts.public-testnet.env.example \
   /secure/operator/terraqura-contracts.env
@@ -106,27 +108,86 @@ install -m 0600 \
 Fill every required field. The private key is a mode-`0400` file referenced by
 `DEPLOYER_SIGNER_KEY_FILE`, never a value in this env file.
 
+`DEPLOYER_SIGNER_KEY_FILE` is a path, not the key itself. The referenced file
+contains one line in this shape:
+
+```text
+0x<64 hexadecimal characters supplied by custody>
+```
+
+For a custody-supplied public-testnet key, install it outside the checkout and
+restrict it before use:
+
 ```bash
+install -d -m 0700 /secure/operator
+install -m 0600 /path/from/custody/terraqura-deployer.key \
+  /secure/operator/terraqura-deployer.key
+chmod 0400 /secure/operator/terraqura-deployer.key
+```
+
+For evaluation only, a new testnet-only key can be generated directly into the
+restricted file. Do not use this command for a production or custody key:
+
+```bash
+install -d -m 0700 /secure/operator
+umask 077
+openssl rand -hex 32 | sed 's/^/0x/' > \
+  /secure/operator/terraqura-deployer.key
+chmod 0400 /secure/operator/terraqura-deployer.key
+```
+
+The deployment package deliberately does not read the repository-root
+`.env.local` when `contracts:preflight`, `contracts:bootstrap`,
+`contracts:finalize`, or `contracts:verify` runs. Those commands use only the
+environment exported by the operator plus ordinary process variables. A
+legacy `PRIVATE_KEY` inherited from the login shell is rejected even when
+`DEPLOYER_SIGNER_KEY_FILE` is correct; the key-file variable never overrides
+it. Clear that legacy variable without displaying its value:
+
+```bash
+unset PRIVATE_KEY
 set -a
 . /secure/operator/terraqura-contracts.env
 set +a
+test -z "${PRIVATE_KEY:-}"
 test "$TERRAQURA_SOURCE_COMMIT" = "$(git rev-parse HEAD)"
+env -u PRIVATE_KEY pnpm contracts:signer-key:check
+env -u PRIVATE_KEY pnpm contracts:rpc:check
 ```
+
+The signer-key check validates the absolute path, regular-file type, no
+symlink, mode `0400`/`0600`, and exact key format. It never prints the secret.
+The RPC check performs only `eth_chainId` and block reads; it verifies the
+configured transport policy and anchor without loading the signer or sending a
+transaction.
+If the legacy-variable error persists, remove or comment `PRIVATE_KEY` from
+the invoking service manager or shell profile. Do not inspect it with `env`,
+`printenv`, `set`, or shell tracing because those can disclose its value.
+
+HTTPS remains the default RPC policy. The provided evaluation template uses
+the current plaintext public-testnet endpoint and therefore includes the exact
+`ALLOW_INSECURE_TESTNET_RPC=acknowledge-evaluation-only-plaintext-rpc`
+acknowledgement plus `AETHELRED_NETWORK_ANCHOR_BLOCK` and
+`AETHELRED_NETWORK_ANCHOR_HASH`. Plaintext is accepted only for chain ID `7332`.
+Every ceremony phase checks the chain ID and pinned block hash before any
+transaction-bearing operation. Reconfirm that public anchor independently
+before use; never copy this exception to mainnet or production.
 
 Keep both confirmation flags `false`. The checkpoint must be on durable,
 encrypted storage outside the checkout.
 
-## 4. Read-only preflight
+## 4. Non-broadcast preflight
 
 ```bash
-pnpm contracts:preflight
+env -u PRIVATE_KEY pnpm contracts:preflight
 ```
 
-Preflight performs no transaction. It verifies immutable SHA and a clean source
-checkout;
-Node, network, HTTPS RPC, and chain ID; signer balance and role separation;
-addresses, metadata URL, and fee bounds; UUPS safety for all five
-implementations; and checkpoint compatibility.
+Preflight broadcasts no transaction. It verifies immutable SHA and a clean
+source checkout; Node, network, RPC transport policy, chain ID and optional
+anchor; signer balance and role separation; addresses, metadata URL, fee
+bounds, UUPS safety for all five implementations, and checkpoint
+compatibility. It creates or reconciles the local checkpoint file, so the
+checkpoint directory must already be writable and should be backed up.
 
 The mode-`0600` checkpoint digest binds source SHA, chain, deployer, owner,
 operator, fee recipient, metadata URI, and fee. Changing an input requires a
@@ -146,7 +207,7 @@ five ERC-1967 proxies. It does not perform final wiring or governance transfer.
 ```bash
 export CONFIRM_TESTNET_DEPLOY=true
 export CONFIRM_TESTNET_FINALIZE=false
-pnpm contracts:bootstrap
+env -u PRIVATE_KEY pnpm contracts:bootstrap
 export CONFIRM_TESTNET_DEPLOY=false
 ```
 
@@ -175,7 +236,7 @@ actions.
 ```bash
 export CONFIRM_TESTNET_DEPLOY=false
 export CONFIRM_TESTNET_FINALIZE=true
-pnpm contracts:finalize
+env -u PRIVATE_KEY pnpm contracts:finalize
 export CONFIRM_TESTNET_FINALIZE=false
 ```
 
@@ -183,7 +244,7 @@ Finalize writes a sibling
 `aethelred-testnet-7332.manifest.json`. Preserve checkpoint and manifest.
 
 ```bash
-pnpm contracts:verify
+env -u PRIVATE_KEY pnpm contracts:verify
 sha256sum "$TERRAQURA_DEPLOYMENT_CHECKPOINT"
 sha256sum \
   "$(dirname "$TERRAQURA_DEPLOYMENT_CHECKPOINT")/aethelred-testnet-7332.manifest.json"
@@ -215,13 +276,142 @@ Use:
 - `deploy/terraqura.api.production.env.example`
 - `deploy/terraqura.web.production.env.example`
 - `deploy/terraqura.production.env.example` for Compose
+- `deploy/terraqura.public-testnet-evaluation.env.example` with
+  `docker-compose.public-testnet-evaluation.yml` only for the current direct-IP
+  test host
 
-All public origins, RPC, explorer, and API URLs require HTTPS.
+Public application, API, metadata, and explorer origins require HTTPS. HTTPS is
+also the default RPC policy. The current public-testnet RPC is the sole
+evaluation exception: the API and browser accept its plaintext URL only with
+chain ID `7332`, the exact acknowledgement, and both anchor fields from the
+reviewed template. The API verifies chain and anchor before listening. The web
+disables wallet actions until the same checks pass and displays an
+evaluation-only plaintext-transport banner afterward.
+
+Browsers block HTTP RPC calls from an HTTPS page as mixed content. Prefer an
+organization-managed HTTPS reverse proxy for the RPC and remove all insecure
+RPC acknowledgement variables. If the team temporarily serves the entire
+evaluation UI over HTTP, use only test assets and test-only credentials; this
+is not a production hosting profile.
+
 `AETHEL_USD_PRICE` is optional; absent pricing produces `null` USD fields.
 Never substitute another asset price. Forwarder, gasless marketplace, multisig,
 timelock, and oracle variables remain unset for this candidate.
 
-## 8. Database and migration
+## 8. Current US-host direct-IP evaluation
+
+This is the supported path for `http://93.127.132.52:3007` with API port
+`4000`. It is intentionally separate from `docker-compose.production.yml` and
+does not weaken that production profile. PostgreSQL remains private; only the
+web and API ports are published.
+
+Copy and complete the evaluation environment:
+
+```bash
+install -d -m 0700 /secure/operator
+install -m 0600 \
+  deploy/terraqura.public-testnet-evaluation.env.example \
+  /secure/operator/terraqura-public-testnet-evaluation.env
+```
+
+Do not invent or reuse old contract addresses. Copy the five proxy addresses
+from the finalized manifest. `ADMIN_WALLETS` is an approved governance wallet;
+`NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID`, `DB_PASSWORD`, and `JWT_SECRET` are
+operator-supplied values.
+
+`OPERATOR_SIGNER_KEY_FILE` is required for issuance and administrative API
+transactions. Start with an operator-readable, test-only mode-`0400` or
+mode-`0600` source file containing exactly one `0x`-prefixed 32-byte private
+key. Its derived address must equal the `OPERATOR_SIGNER_ADDRESS` used in the
+contract ceremony; it must not be the temporary deployment key. Validate the
+source without printing the key:
+
+```bash
+DEPLOYER_SIGNER_KEY_FILE=/secure/operator/terraqura-operator.key \
+  env -u PRIVATE_KEY pnpm contracts:signer-key:check
+```
+
+The check prints the derived public address. Compare that address to the
+finalized checkpoint before starting the API. The image runs as numeric
+UID/GID `1001`; file-backed Compose secrets cannot remap host ownership. Create
+a separate container-readable copy, keep its parent directory restricted, and
+point the evaluation env at that copy:
+
+```bash
+sudo install -o 1001 -g 1001 -m 0400 \
+  /secure/operator/terraqura-operator.key \
+  /secure/operator/terraqura-api-operator.key
+sudo cmp --silent \
+  /secure/operator/terraqura-operator.key \
+  /secure/operator/terraqura-api-operator.key
+```
+
+Set:
+
+```dotenv
+OPERATOR_SIGNER_KEY_FILE=/secure/operator/terraqura-api-operator.key
+```
+
+Validate, build, migrate, and start the exact evaluation stack:
+
+```bash
+test "$PUBLIC_HOST" = "93.127.132.52"
+test "$SIWE_DOMAIN" = "93.127.132.52:3007"
+test "$CORS_ORIGIN" = "http://93.127.132.52:3007"
+test "$WEB_PUBLIC_ORIGIN" = "http://93.127.132.52:3007"
+docker compose \
+  --env-file /secure/operator/terraqura-public-testnet-evaluation.env \
+  -f docker-compose.public-testnet-evaluation.yml config --quiet
+docker compose \
+  --env-file /secure/operator/terraqura-public-testnet-evaluation.env \
+  -f docker-compose.public-testnet-evaluation.yml build
+docker compose \
+  --env-file /secure/operator/terraqura-public-testnet-evaluation.env \
+  -f docker-compose.public-testnet-evaluation.yml run --rm --no-deps \
+  api sh -eu -c 'test -r "$OPERATOR_SIGNER_KEY_FILE"'
+docker compose \
+  --env-file /secure/operator/terraqura-public-testnet-evaluation.env \
+  -f docker-compose.public-testnet-evaluation.yml up -d postgres
+docker compose \
+  --env-file /secure/operator/terraqura-public-testnet-evaluation.env \
+  -f docker-compose.public-testnet-evaluation.yml run --rm \
+  api node dist/scripts/migrate.js
+docker compose \
+  --env-file /secure/operator/terraqura-public-testnet-evaluation.env \
+  -f docker-compose.public-testnet-evaluation.yml up -d api web
+docker compose \
+  --env-file /secure/operator/terraqura-public-testnet-evaluation.env \
+  -f docker-compose.public-testnet-evaluation.yml ps
+```
+
+Verify the direct-IP endpoints:
+
+```bash
+curl --fail --silent --show-error \
+  http://93.127.132.52:4000/v1/health/ready
+curl --fail --silent --show-error http://93.127.132.52:3007/
+curl --fail --silent --show-error \
+  http://93.127.132.52:3007/api/terraqura/v1/health/ready
+```
+
+This profile fixes `TERRAQURA_DEPLOYMENT_PROFILE` to
+`public-testnet-evaluation`, keeps the API in production runtime mode, disables
+API docs, preserves signer-file and admin-wallet requirements, and permits
+`KYC_PROVIDER=disabled` only for this explicit profile. Disabled KYC makes the
+external KYC endpoints unavailable; it does not bypass the contracts' KYC or
+sanctions controls. Transaction testing therefore requires already approved
+test wallets or a separately authorized compliance transaction. A blank
+explorer URL is supported and produces no explorer links.
+
+API startup revalidates the mounted signer file type, mode, readability, and
+key format before it listens. A signer mount problem therefore fails startup
+instead of surfacing during the first issuance transaction.
+
+The browser labels plaintext RPC use and withholds wallet providers until chain
+ID `7332` and anchor block `450000` are verified. Never use real assets,
+production credentials, or this Compose file for a production service.
+
+## 9. Database and migration
 
 Do not point the candidate at an old TerraQura database by default. Before reuse:
 
@@ -233,15 +423,26 @@ Do not point the candidate at an old TerraQura database by default. Before reuse
 6. obtain explicit data-owner approval.
 
 Without that review, create a fresh PostgreSQL 16 database. Never expose 5432.
+For `docker-compose.production.yml`, use the same numeric UID/GID `1001`,
+mode-`0400` container signer copy described above; a host-operator-owned
+mode-`0400` source file is not readable by the image runtime user.
 
 ```bash
-cp deploy/terraqura.production.env.example .env
-chmod 600 .env
-# Fill required values and use a mode-0400 OPERATOR_SIGNER_KEY_FILE.
-docker compose --env-file .env -f docker-compose.production.yml config --quiet
-docker compose --env-file .env -f docker-compose.production.yml build
-docker compose --env-file .env -f docker-compose.production.yml up -d postgres
-docker compose --env-file .env -f docker-compose.production.yml run --rm \
+install -d -m 0700 /secure/operator
+install -m 0600 deploy/terraqura.production.env.example \
+  /secure/operator/terraqura-production.env
+# Fill required values and use the UID/GID-1001, mode-0400 signer copy.
+docker compose --env-file /secure/operator/terraqura-production.env \
+  -f docker-compose.production.yml config --quiet
+docker compose --env-file /secure/operator/terraqura-production.env \
+  -f docker-compose.production.yml build
+docker compose --env-file /secure/operator/terraqura-production.env \
+  -f docker-compose.production.yml run --rm --no-deps \
+  api sh -eu -c 'test -r "$OPERATOR_SIGNER_KEY_FILE"'
+docker compose --env-file /secure/operator/terraqura-production.env \
+  -f docker-compose.production.yml up -d postgres
+docker compose --env-file /secure/operator/terraqura-production.env \
+  -f docker-compose.production.yml run --rm \
   api node dist/scripts/migrate.js
 ```
 
@@ -255,14 +456,21 @@ pnpm start:api
 
 Migrate before new code receives traffic. Preserve migration output.
 
-## 9. API and web hosting
+## 10. API and web hosting
 
 Compose runs PostgreSQL only on its private network, API on
 `127.0.0.1:4000`, and web on `127.0.0.1:3007`.
 
+The separate evaluation Compose build propagates its explicit profile,
+plaintext-RPC acknowledgement, and both `AETHELRED_NETWORK_ANCHOR_*` fields
+into the API and browser bundle. The production Compose file fixes both API and
+web to the production profile and rejects plaintext RPC.
+
 ```bash
-docker compose --env-file .env -f docker-compose.production.yml up -d api web
-docker compose --env-file .env -f docker-compose.production.yml ps
+docker compose --env-file /secure/operator/terraqura-production.env \
+  -f docker-compose.production.yml up -d api web
+docker compose --env-file /secure/operator/terraqura-production.env \
+  -f docker-compose.production.yml ps
 ```
 
 For a separate web process:
@@ -274,7 +482,7 @@ PORT=3007 pnpm start:web
 
 Bind services to loopback/private networks. Do not expose 3007, 4000, or 5432.
 
-## 10. TLS reverse proxy
+## 11. TLS reverse proxy
 
 Terminate organization-managed TLS at the proxy:
 
@@ -286,7 +494,7 @@ and configure the exact trusted hop count. Use request limits compatible with
 the gateway (2 MiB, 15 seconds). Keep API docs disabled or access-controlled.
 Never enable `TERRAQURA_ALLOW_INSECURE_UPSTREAM` in production.
 
-## 11. Health and smoke checks
+## 12. Health and smoke checks
 
 ```bash
 curl --fail --silent --show-error http://127.0.0.1:4000/v1/health
@@ -303,7 +511,7 @@ chain ID/five addresses, SIWE domain, read-only views, unauthorized operator
 denial, KYC fail-closed behavior, wallet confirmation, and explorer references.
 Do not seed, mint, list, or buy without an approved test plan.
 
-## 12. Recovery and rollback
+## 13. Recovery and rollback
 
 Never erase a partial checkpoint. Rerun the same phase and let it reconcile
 code, receipt, expected address, and nonce. Unexpected nonce or a successful

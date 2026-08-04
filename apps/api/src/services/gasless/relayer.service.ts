@@ -1,10 +1,9 @@
 // TerraQura Gasless Transaction Relayer
 // Enables signed ERC-2771 meta-transactions.
 
-import { readFileSync } from "node:fs";
-
 import { ethers } from "ethers";
 
+import { readModeRestrictedPrivateKeyFile } from "../../lib/private-key-file.js";
 import { getApiRuntimeEnv } from "../../lib/runtime-env.js";
 
 // ERC-2771 ForwardRequest type
@@ -269,7 +268,10 @@ export function getGaslessRelayer(): GaslessRelayer | null {
       if (!signerKeyFile) {
         throw new Error("Gasless relayer signer file is not configured");
       }
-      privateKey = readFileSync(signerKeyFile, "utf8").trim();
+      privateKey = readModeRestrictedPrivateKeyFile(
+        signerKeyFile,
+        "RELAYER_SIGNER_KEY_FILE",
+      );
     } else {
       privateKey = env.RELAYER_PRIVATE_KEY;
     }

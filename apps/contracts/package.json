@@ -12,6 +12,8 @@
     "lint:fix": "NO_UPDATE_NOTIFIER=1 SOLHINT_DISABLE_UPDATE_CHECK=true solhint --disc 'contracts/**/*.sol' --fix && eslint 'scripts/**/*.ts' 'test/**/*.ts' --fix",
     "typecheck": "tsc --noEmit",
     "deploy:testnet": "pnpm run deploy:testnet:preflight",
+    "deploy:testnet:rpc:check": "ts-node --transpile-only scripts/check-public-testnet-rpc.ts",
+    "deploy:testnet:signer-key:check": "ts-node --transpile-only scripts/check-deployer-key-file.ts",
     "deploy:testnet:preflight": "TERRAQURA_DEPLOY_PHASE=preflight hardhat run scripts/deploy-aethelred-testnet.ts --network aethelredTestnet",
     "deploy:testnet:bootstrap": "TERRAQURA_DEPLOY_PHASE=bootstrap hardhat run scripts/deploy-aethelred-testnet.ts --network aethelredTestnet",
     "deploy:testnet:finalize": "TERRAQURA_DEPLOY_PHASE=finalize hardhat run scripts/deploy-aethelred-testnet.ts --network aethelredTestnet",

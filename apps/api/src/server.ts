@@ -8,7 +8,9 @@ import swagger from "@fastify/swagger";
 import swaggerUi from "@fastify/swagger-ui";
 import Fastify, { FastifyError } from "fastify";
 
+import { assertBlockchainRpcIdentity } from "./lib/blockchain-rpc-identity.js";
 import { ensureDatabaseSchema } from "./lib/database-schema.js";
+import { readModeRestrictedPrivateKeyFile } from "./lib/private-key-file.js";
 import { getApiRuntimeEnv } from "./lib/runtime-env.js";
 import { activityRoutes } from "./routes/v1/activity.js";
 import { analyticsRoutes } from "./routes/v1/analytics.js";
@@ -264,6 +266,16 @@ async function buildServer() {
 }
 
 async function start() {
+  if (apiEnv.NODE_ENV === "production") {
+    if (!apiEnv.OPERATOR_SIGNER_KEY_FILE) {
+      throw new Error("OPERATOR_SIGNER_KEY_FILE must be configured");
+    }
+    readModeRestrictedPrivateKeyFile(
+      apiEnv.OPERATOR_SIGNER_KEY_FILE,
+      "OPERATOR_SIGNER_KEY_FILE",
+    );
+  }
+  await assertBlockchainRpcIdentity(apiEnv);
   const server = await buildServer();
   await server.listen({ port: PORT, host: HOST });
 

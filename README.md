@@ -65,10 +65,13 @@ The candidate contains exactly five proxies: access control, circuit breaker,
 verification engine, carbon credit, and carbon marketplace. Removed legacy
 contracts and deployment scripts must not be mixed with it.
 
-Start with the read-only preflight:
+Start with the non-broadcast preflight. Source the reviewed operator env first;
+the repository `.env.local` is deliberately ignored by ceremony commands:
 
 ```bash
-pnpm contracts:preflight
+env -u PRIVATE_KEY pnpm contracts:signer-key:check
+env -u PRIVATE_KEY pnpm contracts:rpc:check
+env -u PRIVATE_KEY pnpm contracts:preflight
 ```
 
 Bootstrap and finalize are separate, explicitly confirmed phases with a

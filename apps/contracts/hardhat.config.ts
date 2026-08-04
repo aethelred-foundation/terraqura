@@ -1,21 +1,25 @@
-import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 
 import "@nomicfoundation/hardhat-toolbox";
 import "@openzeppelin/hardhat-upgrades";
 import * as dotenv from "dotenv";
 import { HardhatUserConfig } from "hardhat/config";
 
-dotenv.config({ path: "../../.env.local" });
+import {
+  readDeploymentSignerKeyFile,
+  readDeveloperDeploymentKey,
+  shouldLoadDeveloperEnv,
+} from "./scripts/lib/deployment-signer";
+
+const deploymentCeremony = !shouldLoadDeveloperEnv();
+if (!deploymentCeremony) {
+  dotenv.config({ path: resolve(__dirname, "../../.env.local") });
+}
 
 function readDeploymentKey(): string | undefined {
-  const keyFile = process.env.DEPLOYER_SIGNER_KEY_FILE?.trim();
-  const key = keyFile
-    ? readFileSync(keyFile, "utf8").trim()
-    : process.env.PRIVATE_KEY?.trim();
-  if (key && !/^0x[a-fA-F0-9]{64}$/.test(key)) {
-    throw new Error("Deployment signer secret is not a valid private key");
-  }
-  return key;
+  return deploymentCeremony
+    ? readDeploymentSignerKeyFile()
+    : readDeveloperDeploymentKey();
 }
 
 const deploymentKey = readDeploymentKey();

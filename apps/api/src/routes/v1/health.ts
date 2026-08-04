@@ -1,5 +1,6 @@
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 
+import { assertBlockchainRpcIdentity } from "../../lib/blockchain-rpc-identity.js";
 import { ensureDatabaseSchema } from "../../lib/database-schema.js";
 import { databasePool } from "../../lib/database.js";
 import { getApiRuntimeEnv } from "../../lib/runtime-env.js";
@@ -21,32 +22,8 @@ async function checkBlockchain(): Promise<boolean> {
   }
 
   try {
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 1500);
-    try {
-      const response = await fetch(env.AETHELRED_RPC_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          jsonrpc: "2.0",
-          method: "eth_chainId",
-          params: [],
-          id: 1,
-        }),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        return false;
-      }
-
-      const payload = (await response.json()) as { result?: string };
-      return typeof payload.result === "string"
-        ? parseInt(payload.result, 16) === env.CHAIN_ID
-        : false;
-    } finally {
-      clearTimeout(timeout);
-    }
+    await assertBlockchainRpcIdentity(env);
+    return true;
   } catch {
     return false;
   }

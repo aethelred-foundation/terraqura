@@ -1,7 +1,6 @@
-import { readFileSync } from "node:fs";
-
 import { ethers } from "ethers";
 
+import { readModeRestrictedPrivateKeyFile } from "../../lib/private-key-file.js";
 import { getApiRuntimeEnv } from "../../lib/runtime-env.js";
 
 export interface WhitelistDacUnitParams {
@@ -192,13 +191,10 @@ function loadOperatorPrivateKey(): string {
     if (!env.OPERATOR_SIGNER_KEY_FILE) {
       throw new Error("Production operator signer secret is not configured");
     }
-    const privateKey = readFileSync(
+    const privateKey = readModeRestrictedPrivateKeyFile(
       env.OPERATOR_SIGNER_KEY_FILE,
-      "utf8",
-    ).trim();
-    if (!/^0x[a-fA-F0-9]{64}$/.test(privateKey)) {
-      throw new Error("Operator signer secret is not a valid private key");
-    }
+      "OPERATOR_SIGNER_KEY_FILE",
+    );
     return privateKey;
   }
 
@@ -594,9 +590,11 @@ export async function verifyListingCancellationOnChain(
 }
 
 export function getExplorerTxLink(txHash: string): string {
-  return `${getNetwork().explorerUrl}/tx/${txHash}`;
+  const explorerUrl = getNetwork().explorerUrl;
+  return explorerUrl ? `${explorerUrl}/tx/${txHash}` : "";
 }
 
 export function getExplorerAddressLink(address: string): string {
-  return `${getNetwork().explorerUrl}/address/${address}`;
+  const explorerUrl = getNetwork().explorerUrl;
+  return explorerUrl ? `${explorerUrl}/address/${address}` : "";
 }

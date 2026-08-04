@@ -5,7 +5,6 @@ import {
   mkdirSync,
   openSync,
   readFileSync,
-  statSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -26,6 +25,12 @@ import {
   readCheckpoint,
   writeCheckpoint,
 } from "./lib/deployment-checkpoint";
+import { readDeploymentSignerKeyFile } from "./lib/deployment-signer";
+import {
+  assertRpcAnchor,
+  assertRpcChainId,
+  readPublicTestnetRpcPolicy,
+} from "./lib/public-testnet-rpc-policy";
 import { assertSupportedRuntime } from "./lib/runtime-preflight";
 
 type RequestedPhase = "preflight" | "bootstrap" | "finalize" | "verify";
@@ -101,24 +106,6 @@ function currentSourceCommit(): string {
   return current.toLowerCase();
 }
 
-function assertSignerKeyFile(): void {
-  if (process.env.PRIVATE_KEY?.trim()) {
-    throw new Error(
-      "PRIVATE_KEY is not accepted by the deployment ceremony; use DEPLOYER_SIGNER_KEY_FILE",
-    );
-  }
-  const signerKeyFile = process.env.DEPLOYER_SIGNER_KEY_FILE?.trim();
-  if (!signerKeyFile) {
-    throw new Error("DEPLOYER_SIGNER_KEY_FILE must be configured");
-  }
-  const signerFileStat = statSync(signerKeyFile);
-  if (!signerFileStat.isFile() || (signerFileStat.mode & 0o077) !== 0) {
-    throw new Error(
-      "DEPLOYER_SIGNER_KEY_FILE must be a regular file without group or world permissions",
-    );
-  }
-}
-
 async function confirmed(
   transaction: Promise<{ wait: () => Promise<unknown> }>,
 ): Promise<void> {
@@ -132,12 +119,12 @@ async function loadConfiguration(): Promise<{
   assertSupportedRuntime({
     repositoryRoot: resolve(__dirname, "../../.."),
   });
-  assertSignerKeyFile();
+  readDeploymentSignerKeyFile();
   if (network.name !== "aethelredTestnet") {
     throw new Error("This ceremony only supports the aethelredTestnet network");
   }
 
-  requiredHttpsUrl("AETHELRED_TESTNET_RPC_URL");
+  const rpcPolicy = readPublicTestnetRpcPolicy();
   const sourceCommit = currentSourceCommit();
   const protocolOwner = requiredAddress("PROTOCOL_OWNER_ADDRESS");
   const feeRecipient = requiredAddress("FEE_RECIPIENT_ADDRESS");
@@ -172,19 +159,9 @@ async function loadConfiguration(): Promise<{
     );
   }
 
-  const chain = await ethers.provider.getNetwork();
-  const rawExpectedChainId = process.env.AETHELRED_TESTNET_CHAIN_ID || "7332";
-  const expectedChainId = Number(rawExpectedChainId);
-  if (
-    !/^\d+$/.test(rawExpectedChainId) ||
-    !Number.isSafeInteger(expectedChainId) ||
-    expectedChainId <= 0 ||
-    chain.chainId !== BigInt(expectedChainId)
-  ) {
-    throw new Error(
-      `RPC chain mismatch: expected ${expectedChainId}, received ${chain.chainId}`,
-    );
-  }
+  const expectedChainId = rpcPolicy.expectedChainId;
+  await assertRpcChainId(ethers.provider, rpcPolicy);
+  await assertRpcAnchor(ethers.provider, rpcPolicy);
   if ((await ethers.provider.getBalance(deployerAddress)) === 0n) {
     throw new Error("Deployment signer has no AETH for transaction fees");
   }

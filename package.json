@@ -23,6 +23,8 @@
     "db:migrate": "pnpm --filter @terraqura/api db:migrate",
     "contracts:compile": "pnpm --filter @terraqura/contracts compile",
     "contracts:test": "pnpm --filter @terraqura/contracts test",
+    "contracts:rpc:check": "pnpm --filter @terraqura/contracts deploy:testnet:rpc:check",
+    "contracts:signer-key:check": "pnpm --filter @terraqura/contracts deploy:testnet:signer-key:check",
     "contracts:preflight": "pnpm --filter @terraqura/contracts deploy:testnet:preflight",
     "contracts:bootstrap": "pnpm --filter @terraqura/contracts deploy:testnet:bootstrap",
     "contracts:finalize": "pnpm --filter @terraqura/contracts deploy:testnet:finalize",

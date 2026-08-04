@@ -1,7 +1,15 @@
+import {
+  resolvePublicTestnetRpcPolicy,
+  type PublicTestnetRpcPolicy,
+} from "@terraqura/types";
 import { z } from "zod";
 
 const KycProviderSchema = z.enum(["sumsub", "disabled"]);
 const DatabaseSslModeSchema = z.enum(["disable", "require", "verify-full"]);
+const DeploymentProfileSchema = z.enum([
+  "production",
+  "public-testnet-evaluation",
+]);
 const AddressSchema = z
   .string()
   .regex(
@@ -47,11 +55,16 @@ const OptionalPositivePriceSchema = z.preprocess(
   emptyToUndefined,
   z.coerce.number().finite().positive().optional(),
 );
+const OptionalStringSchema = z.preprocess(
+  emptyToUndefined,
+  z.string().trim().min(1).optional(),
+);
 
 const RawApiRuntimeEnvSchema = z.object({
   NODE_ENV: z
     .enum(["development", "test", "production"])
     .default("development"),
+  TERRAQURA_DEPLOYMENT_PROFILE: DeploymentProfileSchema.optional(),
   DATABASE_URL: z.string().trim().min(1, "DATABASE_URL must be configured"),
   DATABASE_SSL_MODE: DatabaseSslModeSchema.default("require"),
   JWT_SECRET: z
@@ -62,7 +75,13 @@ const RawApiRuntimeEnvSchema = z.object({
   AUDITOR_WALLETS: z.string().default(""),
   CHAIN_ID: z.coerce.number().int().positive(),
   AETHELRED_RPC_URL: z.string().url(),
-  AETHELRED_EXPLORER_URL: z.string().url(),
+  AETHELRED_EXPLORER_URL: z.preprocess(
+    emptyToUndefined,
+    z.string().url().optional(),
+  ),
+  ALLOW_INSECURE_TESTNET_RPC: OptionalStringSchema,
+  AETHELRED_NETWORK_ANCHOR_BLOCK: OptionalStringSchema,
+  AETHELRED_NETWORK_ANCHOR_HASH: OptionalStringSchema,
   ACCESS_CONTROL_ADDRESS: AddressSchema,
   VERIFICATION_ENGINE_ADDRESS: AddressSchema,
   CARBON_CREDIT_ADDRESS: AddressSchema,
@@ -84,6 +103,10 @@ export type KycProvider = z.infer<typeof KycProviderSchema>;
 
 export interface ApiRuntimeEnv {
   NODE_ENV: "development" | "test" | "production";
+  TERRAQURA_DEPLOYMENT_PROFILE:
+    | "development"
+    | "production"
+    | "public-testnet-evaluation";
   DATABASE_URL: string;
   DATABASE_SSL_MODE: z.infer<typeof DatabaseSslModeSchema>;
   JWT_SECRET: string;
@@ -93,6 +116,9 @@ export interface ApiRuntimeEnv {
   CHAIN_ID: number;
   AETHELRED_RPC_URL: string;
   AETHELRED_EXPLORER_URL: string;
+  RPC_TRANSPORT: PublicTestnetRpcPolicy["transport"];
+  AETHELRED_NETWORK_ANCHOR_BLOCK?: number;
+  AETHELRED_NETWORK_ANCHOR_HASH?: string;
   ACCESS_CONTROL_ADDRESS: string;
   VERIFICATION_ENGINE_ADDRESS: string;
   CARBON_CREDIT_ADDRESS: string;
@@ -174,8 +200,30 @@ export function getApiRuntimeEnv(): ApiRuntimeEnv {
   const rawEnv = parseRawApiRuntimeEnv();
   ensurePostgresConnectionString(rawEnv.DATABASE_URL);
 
+  const deploymentProfile =
+    rawEnv.NODE_ENV === "production"
+      ? (rawEnv.TERRAQURA_DEPLOYMENT_PROFILE ?? "production")
+      : "development";
+  if (
+    rawEnv.TERRAQURA_DEPLOYMENT_PROFILE === "public-testnet-evaluation" &&
+    rawEnv.NODE_ENV !== "production"
+  ) {
+    throw new Error(
+      "TERRAQURA_DEPLOYMENT_PROFILE=public-testnet-evaluation requires NODE_ENV=production",
+    );
+  }
+
   const normalizedSiweDomain = normalizeSiweDomain(rawEnv.SIWE_DOMAIN);
   const databaseHost = new URL(rawEnv.DATABASE_URL).hostname;
+  const rpcPolicy = resolvePublicTestnetRpcPolicy({
+    production: rawEnv.NODE_ENV === "production",
+    publicTestnetEvaluation: deploymentProfile === "public-testnet-evaluation",
+    rpcUrl: rawEnv.AETHELRED_RPC_URL,
+    chainId: rawEnv.CHAIN_ID,
+    acknowledgement: rawEnv.ALLOW_INSECURE_TESTNET_RPC,
+    anchorBlock: rawEnv.AETHELRED_NETWORK_ANCHOR_BLOCK,
+    anchorHash: rawEnv.AETHELRED_NETWORK_ANCHOR_HASH,
+  });
 
   if (
     rawEnv.NODE_ENV === "production" &&
@@ -188,8 +236,14 @@ export function getApiRuntimeEnv(): ApiRuntimeEnv {
   }
 
   if (rawEnv.NODE_ENV === "production") {
-    HttpsUrlSchema.parse(rawEnv.AETHELRED_RPC_URL);
-    HttpsUrlSchema.parse(rawEnv.AETHELRED_EXPLORER_URL);
+    if (deploymentProfile === "production" && !rawEnv.AETHELRED_EXPLORER_URL) {
+      throw new Error(
+        "AETHELRED_EXPLORER_URL must be configured for the production profile",
+      );
+    }
+    if (rawEnv.AETHELRED_EXPLORER_URL) {
+      HttpsUrlSchema.parse(rawEnv.AETHELRED_EXPLORER_URL);
+    }
 
     if (rawEnv.PRIVATE_KEY) {
       throw new Error(
@@ -214,7 +268,10 @@ export function getApiRuntimeEnv(): ApiRuntimeEnv {
     if (!rawEnv.ADMIN_WALLETS.trim()) {
       throw new Error("ADMIN_WALLETS must be configured in production");
     }
-    if (rawEnv.KYC_PROVIDER === "disabled") {
+    if (
+      deploymentProfile === "production" &&
+      rawEnv.KYC_PROVIDER === "disabled"
+    ) {
       throw new Error("KYC_PROVIDER cannot be disabled in production");
     }
   }
@@ -233,6 +290,7 @@ export function getApiRuntimeEnv(): ApiRuntimeEnv {
 
   cachedEnv = {
     NODE_ENV: rawEnv.NODE_ENV,
+    TERRAQURA_DEPLOYMENT_PROFILE: deploymentProfile,
     DATABASE_URL: rawEnv.DATABASE_URL,
     DATABASE_SSL_MODE: rawEnv.DATABASE_SSL_MODE,
     JWT_SECRET: rawEnv.JWT_SECRET,
@@ -246,7 +304,11 @@ export function getApiRuntimeEnv(): ApiRuntimeEnv {
       : [],
     CHAIN_ID: rawEnv.CHAIN_ID,
     AETHELRED_RPC_URL: rawEnv.AETHELRED_RPC_URL,
-    AETHELRED_EXPLORER_URL: rawEnv.AETHELRED_EXPLORER_URL.replace(/\/+$/, ""),
+    AETHELRED_EXPLORER_URL:
+      rawEnv.AETHELRED_EXPLORER_URL?.replace(/\/+$/, "") ?? "",
+    RPC_TRANSPORT: rpcPolicy.transport,
+    AETHELRED_NETWORK_ANCHOR_BLOCK: rpcPolicy.anchor?.blockNumber,
+    AETHELRED_NETWORK_ANCHOR_HASH: rpcPolicy.anchor?.blockHash,
     ACCESS_CONTROL_ADDRESS: rawEnv.ACCESS_CONTROL_ADDRESS,
     VERIFICATION_ENGINE_ADDRESS: rawEnv.VERIFICATION_ENGINE_ADDRESS,
     CARBON_CREDIT_ADDRESS: rawEnv.CARBON_CREDIT_ADDRESS,

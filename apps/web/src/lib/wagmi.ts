@@ -1,6 +1,7 @@
 "use client";
 
 import { getDefaultConfig } from "@rainbow-me/rainbowkit";
+import { resolvePublicTestnetRpcPolicy } from "@terraqura/types";
 import { defineChain } from "viem";
 import { http } from "wagmi";
 
@@ -17,6 +18,44 @@ const explorerUrl =
   ) || "";
 const walletConnectProjectId =
   process.env.NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID?.trim() || "";
+const deploymentProfile =
+  process.env.NEXT_PUBLIC_TERRAQURA_DEPLOYMENT_PROFILE?.trim() ||
+  (process.env.NODE_ENV === "production" ? "production" : "development");
+const insecureRpcAcknowledgement =
+  process.env.NEXT_PUBLIC_ALLOW_INSECURE_TESTNET_RPC?.trim() || "";
+const anchorBlock =
+  process.env.NEXT_PUBLIC_AETHELRED_NETWORK_ANCHOR_BLOCK?.trim() || "";
+const anchorHash =
+  process.env.NEXT_PUBLIC_AETHELRED_NETWORK_ANCHOR_HASH?.trim() || "";
+
+let rpcPolicy: ReturnType<typeof resolvePublicTestnetRpcPolicy> | null = null;
+let rpcPolicyError: Error | null = null;
+if (rpcUrl) {
+  try {
+    if (
+      !["development", "production", "public-testnet-evaluation"].includes(
+        deploymentProfile,
+      )
+    ) {
+      throw new Error("Wallet deployment profile is invalid");
+    }
+    rpcPolicy = resolvePublicTestnetRpcPolicy({
+      production: process.env.NODE_ENV === "production",
+      publicTestnetEvaluation:
+        deploymentProfile === "public-testnet-evaluation",
+      rpcUrl,
+      chainId: CHAIN_ID,
+      acknowledgement: insecureRpcAcknowledgement,
+      anchorBlock,
+      anchorHash,
+    });
+  } catch (cause) {
+    rpcPolicyError =
+      cause instanceof Error
+        ? cause
+        : new Error("Wallet RPC policy is invalid");
+  }
+}
 
 function configurationFailure(): Error | null {
   if (!rpcUrl) {
@@ -24,8 +63,8 @@ function configurationFailure(): Error | null {
       "NEXT_PUBLIC_AETHELRED_TESTNET_RPC_URL is required for wallet operations.",
     );
   }
-  if (process.env.NODE_ENV === "production" && !rpcUrl.startsWith("https://")) {
-    return new Error("Production wallet RPC must use HTTPS.");
+  if (rpcPolicyError) {
+    return rpcPolicyError;
   }
   if (BLOCKCHAIN_CONFIGURATION_ERROR) {
     return new Error(BLOCKCHAIN_CONFIGURATION_ERROR);
@@ -104,6 +143,64 @@ if (!configError) {
 
 export { config, configError };
 
+export const RPC_EVALUATION_MODE =
+  deploymentProfile === "public-testnet-evaluation";
+export const RPC_PLAINTEXT_EVALUATION_MODE =
+  rpcPolicy?.transport === "evaluation-http";
+
+async function rpcRequest(method: string, params: unknown[]): Promise<unknown> {
+  const response = await fetch(rpcUrl, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ jsonrpc: "2.0", method, params, id: 1 }),
+    signal: AbortSignal.timeout(5_000),
+  });
+  if (!response.ok) {
+    throw new Error(`RPC ${method} returned HTTP ${response.status}`);
+  }
+  const payload = (await response.json()) as {
+    result?: unknown;
+    error?: { message?: string };
+  };
+  if (payload.error || payload.result === undefined) {
+    throw new Error(
+      payload.error?.message || `RPC ${method} returned no result`,
+    );
+  }
+  return payload.result;
+}
+
+export async function verifyConfiguredRpcIdentity(): Promise<void> {
+  if (!rpcUrl || !rpcPolicy) {
+    throw configError || new Error("Wallet RPC is not configured");
+  }
+  const rawChainId = await rpcRequest("eth_chainId", []);
+  if (
+    typeof rawChainId !== "string" ||
+    !/^0x[0-9a-fA-F]+$/.test(rawChainId) ||
+    BigInt(rawChainId) !== BigInt(CHAIN_ID)
+  ) {
+    throw new Error(`Wallet RPC chain identity does not match ${CHAIN_ID}`);
+  }
+  if (!rpcPolicy.anchor) {
+    return;
+  }
+  const rawBlock = await rpcRequest("eth_getBlockByNumber", [
+    `0x${rpcPolicy.anchor.blockNumber.toString(16)}`,
+    false,
+  ]);
+  const block = rawBlock as { hash?: unknown } | null;
+  if (
+    !block ||
+    typeof block.hash !== "string" ||
+    block.hash.toLowerCase() !== rpcPolicy.anchor.blockHash
+  ) {
+    throw new Error(
+      `Wallet RPC anchor identity does not match block ${rpcPolicy.anchor.blockNumber}`,
+    );
+  }
+}
+
 export const SUPPORTED_CHAINS = {
   aethelredTestnet: {
     id: aethelredTestnet.id,
@@ -156,26 +253,10 @@ export async function checkChainRPCHealth(
   if (chainId !== CHAIN_ID || !rpcUrl) return [];
   const startTime = Date.now();
   try {
-    const response = await fetch(rpcUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        jsonrpc: "2.0",
-        method: "eth_blockNumber",
-        params: [],
-        id: 1,
-      }),
-      signal: AbortSignal.timeout(5_000),
-    });
-    if (!response.ok) {
-      throw new Error(`HTTP ${response.status}`);
-    }
-    const body = (await response.json()) as {
-      result?: string;
-      error?: { message?: string };
-    };
-    if (!body.result || body.error) {
-      throw new Error(body.error?.message || "RPC returned no block number");
+    await verifyConfiguredRpcIdentity();
+    const blockNumber = await rpcRequest("eth_blockNumber", []);
+    if (typeof blockNumber !== "string") {
+      throw new Error("RPC returned no block number");
     }
     return [
       {
@@ -183,7 +264,7 @@ export async function checkChainRPCHealth(
         provider: "Aethelred Testnet",
         healthy: true,
         latency: Date.now() - startTime,
-        blockNumber: Number.parseInt(body.result, 16),
+        blockNumber: Number.parseInt(blockNumber, 16),
       },
     ];
   } catch (cause) {
