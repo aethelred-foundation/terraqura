@@ -21,7 +21,8 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { formatEther, parseEther } from "viem";
-import { useAccount, usePublicClient, useWriteContract } from "wagmi";
+import { useAccount, usePublicClient } from "wagmi";
+import { useSafeWriteContract } from "@/hooks/useSafeWriteContract";
 
 import {
   DAppFooter,
@@ -338,7 +339,9 @@ function OperationGate({
 export function TerraQuraWorkbench() {
   const { address, isConnected } = useAccount();
   const publicClient = usePublicClient({ chainId: CHAIN_ID });
-  const { writeContractAsync } = useWriteContract();
+  // Gas-safe: the Aethelred node under-reports eth_estimateGas, so a raw
+  // wagmi write reverts out-of-gas on every state-changing call.
+  const { writeContractAsync } = useSafeWriteContract();
   const { openConnectModal, addNotification } = useApp();
   const operator = useOperatorSession();
   const kyc = useKycStatus(operator.token);
