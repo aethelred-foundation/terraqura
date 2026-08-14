@@ -221,21 +221,108 @@ function artifactFor(key: CandidateContractKey, part: DeploymentPart): string {
   return part === "implementation" ? ARTIFACTS[key] : "ERC1967Proxy";
 }
 
+/**
+ * Solidity appends a CBOR-encoded metadata blob to the runtime bytecode, with
+ * its own length in the final two bytes. Two builds of identical source produce
+ * different metadata when anything in the compilation *environment* differs —
+ * absolute source paths, a bumped compiler patch, changed settings — so a
+ * difference confined to this trailing region means "same code, different
+ * build", which is a very different problem from "different contract".
+ */
+function splitMetadata(hex: string): { body: string; metadata: string } {
+  const bytes = hex.startsWith("0x") ? hex.slice(2) : hex;
+  if (bytes.length < 4) return { body: bytes, metadata: "" };
+  const declaredLength = parseInt(bytes.slice(-4), 16);
+  const metadataChars = (declaredLength + 2) * 2;
+  if (!Number.isFinite(declaredLength) || metadataChars > bytes.length) {
+    return { body: bytes, metadata: "" };
+  }
+  return {
+    body: bytes.slice(0, bytes.length - metadataChars),
+    metadata: bytes.slice(bytes.length - metadataChars),
+  };
+}
+
+/**
+ * Confirms the code at an address is the contract we believe it is.
+ *
+ * The comparison is deliberately exact — this is the check that stops a
+ * deployment being wired to something other than what was audited. But an exact
+ * check that fails with only "does not match" is a dead end: the operator
+ * cannot tell a stale checkpoint from a rebuilt artifact from a genuinely wrong
+ * contract, and all three have different remedies. So on failure this reports
+ * what actually differs and what to do about it.
+ */
 async function requireExpectedCode(
   address: string,
   label: string,
   artifactName: string,
+  origin: "checkpoint" | "fresh-deployment" = "fresh-deployment",
 ): Promise<void> {
   const code = await ethers.provider.getCode(address);
   if (code === ZERO_CODE) {
     throw new Error(`${label} has no code at ${address}`);
   }
   const artifact = await artifacts.readArtifact(artifactName);
-  if (ethers.keccak256(code) !== ethers.keccak256(artifact.deployedBytecode)) {
-    throw new Error(
-      `${label} runtime bytecode does not match ${artifactName} at ${address}`,
+  const expected = artifact.deployedBytecode;
+  if (ethers.keccak256(code) === ethers.keccak256(expected)) {
+    return;
+  }
+
+  const onChain = splitMetadata(code);
+  const local = splitMetadata(expected);
+  const bodiesMatch =
+    onChain.body.length > 0 && onChain.body === local.body;
+
+  const lines = [
+    `${label} runtime bytecode does not match ${artifactName} at ${address}`,
+    ``,
+    `  on-chain:  ${(code.length - 2) / 2} bytes, keccak ${ethers.keccak256(code)}`,
+    `  artifact:  ${(expected.length - 2) / 2} bytes, keccak ${ethers.keccak256(expected)}`,
+    `  address came from: ${origin === "checkpoint" ? "the deployment checkpoint (a previous run)" : "the deployment just submitted"}`,
+    ``,
+  ];
+
+  if (bodiesMatch) {
+    // The executable code is byte-identical; only the metadata trailer differs.
+    lines.push(
+      `  Diagnosis: the executable code is IDENTICAL. Only the trailing`,
+      `  metadata differs, so this is the same source compiled in a different`,
+      `  environment — a different solc patch version, different settings, or`,
+      `  artifacts built from a different absolute path.`,
+      ``,
+      `  Most likely: the artifacts on disk were not rebuilt from the source`,
+      `  this deployment is running against. "Nothing to compile" means Hardhat`,
+      `  considered the cache current, which is not the same as the cache being`,
+      `  correct after a branch switch.`,
+      ``,
+      `  Fix: pnpm --filter @terraqura/contracts exec hardhat clean`,
+      `       then: pnpm contracts:compile`,
+    );
+  } else if (origin === "checkpoint") {
+    lines.push(
+      `  Diagnosis: the executable code DIFFERS, and this address was recorded`,
+      `  by an earlier run. The contract deployed then is not the contract`,
+      `  being built now.`,
+      ``,
+      `  Fix: this deployment cannot be resumed. Archive the checkpoint and`,
+      `  start a fresh bootstrap:`,
+      `       mv <checkpoint file> <checkpoint file>.superseded`,
+    );
+  } else {
+    lines.push(
+      `  Diagnosis: the executable code DIFFERS on a contract that was just`,
+      `  deployed from this artifact. That should not be possible, and it is`,
+      `  NOT safe to bypass: something between the factory and the chain is`,
+      `  not what it appears to be.`,
+      ``,
+      `  Check: that ARTIFACTS["${artifactName}"] names the contract the`,
+      `  factory was built from, that no proxy or bytecode-rewriting middleware`,
+      `  sits in front of the RPC, and that the node is on the expected chain.`,
     );
   }
+
+  throw new Error(lines.join("\n"));
 }
 
 async function recoverPendingDeployment(
@@ -253,6 +340,7 @@ async function recoverPendingDeployment(
       pending.expectedAddress,
       `${pending.contract} ${pending.part}`,
       artifactFor(pending.contract, pending.part),
+      "checkpoint",
     );
     const contract = checkpoint.contracts[pending.contract];
     contract[pending.part] = pending.expectedAddress;
@@ -319,6 +407,7 @@ async function deployPart(
       existing,
       `${key} ${part}`,
       artifactFor(key, part),
+      "checkpoint",
     );
     return existing;
   }
