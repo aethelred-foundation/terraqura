@@ -224,10 +224,9 @@ function artifactFor(key: CandidateContractKey, part: DeploymentPart): string {
 /**
  * Solidity appends a CBOR-encoded metadata blob to the runtime bytecode, with
  * its own length in the final two bytes. Two builds of identical source produce
- * different metadata when anything in the compilation *environment* differs —
- * absolute source paths, a bumped compiler patch, changed settings — so a
- * difference confined to this trailing region means "same code, different
- * build", which is a very different problem from "different contract".
+ * different metadata when anything in the compilation *environment* differs, so
+ * a difference confined to this trailing region means "same code, different
+ * build" rather than "different contract".
  */
 function splitMetadata(hex: string): { body: string; metadata: string } {
   const bytes = hex.startsWith("0x") ? hex.slice(2) : hex;
@@ -243,15 +242,66 @@ function splitMetadata(hex: string): { body: string; metadata: string } {
   };
 }
 
+interface ImmutableSlot {
+  start: number;
+  length: number;
+}
+
+/**
+ * Byte ranges in the runtime code that the CONSTRUCTOR fills in.
+ *
+ * An `immutable` is absent from the compiled artifact: solc leaves a zeroed
+ * placeholder and the constructor writes the value at deployment. Comparing
+ * deployed code to `artifact.deployedBytecode` byte-for-byte therefore fails
+ * for any contract holding one, however correct the deployment.
+ *
+ * Every contract deployed here inherits UUPSUpgradeable, which declares
+ * `address private immutable __self = address(this)` for its onlyProxy guard.
+ * That is why the previous exact comparison could never succeed for ANY of
+ * them, and why a clean rebuild or a fresh checkpoint made no difference.
+ */
+async function immutableSlotsFor(
+  sourceName: string,
+  contractName: string,
+): Promise<ImmutableSlot[]> {
+  const buildInfo = await artifacts.getBuildInfo(
+    `${sourceName}:${contractName}`,
+  );
+  const references =
+    (buildInfo?.output?.contracts?.[sourceName]?.[contractName] as
+      | { evm?: { deployedBytecode?: { immutableReferences?: Record<string, ImmutableSlot[]> } } }
+      | undefined)?.evm?.deployedBytecode?.immutableReferences ?? {};
+  return Object.values(references).flat();
+}
+
+/** Overwrite the immutable ranges so both sides can be compared. */
+function maskImmutables(hexBody: string, slots: ImmutableSlot[]): string {
+  if (slots.length === 0) return hexBody;
+  const chars = hexBody.split("");
+  for (const slot of slots) {
+    for (let i = slot.start * 2; i < (slot.start + slot.length) * 2; i += 1) {
+      if (i < chars.length) chars[i] = ".";
+    }
+  }
+  return chars.join("");
+}
+
+/** Read one immutable slot out of deployed code. */
+function readSlot(hexBody: string, slot: ImmutableSlot): string {
+  return hexBody.slice(slot.start * 2, (slot.start + slot.length) * 2);
+}
+
 /**
  * Confirms the code at an address is the contract we believe it is.
  *
- * The comparison is deliberately exact — this is the check that stops a
- * deployment being wired to something other than what was audited. But an exact
- * check that fails with only "does not match" is a dead end: the operator
- * cannot tell a stale checkpoint from a rebuilt artifact from a genuinely wrong
- * contract, and all three have different remedies. So on failure this reports
- * what actually differs and what to do about it.
+ * Strict on everything the compiler fixes at build time — this is the check
+ * that stops a deployment being wired to something other than what was
+ * audited. It no longer demands equality on bytes the constructor is supposed
+ * to write; those are checked on their own terms instead. Each immutable slot
+ * must be populated, and a 32-byte slot must hold this contract's own address,
+ * which is what UUPS `__self` is for. That is a stronger claim than the byte
+ * equality it replaces: a zeroed or foreign `__self` breaks every upgrade, and
+ * the old check could not have told you which.
  */
 async function requireExpectedCode(
   address: string,
@@ -271,54 +321,75 @@ async function requireExpectedCode(
 
   const onChain = splitMetadata(code);
   const local = splitMetadata(expected);
-  const bodiesMatch =
-    onChain.body.length > 0 && onChain.body === local.body;
+  const slots = await immutableSlotsFor(
+    artifact.sourceName,
+    artifact.contractName,
+  );
+
+  if (
+    slots.length > 0 &&
+    maskImmutables(onChain.body, slots) === maskImmutables(local.body, slots)
+  ) {
+    const selfWord = ethers
+      .zeroPadValue(ethers.getAddress(address), 32)
+      .slice(2)
+      .toLowerCase();
+    for (const slot of slots) {
+      const value = readSlot(onChain.body, slot).toLowerCase();
+      if (/^0*$/u.test(value)) {
+        throw new Error(
+          `${label} at ${address}: immutable at byte ${slot.start} was never ` +
+            `populated. The constructor did not run as expected.`,
+        );
+      }
+      if (slot.length === 32 && value !== selfWord) {
+        throw new Error(
+          `${label} at ${address}: 32-byte immutable at byte ${slot.start} ` +
+            `holds 0x${value}, not this contract's own address. A UUPS ` +
+            `implementation with the wrong __self rejects every upgrade.`,
+        );
+      }
+    }
+    return;
+  }
+
+  const bodiesMatch = onChain.body.length > 0 && onChain.body === local.body;
 
   const lines = [
     `${label} runtime bytecode does not match ${artifactName} at ${address}`,
     ``,
     `  on-chain:  ${(code.length - 2) / 2} bytes, keccak ${ethers.keccak256(code)}`,
     `  artifact:  ${(expected.length - 2) / 2} bytes, keccak ${ethers.keccak256(expected)}`,
+    `  immutable slots: ${slots.length}`,
     `  address came from: ${origin === "checkpoint" ? "the deployment checkpoint (a previous run)" : "the deployment just submitted"}`,
     ``,
   ];
 
   if (bodiesMatch) {
-    // The executable code is byte-identical; only the metadata trailer differs.
     lines.push(
-      `  Diagnosis: the executable code is IDENTICAL. Only the trailing`,
-      `  metadata differs, so this is the same source compiled in a different`,
-      `  environment — a different solc patch version, different settings, or`,
-      `  artifacts built from a different absolute path.`,
-      ``,
-      `  Most likely: the artifacts on disk were not rebuilt from the source`,
-      `  this deployment is running against. "Nothing to compile" means Hardhat`,
-      `  considered the cache current, which is not the same as the cache being`,
-      `  correct after a branch switch.`,
+      `  Diagnosis: the executable code is IDENTICAL and only the trailing`,
+      `  metadata differs — the same source compiled in a different`,
+      `  environment (solc patch, settings, or absolute build path).`,
       ``,
       `  Fix: pnpm --filter @terraqura/contracts exec hardhat clean`,
       `       then: pnpm contracts:compile`,
     );
   } else if (origin === "checkpoint") {
     lines.push(
-      `  Diagnosis: the executable code DIFFERS, and this address was recorded`,
-      `  by an earlier run. The contract deployed then is not the contract`,
-      `  being built now.`,
+      `  Diagnosis: the executable code DIFFERS outside the immutable slots,`,
+      `  and this address was recorded by an earlier run, so the contract`,
+      `  deployed then is not the contract being built now.`,
       ``,
-      `  Fix: this deployment cannot be resumed. Archive the checkpoint and`,
-      `  start a fresh bootstrap:`,
-      `       mv <checkpoint file> <checkpoint file>.superseded`,
+      `  Fix: archive the checkpoint and bootstrap fresh.`,
     );
   } else {
     lines.push(
-      `  Diagnosis: the executable code DIFFERS on a contract that was just`,
-      `  deployed from this artifact. That should not be possible, and it is`,
-      `  NOT safe to bypass: something between the factory and the chain is`,
-      `  not what it appears to be.`,
+      `  Diagnosis: the executable code DIFFERS outside the immutable slots on`,
+      `  a contract just deployed from this artifact.`,
       ``,
-      `  Check: that ARTIFACTS["${artifactName}"] names the contract the`,
-      `  factory was built from, that no proxy or bytecode-rewriting middleware`,
-      `  sits in front of the RPC, and that the node is on the expected chain.`,
+      `  Check: that ARTIFACTS names the contract the factory was built from,`,
+      `  that no proxy sits in front of the RPC, and that the node is on the`,
+      `  expected chain.`,
     );
   }
 
