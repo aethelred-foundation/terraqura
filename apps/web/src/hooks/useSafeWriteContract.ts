@@ -31,7 +31,36 @@ type WriteParams = {
   [key: string]: unknown;
 };
 
-export function useSafeWriteContract() {
+/**
+ * wagmi's own result type, reached through the `wagmi` entry point.
+ *
+ * The return type below has to be written out rather than inferred. The
+ * inferred type spreads wagmi's internals, and under pnpm those live at a
+ * content-hashed path (`.pnpm/@wagmi+core@2.17.3_.../node_modules/@wagmi/core`)
+ * that TypeScript cannot name in a declaration file:
+ *
+ *   The inferred type of 'useSafeWriteContract' cannot be named without a
+ *   reference to '.pnpm/@wagmi+core@...'. This is likely not portable.
+ *
+ * Naming it via `typeof useWriteContract` keeps the reference on the public
+ * `wagmi` specifier, which is portable, and keeps the caller's types intact —
+ * an `any` or an interface transcribed by hand would silence the error and
+ * lose exactly the checking this hook is wrapped in.
+ */
+type UseWriteContractResult = ReturnType<typeof useWriteContract>;
+type WriteContractAsync = UseWriteContractResult["writeContractAsync"];
+
+export type UseSafeWriteContractResult = Omit<
+  UseWriteContractResult,
+  "writeContractAsync"
+> & {
+  writeContractAsync: (
+    params: WriteParams,
+    options?: Parameters<WriteContractAsync>[1],
+  ) => ReturnType<WriteContractAsync>;
+};
+
+export function useSafeWriteContract(): UseSafeWriteContractResult {
   const { writeContractAsync, ...rest } = useWriteContract();
   const publicClient = usePublicClient();
   // Tolerate a bare useAccount() mock: destructuring undefined would throw.

@@ -188,8 +188,53 @@ function parseRawApiRuntimeEnv() {
     return result.data;
   }
 
-  const issues = result.error.issues.map((issue) => issue.message).join("; ");
-  throw new Error(`Invalid API runtime environment: ${issues}`);
+  /*
+   * Report WHICH variables failed, and how.
+   *
+   * This previously joined `issue.message` alone, so ten problems rendered as
+   * "Required; Required; Required; Expected number, received nan; ..." — a
+   * string that says something is wrong ten times and never once says what.
+   * `issue.path` holds the variable name and was being discarded.
+   *
+   * Missing and malformed are separated because the remedies differ: one needs
+   * a value supplied, the other needs an existing value corrected.
+   */
+  const missing: string[] = [];
+  const invalid: string[] = [];
+  for (const issue of result.error.issues) {
+    const name = issue.path.join(".") || "(root)";
+    if (issue.code === "invalid_type" && issue.received === "undefined") {
+      missing.push(name);
+    } else {
+      const actual =
+        name in process.env
+          ? ` (received ${JSON.stringify(process.env[name])})`
+          : "";
+      invalid.push(`${name}: ${issue.message}${actual}`);
+    }
+  }
+
+  const lines = ["Invalid API runtime environment."];
+  if (missing.length > 0) {
+    lines.push(
+      "",
+      `  Not set (${missing.length}):`,
+      ...missing.map((name) => `    ${name}`),
+    );
+  }
+  if (invalid.length > 0) {
+    lines.push(
+      "",
+      `  Set but not usable (${invalid.length}):`,
+      ...invalid.map((entry) => `    ${entry}`),
+    );
+  }
+  lines.push(
+    "",
+    "  These are read from the process environment. Supply them via the",
+    "  API's env file or your process manager before starting.",
+  );
+  throw new Error(lines.join("\n"));
 }
 
 export function getApiRuntimeEnv(): ApiRuntimeEnv {
