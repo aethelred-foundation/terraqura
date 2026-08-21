@@ -327,8 +327,29 @@ export function getApiRuntimeEnv(): ApiRuntimeEnv {
       !rawEnv.SUMSUB_SECRET_KEY ||
       !rawEnv.SUMSUB_WEBHOOK_SECRET
     ) {
+      /*
+       * Name the way out. KYC_PROVIDER defaults to "sumsub", so an operator
+       * who never asked for KYC still lands here demanding three credentials
+       * from a commercial vendor, with nothing in the message to suggest the
+       * "disabled" value exists. Blank SUMSUB_* entries in a .env file look
+       * like the variables are "configured", which makes the dead end worse.
+       */
+      const missing = [
+        !rawEnv.SUMSUB_APP_TOKEN && "SUMSUB_APP_TOKEN",
+        !rawEnv.SUMSUB_SECRET_KEY && "SUMSUB_SECRET_KEY",
+        !rawEnv.SUMSUB_WEBHOOK_SECRET && "SUMSUB_WEBHOOK_SECRET",
+      ].filter(Boolean);
       throw new Error(
-        "SUMSUB_APP_TOKEN, SUMSUB_SECRET_KEY, and SUMSUB_WEBHOOK_SECRET must be configured when KYC_PROVIDER=sumsub",
+        [
+          `KYC_PROVIDER=sumsub requires credentials that are not set: ${missing.join(", ")}.`,
+          "",
+          "  Set them to real Sumsub values, or turn the integration off with:",
+          "      KYC_PROVIDER=disabled",
+          "",
+          '  Note that KYC_PROVIDER defaults to "sumsub", so this also fires',
+          "  when the variable is absent entirely. An empty value counts as",
+          "  unset, not as configured.",
+        ].join("\n"),
       );
     }
   }
