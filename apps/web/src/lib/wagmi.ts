@@ -57,24 +57,73 @@ if (rpcUrl) {
   }
 }
 
-function configurationFailure(): Error | null {
+/**
+ * Everything wrong with the wallet configuration, not just the first thing.
+ *
+ * These are NEXT_PUBLIC_* values, so they are baked in at build time: each one
+ * discovered separately costs a full rebuild and redeploy to find the next.
+ * Reporting them one at a time turned a single misconfiguration into four
+ * round trips — set the RPC, rebuild, learn the profile is wrong, rebuild,
+ * learn the acknowledgement is missing, rebuild, learn the anchor is missing.
+ *
+ * A plaintext RPC needs the profile, the acknowledgement and the anchor
+ * together or none of them count, so they are checked together and reported
+ * together.
+ */
+function configurationProblems(): string[] {
+  const problems: string[] = [];
+
   if (!rpcUrl) {
-    return new Error(
-      "NEXT_PUBLIC_AETHELRED_TESTNET_RPC_URL is required for wallet operations.",
+    problems.push(
+      "NEXT_PUBLIC_AETHELRED_TESTNET_RPC_URL is not set. Next.js reads .env.local from apps/web/, not the repository root.",
     );
   }
-  if (rpcPolicyError) {
-    return rpcPolicyError;
+
+  // Anticipate the policy's plaintext requirements rather than surfacing them
+  // one rebuild at a time.
+  const isPlaintext = rpcUrl.startsWith("http://");
+  if (isPlaintext) {
+    if (deploymentProfile !== "public-testnet-evaluation") {
+      problems.push(
+        `A plaintext http:// RPC requires NEXT_PUBLIC_TERRAQURA_DEPLOYMENT_PROFILE=public-testnet-evaluation (currently "${deploymentProfile}").`,
+      );
+    }
+    if (!insecureRpcAcknowledgement) {
+      problems.push(
+        "A plaintext http:// RPC requires NEXT_PUBLIC_ALLOW_INSECURE_TESTNET_RPC=acknowledge-evaluation-only-plaintext-rpc.",
+      );
+    }
+    if (!anchorBlock || !anchorHash) {
+      problems.push(
+        "A plaintext http:// RPC requires NEXT_PUBLIC_AETHELRED_NETWORK_ANCHOR_BLOCK and NEXT_PUBLIC_AETHELRED_NETWORK_ANCHOR_HASH.",
+      );
+    }
   }
+
+  // Whatever the policy itself rejected, if it is not already covered above.
+  if (rpcPolicyError && problems.length === 0) {
+    problems.push(rpcPolicyError.message);
+  }
+
   if (BLOCKCHAIN_CONFIGURATION_ERROR) {
-    return new Error(BLOCKCHAIN_CONFIGURATION_ERROR);
+    problems.push(BLOCKCHAIN_CONFIGURATION_ERROR);
   }
   if (!walletConnectProjectId) {
-    return new Error(
-      "NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID is required for wallet operations.",
+    problems.push(
+      "NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID is not set.",
     );
   }
-  return null;
+  return problems;
+}
+
+function configurationFailure(): Error | null {
+  const problems = configurationProblems();
+  if (problems.length === 0) return null;
+  if (problems.length === 1) return new Error(problems[0]);
+  return new Error(
+    `${problems.length} wallet configuration problems:\n` +
+      problems.map((p, i) => `  ${i + 1}. ${p}`).join("\n"),
+  );
 }
 
 export const aethelredTestnet = defineChain({
