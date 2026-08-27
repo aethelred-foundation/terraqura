@@ -1,7 +1,10 @@
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
-import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
+import {
+  bearerAuthRateLimit,
+  verifyBearerAuth,
+} from "../../lib/bearer-auth.js";
 import { readState } from "../../lib/state-store.js";
 
 const ActivityActionType = z.enum([
@@ -100,7 +103,7 @@ function entriesToCSV(entries: StoredActivityEntry[]): string {
       escapeCSVField(entry.resourceId),
       escapeCSVField(JSON.stringify(entry.metadata)),
       escapeCSVField(entry.timestamp),
-    ].join(",")
+    ].join(","),
   );
 
   return [headers.join(","), ...rows].join("\n");
@@ -108,7 +111,7 @@ function entriesToCSV(entries: StoredActivityEntry[]): string {
 
 export async function activityRoutes(
   fastify: FastifyInstance,
-  _options: FastifyPluginOptions
+  _options: FastifyPluginOptions,
 ) {
   // GET /v1/activity — Paginated activity feed with filters
   fastify.get(
@@ -248,34 +251,34 @@ export async function activityRoutes(
 
       if (query.resourceType) {
         entries = entries.filter(
-          (entry) => entry.resourceType === query.resourceType
+          (entry) => entry.resourceType === query.resourceType,
         );
       }
 
       if (query.resourceId) {
         entries = entries.filter(
-          (entry) => entry.resourceId === query.resourceId
+          (entry) => entry.resourceId === query.resourceId,
         );
       }
 
       if (query.startDate) {
         const startTime = new Date(query.startDate).getTime();
         entries = entries.filter(
-          (entry) => new Date(entry.timestamp).getTime() >= startTime
+          (entry) => new Date(entry.timestamp).getTime() >= startTime,
         );
       }
 
       if (query.endDate) {
         const endTime = new Date(query.endDate).getTime();
         entries = entries.filter(
-          (entry) => new Date(entry.timestamp).getTime() <= endTime
+          (entry) => new Date(entry.timestamp).getTime() <= endTime,
         );
       }
 
       // Sort by timestamp descending (newest first) — append-only log
       entries.sort(
         (a, b) =>
-          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
       );
 
       const total = entries.length;
@@ -297,7 +300,7 @@ export async function activityRoutes(
         })),
         pagination: { total, limit, offset },
       };
-    }
+    },
   );
 
   // GET /v1/activity/export — CSV/JSON export
@@ -360,33 +363,33 @@ export async function activityRoutes(
 
       if (query.resourceType) {
         entries = entries.filter(
-          (entry) => entry.resourceType === query.resourceType
+          (entry) => entry.resourceType === query.resourceType,
         );
       }
 
       if (query.resourceId) {
         entries = entries.filter(
-          (entry) => entry.resourceId === query.resourceId
+          (entry) => entry.resourceId === query.resourceId,
         );
       }
 
       if (query.startDate) {
         const startTime = new Date(query.startDate).getTime();
         entries = entries.filter(
-          (entry) => new Date(entry.timestamp).getTime() >= startTime
+          (entry) => new Date(entry.timestamp).getTime() >= startTime,
         );
       }
 
       if (query.endDate) {
         const endTime = new Date(query.endDate).getTime();
         entries = entries.filter(
-          (entry) => new Date(entry.timestamp).getTime() <= endTime
+          (entry) => new Date(entry.timestamp).getTime() <= endTime,
         );
       }
 
       entries.sort(
         (a, b) =>
-          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime()
+          new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime(),
       );
 
       const limit = query.limit || 1000;
@@ -400,7 +403,7 @@ export async function activityRoutes(
           .header("Content-Type", "text/csv; charset=utf-8")
           .header(
             "Content-Disposition",
-            `attachment; filename="terraqura-activity-${new Date().toISOString().slice(0, 10)}.csv"`
+            `attachment; filename="terraqura-activity-${new Date().toISOString().slice(0, 10)}.csv"`,
           )
           .send(csv);
       }
@@ -411,6 +414,6 @@ export async function activityRoutes(
         exportedAt: new Date().toISOString(),
         totalExported: entries.length,
       };
-    }
+    },
   );
 }

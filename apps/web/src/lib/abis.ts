@@ -14,6 +14,17 @@
 export const CarbonCreditABI = [
   // View functions
   {
+    name: "retireCredits",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "tokenId", type: "uint256" },
+      { name: "amount", type: "uint256" },
+      { name: "reason", type: "string" },
+    ],
+    outputs: [],
+  },
+  {
     name: "balanceOf",
     type: "function",
     stateMutability: "view",
@@ -22,6 +33,26 @@ export const CarbonCreditABI = [
       { name: "id", type: "uint256" },
     ],
     outputs: [{ type: "uint256" }],
+  },
+  {
+    name: "isApprovedForAll",
+    type: "function",
+    stateMutability: "view",
+    inputs: [
+      { name: "account", type: "address" },
+      { name: "operator", type: "address" },
+    ],
+    outputs: [{ type: "bool" }],
+  },
+  {
+    name: "setApprovalForAll",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "operator", type: "address" },
+      { name: "approved", type: "bool" },
+    ],
+    outputs: [],
   },
   {
     name: "totalCreditsMinted",
@@ -87,6 +118,11 @@ export const CarbonCreditABI = [
     outputs: [{ type: "bool" }],
   },
   {
+    // Must mirror ICarbonCredit.CreditMetadata exactly. v3 added
+    // gridIntensityGCO2PerKwh (Net-Negative accounting) and the two archival
+    // URI fields; a shorter tuple makes viem mis-decode every getMetadata
+    // call against the deployed contract ("Bytes value 97 is not a valid
+    // boolean"), so no credit metadata renders.
     name: "getMetadata",
     type: "function",
     stateMutability: "view",
@@ -103,7 +139,10 @@ export const CarbonCreditABI = [
           { name: "latitude", type: "int256" },
           { name: "longitude", type: "int256" },
           { name: "purityPercentage", type: "uint8" },
+          { name: "gridIntensityGCO2PerKwh", type: "uint256" },
           { name: "isRetired", type: "bool" },
+          { name: "ipfsMetadataUri", type: "string" },
+          { name: "arweaveBackupTxId", type: "string" },
         ],
       },
     ],
@@ -167,6 +206,36 @@ export const CarbonCreditABI = [
 
 export const CarbonMarketplaceABI = [
   {
+    name: "createListing",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "tokenId", type: "uint256" },
+      { name: "amount", type: "uint256" },
+      { name: "pricePerUnit", type: "uint256" },
+      { name: "minPurchaseAmount", type: "uint256" },
+      { name: "duration", type: "uint256" },
+    ],
+    outputs: [{ name: "listingId", type: "uint256" }],
+  },
+  {
+    name: "purchase",
+    type: "function",
+    stateMutability: "payable",
+    inputs: [
+      { name: "listingId", type: "uint256" },
+      { name: "amount", type: "uint256" },
+    ],
+    outputs: [],
+  },
+  {
+    name: "cancelListing",
+    type: "function",
+    stateMutability: "nonpayable",
+    inputs: [{ name: "listingId", type: "uint256" }],
+    outputs: [],
+  },
+  {
     name: "platformFeeBps",
     type: "function",
     stateMutability: "view",
@@ -224,12 +293,15 @@ export const CarbonMarketplaceABI = [
       {
         type: "tuple",
         components: [
+          { name: "listingId", type: "uint256" },
           { name: "seller", type: "address" },
           { name: "tokenId", type: "uint256" },
           { name: "amount", type: "uint256" },
           { name: "pricePerUnit", type: "uint256" },
+          { name: "minPurchaseAmount", type: "uint256" },
           { name: "isActive", type: "bool" },
           { name: "createdAt", type: "uint256" },
+          { name: "expiresAt", type: "uint256" },
         ],
       },
     ],
@@ -244,6 +316,14 @@ export const CarbonMarketplaceABI = [
       { name: "tokenId", type: "uint256", indexed: true },
       { name: "amount", type: "uint256", indexed: false },
       { name: "pricePerUnit", type: "uint256", indexed: false },
+    ],
+  },
+  {
+    name: "ListingCancelled",
+    type: "event",
+    inputs: [
+      { name: "listingId", type: "uint256", indexed: true },
+      { name: "seller", type: "address", indexed: true },
     ],
   },
   {
@@ -744,14 +824,24 @@ export const NativeIoTOracleABI = [
 ] as const;
 
 export const ROLES = {
-  DEFAULT_ADMIN: "0x0000000000000000000000000000000000000000000000000000000000000000" as const,
-  ADMIN: "0xa49807205ce4d355092ef5a8a18f56e8913cf4a201fbe287825b095693c21775" as const,
-  OPERATOR: "0x97667070c54ef182b0f5858b034beac1b6f3089aa2d3188bb1e8929f4fa9b929" as const,
-  VERIFIER: "0x0ce23c3e399818cfee81a7ab0880f714e53d7672b08df0fa62f2a3b3c24ea89a" as const,
-  MINTER: "0x9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a6" as const,
-  COMPLIANCE: "0x9f95a5498d7e03a7c2c9e8a1ee9fdf21e54a6e31c0a2d1c0b8e9c0d9f8a7b6c5" as const,
-  AUDITOR: "0x8e8c9a8d7b6a5c4f3e2d1c0b9a8f7e6d5c4b3a2918f7e6d5c4b3a2918f7e6d5c4" as const,
-  TREASURY: "0x3496e2e73c4d42b75d702e60d9e48102720b8691234415f8349e50e3e419d9d5" as const,
-  UPGRADER: "0x189ab7a9244df0848122154315af71fe140f3db0fe014031783b0946b8c9d2e3" as const,
-  PAUSER: "0x65d7a28e3265b37a6474929f336521b332c1681b933f6cb9f3376673440d862a" as const,
+  DEFAULT_ADMIN:
+    "0x0000000000000000000000000000000000000000000000000000000000000000" as const,
+  ADMIN:
+    "0xa49807205ce4d355092ef5a8a18f56e8913cf4a201fbe287825b095693c21775" as const,
+  OPERATOR:
+    "0x97667070c54ef182b0f5858b034beac1b6f3089aa2d3188bb1e8929f4fa9b929" as const,
+  VERIFIER:
+    "0x0ce23c3e399818cfee81a7ab0880f714e53d7672b08df0fa62f2a3b3c24ea89a" as const,
+  MINTER:
+    "0x9f2df0fed2c77648de5860a4cc508cd0818c85b8b8a1ab4ceeef8d981c8956a6" as const,
+  COMPLIANCE:
+    "0x9f95a5498d7e03a7c2c9e8a1ee9fdf21e54a6e31c0a2d1c0b8e9c0d9f8a7b6c5" as const,
+  AUDITOR:
+    "0x8e8c9a8d7b6a5c4f3e2d1c0b9a8f7e6d5c4b3a2918f7e6d5c4b3a2918f7e6d5c4" as const,
+  TREASURY:
+    "0x3496e2e73c4d42b75d702e60d9e48102720b8691234415f8349e50e3e419d9d5" as const,
+  UPGRADER:
+    "0x189ab7a9244df0848122154315af71fe140f3db0fe014031783b0946b8c9d2e3" as const,
+  PAUSER:
+    "0x65d7a28e3265b37a6474929f336521b332c1681b933f6cb9f3376673440d862a" as const,
 } as const;

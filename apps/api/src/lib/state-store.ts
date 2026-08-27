@@ -1,48 +1,29 @@
-import { Pool, PoolClient } from "pg";
+import { PoolClient } from "pg";
 
-import { getApiRuntimeEnv } from "./runtime-env.js";
+import { ensureDatabaseSchema } from "./database-schema.js";
+import { databasePool } from "./database.js";
 
-const connectionString = getApiRuntimeEnv().DATABASE_URL;
-
-const pool = new Pool({
-  connectionString,
-  max: 8,
-  connectionTimeoutMillis: 2000,
-  idleTimeoutMillis: 30000,
-});
-
-let initializationPromise: Promise<void> | null = null;
-
-async function ensureStateTable(): Promise<void> {
-  if (!initializationPromise) {
-    initializationPromise = pool
-      .query(`
-        CREATE TABLE IF NOT EXISTS api_state_store (
-          store_key TEXT PRIMARY KEY,
-          payload JSONB NOT NULL,
-          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-        )
-      `)
-      .then(() => undefined);
-  }
-
-  await initializationPromise;
-}
-
-async function ensureStoreRow<T>(client: PoolClient, storeKey: string, defaultState: T) {
+async function ensureStoreRow<T>(
+  client: PoolClient,
+  storeKey: string,
+  defaultState: T,
+) {
   await client.query(
     `
       INSERT INTO api_state_store (store_key, payload)
       VALUES ($1, $2::jsonb)
       ON CONFLICT (store_key) DO NOTHING
     `,
-    [storeKey, JSON.stringify(defaultState)]
+    [storeKey, JSON.stringify(defaultState)],
   );
 }
 
-export async function readState<T>(storeKey: string, defaultState: T): Promise<T> {
-  await ensureStateTable();
-  const client = await pool.connect();
+export async function readState<T>(
+  storeKey: string,
+  defaultState: T,
+): Promise<T> {
+  await ensureDatabaseSchema();
+  const client = await databasePool.connect();
 
   try {
     await ensureStoreRow(client, storeKey, defaultState);
@@ -52,7 +33,7 @@ export async function readState<T>(storeKey: string, defaultState: T): Promise<T
         FROM api_state_store
         WHERE store_key = $1
       `,
-      [storeKey]
+      [storeKey],
     );
 
     return result.rows[0]?.payload ?? structuredClone(defaultState);
@@ -64,10 +45,10 @@ export async function readState<T>(storeKey: string, defaultState: T): Promise<T
 export async function mutateState<T, R>(
   storeKey: string,
   defaultState: T,
-  mutator: (state: T) => Promise<R> | R
+  mutator: (state: T) => Promise<R> | R,
 ): Promise<R> {
-  await ensureStateTable();
-  const client = await pool.connect();
+  await ensureDatabaseSchema();
+  const client = await databasePool.connect();
 
   try {
     await client.query("BEGIN");
@@ -80,10 +61,11 @@ export async function mutateState<T, R>(
         WHERE store_key = $1
         FOR UPDATE
       `,
-      [storeKey]
+      [storeKey],
     );
 
-    const currentState = result.rows[0]?.payload ?? structuredClone(defaultState);
+    const currentState =
+      result.rows[0]?.payload ?? structuredClone(defaultState);
     const mutableState = structuredClone(currentState);
     const mutatorResult = await mutator(mutableState);
 
@@ -93,7 +75,85 @@ export async function mutateState<T, R>(
         SET payload = $2::jsonb, updated_at = NOW()
         WHERE store_key = $1
       `,
-      [storeKey, JSON.stringify(mutableState)]
+      [storeKey, JSON.stringify(mutableState)],
+    );
+
+    await client.query("COMMIT");
+    return mutatorResult;
+  } catch (error) {
+    await client.query("ROLLBACK");
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
+export async function mutateStatePair<TFirst, TSecond, R>(
+  first: {
+    storeKey: string;
+    defaultState: TFirst;
+  },
+  second: {
+    storeKey: string;
+    defaultState: TSecond;
+  },
+  mutator: (firstState: TFirst, secondState: TSecond) => Promise<R> | R,
+): Promise<R> {
+  if (first.storeKey === second.storeKey) {
+    throw new Error("State pair keys must be distinct");
+  }
+
+  await ensureDatabaseSchema();
+  const client = await databasePool.connect();
+
+  try {
+    await client.query("BEGIN");
+
+    const ordered = [
+      { ...first, position: "first" as const },
+      { ...second, position: "second" as const },
+    ].sort((left, right) => left.storeKey.localeCompare(right.storeKey));
+
+    for (const entry of ordered) {
+      await ensureStoreRow(client, entry.storeKey, entry.defaultState);
+    }
+
+    const loaded = new Map<string, unknown>();
+    for (const entry of ordered) {
+      const result = await client.query<{ payload: unknown }>(
+        `
+          SELECT payload
+          FROM api_state_store
+          WHERE store_key = $1
+          FOR UPDATE
+        `,
+        [entry.storeKey],
+      );
+      loaded.set(
+        entry.storeKey,
+        structuredClone(result.rows[0]?.payload ?? entry.defaultState),
+      );
+    }
+
+    const firstState = loaded.get(first.storeKey) as TFirst;
+    const secondState = loaded.get(second.storeKey) as TSecond;
+    const mutatorResult = await mutator(firstState, secondState);
+
+    await client.query(
+      `
+        UPDATE api_state_store
+        SET payload = $2::jsonb, updated_at = NOW()
+        WHERE store_key = $1
+      `,
+      [first.storeKey, JSON.stringify(firstState)],
+    );
+    await client.query(
+      `
+        UPDATE api_state_store
+        SET payload = $2::jsonb, updated_at = NOW()
+        WHERE store_key = $1
+      `,
+      [second.storeKey, JSON.stringify(secondState)],
     );
 
     await client.query("COMMIT");

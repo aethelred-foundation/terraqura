@@ -2,7 +2,7 @@ const path = require("path");
 
 /** @type {import('next').NextConfig} */
 const nextConfig = {
-  output: 'standalone',
+  output: "standalone",
   reactStrictMode: true,
   transpilePackages: ["@terraqura/types"],
 
@@ -28,12 +28,7 @@ const nextConfig = {
 
   // Experimental features for performance
   experimental: {
-    optimizePackageImports: [
-      "framer-motion",
-      "lucide-react",
-      "@radix-ui/react-dialog",
-      "@radix-ui/react-dropdown-menu",
-    ],
+    optimizePackageImports: ["framer-motion", "lucide-react"],
   },
 
   // Turbopack configuration (default bundler in Next.js 16)
@@ -52,14 +47,18 @@ const nextConfig = {
       {
         source: "/:path*",
         headers: [
-          { key: "X-DNS-Prefetch-Control", value: "on" },
+          { key: "X-DNS-Prefetch-Control", value: "off" },
           {
             key: "Strict-Transport-Security",
             value: "max-age=63072000; includeSubDomains; preload",
           },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "X-Frame-Options", value: "DENY" },
-          { key: "X-XSS-Protection", value: "1; mode=block" },
+          { key: "X-XSS-Protection", value: "0" },
+          {
+            key: "Cross-Origin-Opener-Policy",
+            value: "same-origin-allow-popups",
+          },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
           {
             key: "Permissions-Policy",
@@ -70,15 +69,6 @@ const nextConfig = {
       },
       {
         source: "/static/:path*",
-        headers: [
-          {
-            key: "Cache-Control",
-            value: "public, max-age=31536000, immutable",
-          },
-        ],
-      },
-      {
-        source: "/_next/image/:path*",
         headers: [
           {
             key: "Cache-Control",
@@ -115,19 +105,10 @@ const nextConfig = {
 
     // Externals
     if (!isServer) {
-      const externals = Array.isArray(config.externals)
-        ? config.externals
-        : [];
+      const externals = Array.isArray(config.externals) ? config.externals : [];
       externals.push("pino-pretty", "lokijs", "encoding");
       config.externals = externals;
     }
-
-    // Tree shaking for GSAP
-    config.module.rules.push({
-      test: /\.js$/,
-      include: /node_modules\/gsap/,
-      sideEffects: false,
-    });
 
     // Production optimizations
     if (!dev && !isServer) {

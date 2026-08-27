@@ -61,6 +61,9 @@ contract TerraQuraTimelockMainnet is TimelockController {
     /// @notice Mapping of operation hash to type for delay enforcement
     mapping(bytes32 => OperationType) public operationTypes;
 
+    /// @notice Tracks whether an operation type was explicitly or automatically recorded
+    mapping(bytes32 => bool) public operationTypeConfigured;
+
     /// @notice Total value locked tracking for monitoring
     uint256 public totalValueProcessed;
 
@@ -142,6 +145,7 @@ contract TerraQuraTimelockMainnet is TimelockController {
         OperationType opType
     ) external onlyRole(PROPOSER_ROLE) {
         operationTypes[operationId] = opType;
+        operationTypeConfigured[operationId] = true;
 
         uint256 requiredDelay = getDelayForType(opType);
         emit OperationTypeSet(operationId, opType, requiredDelay);
@@ -184,40 +188,54 @@ contract TerraQuraTimelockMainnet is TimelockController {
         bytes32 salt,
         uint256 delay
     ) external onlyRole(PROPOSER_ROLE) {
-        // Enforce daily limit
-        uint256 today = block.timestamp / 1 days;
-        if (dailyOperations[today] >= MAX_DAILY_OPERATIONS) {
-            revert DailyLimitExceeded();
-        }
-        dailyOperations[today]++;
-
-        // Warn if approaching limit
-        if (dailyOperations[today] >= MAX_DAILY_OPERATIONS - 5) {
-            emit DailyLimitWarning(today, dailyOperations[today], MAX_DAILY_OPERATIONS);
-        }
-
-        // Detect operation type based on value
-        OperationType opType = _detectOperationType(target, value, data);
-        uint256 requiredDelay = getDelayForType(opType);
-
-        // Enforce minimum delay for detected type
-        if (delay < requiredDelay) {
-            delay = requiredDelay;
-        }
-
-        // Cap maximum delay
-        if (delay > MAX_DELAY_CAP) revert DelayTooLong();
-
-        // Track high-value operations
-        if (value > TREASURY_THRESHOLD) {
-            bytes32 opId = hashOperation(target, value, data, predecessor, salt);
-            emit HighValueOperation(opId, value, delay);
-        }
-
-        totalValueProcessed += value;
-
-        // Schedule the operation
         schedule(target, value, data, predecessor, salt, delay);
+    }
+
+    /**
+     * @notice Schedule a single operation with enforced type-aware delay policy
+     */
+    function schedule(
+        address target,
+        uint256 value,
+        bytes calldata data,
+        bytes32 predecessor,
+        bytes32 salt,
+        uint256 delay
+    ) public override onlyRole(PROPOSER_ROLE) {
+        uint256 enforcedDelay = _prepareSingleSchedule(
+            target,
+            value,
+            data,
+            predecessor,
+            salt,
+            delay
+        );
+        super.schedule(target, value, data, predecessor, salt, enforcedDelay);
+    }
+
+    /**
+     * @notice Schedule a batch operation with enforced type-aware delay policy
+     */
+    function scheduleBatch(
+        address[] calldata targets,
+        uint256[] calldata values,
+        bytes[] calldata payloads,
+        bytes32 predecessor,
+        bytes32 salt,
+        uint256 delay
+    ) public override onlyRole(PROPOSER_ROLE) {
+        require(targets.length == values.length, "TimelockController: length mismatch");
+        require(targets.length == payloads.length, "TimelockController: length mismatch");
+
+        uint256 enforcedDelay = _prepareBatchSchedule(
+            targets,
+            values,
+            payloads,
+            predecessor,
+            salt,
+            delay
+        );
+        super.scheduleBatch(targets, values, payloads, predecessor, salt, enforcedDelay);
     }
 
     /**
@@ -267,6 +285,105 @@ contract TerraQuraTimelockMainnet is TimelockController {
 
         // Default to standard
         return OperationType.STANDARD;
+    }
+
+    function _prepareSingleSchedule(
+        address target,
+        uint256 value,
+        bytes calldata data,
+        bytes32 predecessor,
+        bytes32 salt,
+        uint256 requestedDelay
+    ) internal returns (uint256 enforcedDelay) {
+        _consumeDailyQuota();
+
+        bytes32 operationId = hashOperation(target, value, data, predecessor, salt);
+        OperationType opType = _resolveOperationType(
+            operationId,
+            _detectOperationType(target, value, data)
+        );
+
+        enforcedDelay = _enforceDelayBounds(opType, requestedDelay);
+        totalValueProcessed += value;
+
+        if (value > TREASURY_THRESHOLD) {
+            emit HighValueOperation(operationId, value, enforcedDelay);
+        }
+    }
+
+    function _prepareBatchSchedule(
+        address[] calldata targets,
+        uint256[] calldata values,
+        bytes[] calldata payloads,
+        bytes32 predecessor,
+        bytes32 salt,
+        uint256 requestedDelay
+    ) internal returns (uint256 enforcedDelay) {
+        _consumeDailyQuota();
+
+        bytes32 operationId = hashOperationBatch(targets, values, payloads, predecessor, salt);
+        OperationType detectedType = OperationType.STANDARD;
+        uint256 totalBatchValue;
+
+        for (uint256 i = 0; i < targets.length; ++i) {
+            OperationType currentType = _detectOperationType(targets[i], values[i], payloads[i]);
+            if (getDelayForType(currentType) > getDelayForType(detectedType)) {
+                detectedType = currentType;
+            }
+            totalBatchValue += values[i];
+        }
+
+        OperationType opType = _resolveOperationType(operationId, detectedType);
+        enforcedDelay = _enforceDelayBounds(opType, requestedDelay);
+        totalValueProcessed += totalBatchValue;
+
+        if (getDelayForType(opType) == MAXIMUM_DELAY || totalBatchValue > TREASURY_THRESHOLD) {
+            emit HighValueOperation(operationId, totalBatchValue, enforcedDelay);
+        }
+    }
+
+    function _resolveOperationType(
+        bytes32 operationId,
+        OperationType detectedType
+    ) internal returns (OperationType opType) {
+        opType = detectedType;
+
+        if (operationTypeConfigured[operationId]) {
+            OperationType configuredType = operationTypes[operationId];
+            if (getDelayForType(configuredType) > getDelayForType(opType)) {
+                opType = configuredType;
+            }
+        }
+
+        operationTypes[operationId] = opType;
+        operationTypeConfigured[operationId] = true;
+        emit OperationTypeSet(operationId, opType, getDelayForType(opType));
+    }
+
+    function _enforceDelayBounds(
+        OperationType opType,
+        uint256 requestedDelay
+    ) internal pure returns (uint256 enforcedDelay) {
+        enforcedDelay = requestedDelay;
+
+        uint256 requiredDelay = getDelayForType(opType);
+        if (enforcedDelay < requiredDelay) {
+            enforcedDelay = requiredDelay;
+        }
+        if (enforcedDelay > MAX_DELAY_CAP) revert DelayTooLong();
+    }
+
+    function _consumeDailyQuota() internal {
+        uint256 today = block.timestamp / 1 days;
+        if (dailyOperations[today] >= MAX_DAILY_OPERATIONS) {
+            revert DailyLimitExceeded();
+        }
+
+        dailyOperations[today]++;
+
+        if (dailyOperations[today] >= MAX_DAILY_OPERATIONS - 5) {
+            emit DailyLimitWarning(today, dailyOperations[today], MAX_DAILY_OPERATIONS);
+        }
     }
 
     // ============ View Functions ============

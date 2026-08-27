@@ -13,7 +13,7 @@
 "use client";
 
 import React, { useState, useEffect, type ComponentType } from "react";
-import { AppProvider, AppProviderSSR } from "@/contexts/AppContext";
+import { AppProviderSSR } from "@/contexts/AppContext";
 
 interface ProvidersProps {
   children: React.ReactNode;
@@ -34,7 +34,7 @@ export function Providers({ children }: ProvidersProps): React.JSX.Element {
   }, []);
 
   if (Web3Module) {
-    return <Web3Module><AppProvider>{children}</AppProvider></Web3Module>;
+    return <Web3Module>{children}</Web3Module>;
   }
 
   // During SSR and initial client render, provide a static SSR-safe context

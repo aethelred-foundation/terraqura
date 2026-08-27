@@ -3,8 +3,12 @@
 // TerraQura Legal Gate
 // Wraps components requiring terms acceptance
 
+import { TermsAcceptancePayload } from "@terraqura/types";
 import { ReactNode, useState, useEffect } from "react";
 import { useAccount } from "wagmi";
+
+import { terraquraApi } from "@/lib/terraquraApi";
+
 import { TermsModal, useTermsAccepted } from "./TermsModal";
 
 interface LegalGateProps {
@@ -16,6 +20,7 @@ export function LegalGate({ children, requireTerms = true }: LegalGateProps) {
   const { isConnected, address } = useAccount();
   const { accepted, loading } = useTermsAccepted();
   const [showTerms, setShowTerms] = useState(false);
+  const [acceptedThisSession, setAcceptedThisSession] = useState(false);
 
   // Show terms modal when connected and terms not accepted
   useEffect(() => {
@@ -24,22 +29,21 @@ export function LegalGate({ children, requireTerms = true }: LegalGateProps) {
     }
   }, [isConnected, loading, accepted, requireTerms]);
 
-  const handleAccept = async (signature: string) => {
-    // Send to backend to store
-    try {
-      await fetch(`${process.env.NEXT_PUBLIC_API_URL}/v1/legal/accept-terms`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          walletAddress: address,
-          signature,
-          version: "1.0.0",
-        }),
-      });
-    } catch (error) {
-      console.error("Failed to store terms acceptance:", error);
+  const handleAccept = async (acceptance: TermsAcceptancePayload) => {
+    if (
+      !address ||
+      acceptance.walletAddress.toLowerCase() !== address.toLowerCase()
+    ) {
+      throw new Error(
+        "Connected wallet changed before terms acceptance completed",
+      );
     }
 
+    await terraquraApi("/v1/legal/accept-terms", {
+      method: "POST",
+      body: JSON.stringify(acceptance),
+    });
+    setAcceptedThisSession(true);
     setShowTerms(false);
   };
 
@@ -67,7 +71,7 @@ export function LegalGate({ children, requireTerms = true }: LegalGateProps) {
         onAccept={handleAccept}
         onDecline={handleDecline}
       />
-      {(!isConnected || accepted) ? children : null}
+      {!isConnected || accepted || acceptedThisSession ? children : null}
     </>
   );
 }

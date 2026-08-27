@@ -2,9 +2,11 @@
 pragma solidity ^0.8.20;
 
 import "@openzeppelin/contracts-upgradeable/access/OwnableUpgradeable.sol";
+import "@openzeppelin/contracts-upgradeable/access/IAccessControlUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
+import "../interfaces/ICircuitBreaker.sol";
 import "../interfaces/IVerificationEngine.sol";
 import "../libraries/EfficiencyCalculator.sol";
 
@@ -81,6 +83,7 @@ contract VerificationEngine is
      * @dev 10000 = 100%, allows for 2 decimal places of precision
      */
     uint256 public constant SCALE = 10000;
+    bytes32 public constant OPERATOR_ROLE = keccak256("OPERATOR_ROLE");
 
     // ============ State Variables ============
 
@@ -118,6 +121,16 @@ contract VerificationEngine is
      * @notice Number of registered technology types
      */
     uint8 public registeredTechCount;
+
+    /**
+     * @notice Circuit breaker emergency control
+     */
+    ICircuitBreaker public circuitBreaker;
+
+    /**
+     * @notice Role registry used to authorize managed facility operations.
+     */
+    IAccessControlUpgradeable public accessControl;
 
     // ============ Events ============
 
@@ -178,6 +191,8 @@ contract VerificationEngine is
         uint8 indexed newTechType
     );
 
+    event CircuitBreakerUpdated(address indexed previousCircuitBreaker, address indexed newCircuitBreaker);
+
     // ============ Errors ============
 
     error UnauthorizedCaller();
@@ -187,6 +202,10 @@ contract VerificationEngine is
     error InvalidCarbonCreditContract();
     error InvalidTechThresholds();
     error TechTypeNotActive();
+    error InvalidCircuitBreaker();
+    error CircuitBreakerBlocked();
+    error CircuitBreakerRateLimited();
+    error CircuitBreakerVolumeExceeded();
 
     // ============ Modifiers ============
 
@@ -195,6 +214,19 @@ contract VerificationEngine is
      */
     modifier onlyCarbonCredit() {
         if (msg.sender != carbonCreditContract) {
+            revert UnauthorizedCaller();
+        }
+        _;
+    }
+
+    modifier onlyOperatorOrOwner() {
+        bool hasOperatorRole =
+            address(accessControl) != address(0) &&
+            accessControl.hasRole(OPERATOR_ROLE, msg.sender);
+        if (
+            msg.sender != owner() &&
+            !hasOperatorRole
+        ) {
             revert UnauthorizedCaller();
         }
         _;
@@ -211,7 +243,9 @@ contract VerificationEngine is
 
     /**
      * @notice Initialize the verification engine
-     * @param _accessControl Address of the access control contract (unused, for interface compatibility)
+     * @param _accessControl Address of the protocol role registry. A zero
+     * address leaves the engine owner-only until a new deployment; controlled
+     * production deployment requires a non-zero registry.
      * @param _carbonCreditContract Address of the CarbonCredit contract
      */
     function initialize(address _accessControl, address _carbonCreditContract) public initializer {
@@ -219,9 +253,8 @@ contract VerificationEngine is
         __ReentrancyGuard_init();
         __UUPSUpgradeable_init();
 
-        if (_accessControl == address(0)) {
-            // Reserved for future access-control linkage while preserving
-            // initializer ABI compatibility for existing deployments/tests.
+        if (_accessControl != address(0)) {
+            accessControl = IAccessControlUpgradeable(_accessControl);
         }
 
         if (_carbonCreditContract != address(0)) {
@@ -318,6 +351,8 @@ contract VerificationEngine is
             uint256 efficiencyFactor
         )
     {
+        _enforceCircuitBreaker(co2AmountKg);
+
         // Phase 1: Source Check
         sourceVerified = _verifySource(dacUnitId, sourceDataHash);
         if (!sourceVerified) {
@@ -380,7 +415,7 @@ contract VerificationEngine is
     function whitelistDacUnit(
         bytes32 dacUnitId,
         address operator
-    ) external onlyOwner {
+    ) external onlyOperatorOrOwner {
         if (whitelistedDacUnits[dacUnitId]) {
             revert DacUnitAlreadyWhitelisted();
         }
@@ -405,7 +440,7 @@ contract VerificationEngine is
         bytes32 dacUnitId,
         address operator,
         uint8 techType
-    ) external onlyOwner {
+    ) external onlyOperatorOrOwner {
         if (whitelistedDacUnits[dacUnitId]) {
             revert DacUnitAlreadyWhitelisted();
         }
@@ -554,10 +589,41 @@ contract VerificationEngine is
     }
 
     /**
+     * @notice Configure the circuit breaker contract used for runtime safety checks
+     */
+    function setCircuitBreaker(address newCircuitBreaker) external onlyOwner {
+        if (newCircuitBreaker == address(0)) {
+            revert InvalidCircuitBreaker();
+        }
+
+        address previousCircuitBreaker = address(circuitBreaker);
+        circuitBreaker = ICircuitBreaker(newCircuitBreaker);
+
+        emit CircuitBreakerUpdated(previousCircuitBreaker, newCircuitBreaker);
+    }
+
+    /**
      * @notice Authorize upgrade (UUPS pattern)
      * @param newImplementation Address of new implementation
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    function _enforceCircuitBreaker(uint256 volume) internal {
+        address breaker = address(circuitBreaker);
+        if (breaker == address(0)) {
+            return;
+        }
+
+        if (!circuitBreaker.isOperationAllowed(address(this))) {
+            revert CircuitBreakerBlocked();
+        }
+        if (!circuitBreaker.checkRateLimit(address(this))) {
+            revert CircuitBreakerRateLimited();
+        }
+        if (volume > 0 && !circuitBreaker.checkVolumeLimit(address(this), volume)) {
+            revert CircuitBreakerVolumeExceeded();
+        }
+    }
 
     // ============ Internal Functions ============
 

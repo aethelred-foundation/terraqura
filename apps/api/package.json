@@ -14,10 +14,7 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "db:generate": "drizzle-kit generate",
-    "db:migrate": "drizzle-kit migrate",
-    "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:migrate": "tsx src/scripts/migrate.ts"
   },
   "dependencies": {
     "@fastify/cors": "^11.2.0",
@@ -25,11 +22,10 @@
     "@fastify/jwt": "^10.0.0",
     "@fastify/rate-limit": "^10.3.0",
     "@fastify/swagger": "^9.7.0",
-    "@fastify/swagger-ui": "^5.2.5",
+    "@fastify/swagger-ui": "^6.1.0",
     "@terraqura/types": "workspace:*",
-    "drizzle-orm": "^0.29.3",
     "ethers": "^6.10.0",
-    "fastify": "^5.8.4",
+    "fastify": "^5.8.5",
     "pg": "^8.11.3",
     "pino": "^8.18.0",
     "siwe": "^2.1.4",
@@ -41,10 +37,10 @@
     "@types/node": "^20.11.5",
     "@types/pg": "^8.10.9",
     "@vitest/coverage-v8": "^3.2.4",
-    "drizzle-kit": "^0.30.4",
     "eslint": "^8.57.0",
+    "pino-pretty": "^11.3.0",
     "tsx": "^4.7.0",
-    "typescript": "^5.3.3",
+    "typescript": "^5.9.3",
     "vitest": "^3.2.4"
   }
 }

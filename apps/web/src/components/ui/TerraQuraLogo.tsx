@@ -8,10 +8,7 @@ interface TerraQuraLogoProps {
   height?: number;
 }
 
-export function TerraQuraLogo({
-  className,
-  height = 40,
-}: TerraQuraLogoProps) {
+export function TerraQuraLogo({ className, height = 40 }: TerraQuraLogoProps) {
   const width = Math.round(height * 3.14);
   return (
     <div
@@ -50,12 +47,7 @@ export function TerraQuraLogoCompact({
   className?: string;
   height?: number;
 }) {
-  return (
-    <TerraQuraLogo
-      className={className}
-      height={height}
-    />
-  );
+  return <TerraQuraLogo className={className} height={height} />;
 }
 
 export function TerraQuraIcon({
@@ -65,12 +57,7 @@ export function TerraQuraIcon({
   size?: number;
   className?: string;
 }) {
-  return (
-    <TerraQuraLogo
-      className={className}
-      height={size}
-    />
-  );
+  return <TerraQuraLogo className={className} height={size} />;
 }
 
 export default TerraQuraLogoFull;

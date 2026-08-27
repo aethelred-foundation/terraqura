@@ -9,6 +9,11 @@ import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "@openzeppelin/contracts/token/ERC1155/IERC1155.sol";
 import "@openzeppelin/contracts/token/ERC1155/utils/ERC1155Holder.sol";
+import "../interfaces/ICircuitBreaker.sol";
+
+interface IKycRegistry {
+    function isKycVerified(address account) external view returns (bool);
+}
 
 /**
  * @title CarbonMarketplace
@@ -109,6 +114,9 @@ contract CarbonMarketplace is
     /// @notice Mapping of KYC-verified addresses
     mapping(address => bool) public isKycVerified;
 
+    /// @notice Circuit breaker emergency control
+    ICircuitBreaker public circuitBreaker;
+
     // ============ Events ============
 
     event ListingCreated(
@@ -177,6 +185,8 @@ contract CarbonMarketplace is
         uint256 newFee
     );
 
+    event CircuitBreakerUpdated(address indexed previousCircuitBreaker, address indexed newCircuitBreaker);
+
     // ============ Errors ============
 
     error InvalidCarbonCreditContract();
@@ -200,13 +210,21 @@ contract CarbonMarketplace is
     error CannotBuyOwnListing();
     error CannotOfferOnOwnCredits();
     error NotAuthorizedToReject();
+    error InvalidCircuitBreaker();
+    error InvalidKycRegistry();
+    error CircuitBreakerBlocked();
+    error CircuitBreakerRateLimited();
+    error CircuitBreakerVolumeExceeded();
 
     // ============ Modifiers ============
 
     modifier onlyKycVerified() {
         address sender = _msgSender();
-        if (kycRequired && !isKycVerified[sender]) {
-            revert KycNotVerified();
+        if (kycRequired) {
+            bool verified = kycRegistry == address(0)
+                ? isKycVerified[sender]
+                : IKycRegistry(kycRegistry).isKycVerified(sender);
+            if (!verified) revert KycNotVerified();
         }
         _;
     }
@@ -267,6 +285,7 @@ if (_owner != msg.sender) {
         uint256 minPurchaseAmount,
         uint256 duration
     ) external whenNotPaused onlyKycVerified nonReentrant returns (uint256 listingId) {
+        _enforceCircuitBreaker(0);
         address sender = _msgSender();
 
         if (pricePerUnit == 0) revert InvalidPrice();
@@ -307,6 +326,7 @@ if (_owner != msg.sender) {
      * @param listingId The listing to cancel
      */
     function cancelListing(uint256 listingId) external nonReentrant {
+        _enforceCircuitBreaker(0);
         address sender = _msgSender();
         Listing storage listing = listings[listingId];
 
@@ -339,6 +359,7 @@ if (_owner != msg.sender) {
         uint256 newPricePerUnit,
         uint256 newAmount
     ) external nonReentrant {
+        _enforceCircuitBreaker(0);
         address sender = _msgSender();
         Listing storage listing = listings[listingId];
 
@@ -406,6 +427,8 @@ if (_owner != msg.sender) {
 
         uint256 totalPrice = amount * listing.pricePerUnit;
         if (msg.value < totalPrice) revert InsufficientPayment();
+
+        _enforceCircuitBreaker(totalPrice);
 
         // Calculate platform fee
         uint256 platformFee = (totalPrice * platformFeeBps) / 10000;
@@ -476,6 +499,8 @@ if (_owner != msg.sender) {
         uint256 totalDeposit = amount * pricePerUnit;
         if (msg.value < totalDeposit) revert InsufficientPayment();
 
+        _enforceCircuitBreaker(totalDeposit);
+
         offerId = nextOfferId++;
 
         offers[offerId] = Offer({
@@ -508,6 +533,7 @@ if (_owner != msg.sender) {
      * @param offerId The offer to cancel
      */
     function cancelOffer(uint256 offerId) external nonReentrant {
+        _enforceCircuitBreaker(0);
         address sender = _msgSender();
         Offer storage offer = offers[offerId];
 
@@ -529,6 +555,7 @@ if (_owner != msg.sender) {
      * @param offerId The offer to accept
      */
     function acceptOffer(uint256 offerId) external whenNotPaused onlyKycVerified nonReentrant {
+        _enforceCircuitBreaker(offers[offerId].depositAmount);
         address sender = _msgSender();
         Offer storage offer = offers[offerId];
 
@@ -585,6 +612,7 @@ if (_owner != msg.sender) {
      * @param offerId The offer to reject
      */
     function rejectOffer(uint256 offerId) external onlyKycVerified nonReentrant {
+        _enforceCircuitBreaker(0);
         address sender = _msgSender();
         Offer storage offer = offers[offerId];
 
@@ -992,6 +1020,14 @@ if (_owner != msg.sender) {
     }
 
     /**
+     * @notice Set the protocol identity registry used for marketplace checks.
+     */
+    function setKycRegistry(address registry) external onlyOwner {
+        if (registry == address(0)) revert InvalidKycRegistry();
+        kycRegistry = registry;
+    }
+
+    /**
      * @notice Update platform fee
      */
     function setPlatformFee(uint256 newFeeBps) external onlyOwner {
@@ -1007,6 +1043,18 @@ if (_owner != msg.sender) {
     function setFeeRecipient(address newRecipient) external onlyOwner {
         if (newRecipient == address(0)) revert InvalidFeeRecipient();
         feeRecipient = newRecipient;
+    }
+
+    /**
+     * @notice Configure the circuit breaker contract used for runtime safety checks
+     */
+    function setCircuitBreaker(address newCircuitBreaker) external onlyOwner {
+        if (newCircuitBreaker == address(0)) revert InvalidCircuitBreaker();
+
+        address previousCircuitBreaker = address(circuitBreaker);
+        circuitBreaker = ICircuitBreaker(newCircuitBreaker);
+
+        emit CircuitBreakerUpdated(previousCircuitBreaker, newCircuitBreaker);
     }
 
     /**
@@ -1035,6 +1083,23 @@ if (_owner != msg.sender) {
     // ============ UUPS ============
 
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
+
+    function _enforceCircuitBreaker(uint256 volume) internal {
+        address breaker = address(circuitBreaker);
+        if (breaker == address(0)) {
+            return;
+        }
+
+        if (!circuitBreaker.isOperationAllowed(address(this))) {
+            revert CircuitBreakerBlocked();
+        }
+        if (!circuitBreaker.checkRateLimit(address(this))) {
+            revert CircuitBreakerRateLimited();
+        }
+        if (volume > 0 && !circuitBreaker.checkVolumeLimit(address(this), volume)) {
+            revert CircuitBreakerVolumeExceeded();
+        }
+    }
 
     /**
      * @notice Contract version

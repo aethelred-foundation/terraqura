@@ -94,7 +94,7 @@ export enum AnomalyReason {
   // Pattern anomalies
   SUDDEN_SPIKE = "SUDDEN_SPIKE",
   SUDDEN_DROP = "SUDDEN_DROP",
-  FLATLINE = "FLATLINE", // No variation (possibly fake data)
+  FLATLINE = "FLATLINE", // No variation over the monitored interval
 }
 
 /**
@@ -119,37 +119,4 @@ export interface SensorSummary {
   readingCount: number;
   anomalyCount: number;
   dataCompleteness: number; // 0-100%
-}
-
-/**
- * IoT Simulator configuration
- */
-export interface SimulatorConfig {
-  dacUnitId: string;
-  sensorId: string;
-
-  // Location (Abu Dhabi default)
-  latitude: number;
-  longitude: number;
-
-  // Capture parameters
-  baseCaptureRateKgHour: number;
-  captureRateVariance: number; // Percentage variance
-
-  // Energy parameters
-  baseEnergyKwhPerTonne: number; // Optimal around 350
-  energyVariance: number;
-
-  // Purity
-  basePurityPercentage: number;
-  purityVariance: number;
-
-  // Environmental
-  baseTemperatureC: number;
-  temperatureVariance: number;
-
-  // Simulation behavior
-  intervalSeconds: number;
-  injectAnomalies: boolean;
-  anomalyProbability: number; // 0-1
 }

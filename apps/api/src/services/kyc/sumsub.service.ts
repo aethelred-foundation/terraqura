@@ -78,7 +78,7 @@ export class SumsubService {
     method: string,
     path: string,
     timestamp: number,
-    body?: string
+    body?: string,
   ): string {
     const data = timestamp + method.toUpperCase() + path + (body || "");
     return crypto
@@ -93,7 +93,7 @@ export class SumsubService {
   private async request<T>(
     method: string,
     path: string,
-    body?: object
+    body?: object,
   ): Promise<T> {
     const timestamp = Math.floor(Date.now() / 1000);
     const bodyStr = body ? JSON.stringify(body) : undefined;
@@ -158,7 +158,7 @@ export class SumsubService {
    * Get applicant by external user ID
    */
   async getApplicantByExternalId(
-    externalUserId: string
+    externalUserId: string,
   ): Promise<ApplicantResponse | null> {
     const path = `/resources/applicants/-;externalUserId=${encodeURIComponent(externalUserId)}`;
 
@@ -179,7 +179,7 @@ export class SumsubService {
   async generateAccessToken(
     externalUserId: string,
     levelName = "basic-kyc-level",
-    ttlInSecs = 1200
+    ttlInSecs = 1200,
   ): Promise<AccessTokenResponse> {
     const path = `/resources/accessTokens?userId=${encodeURIComponent(externalUserId)}&levelName=${levelName}&ttlInSecs=${ttlInSecs}`;
     return this.request<AccessTokenResponse>("POST", path);
@@ -228,21 +228,15 @@ export class SumsubService {
   }> {
     const path = `/resources/applicants/${applicantId}/checks/sanctions`;
 
-    try {
-      const result = await this.request<{
-        answer: string;
-        matchedData?: Array<{ listName: string }>;
-      }>("POST", path);
+    const result = await this.request<{
+      answer: string;
+      matchedData?: Array<{ listName: string }>;
+    }>("POST", path);
 
-      return {
-        hit: result.answer !== "clear",
-        matchedLists: result.matchedData?.map((m) => m.listName),
-      };
-    } catch (error) {
-      // Log but don't fail - sanctions check may not be available
-      console.error("Sanctions check error:", error);
-      return { hit: false };
-    }
+    return {
+      hit: result.answer !== "clear",
+      matchedLists: result.matchedData?.map((m) => m.listName),
+    };
   }
 
   /**
@@ -261,7 +255,7 @@ export class SumsubService {
 
     return crypto.timingSafeEqual(
       Buffer.from(signature),
-      Buffer.from(expectedSignature)
+      Buffer.from(expectedSignature),
     );
   }
 
@@ -340,14 +334,14 @@ export function createSumsubService(): SumsubService | null {
   const secretKey = env.SUMSUB_SECRET_KEY;
   if (!appToken || !secretKey) {
     throw new Error(
-      "SUMSUB_APP_TOKEN and SUMSUB_SECRET_KEY must be configured when KYC_PROVIDER=sumsub"
+      "SUMSUB_APP_TOKEN and SUMSUB_SECRET_KEY must be configured when KYC_PROVIDER=sumsub",
     );
   }
 
   return new SumsubService({
     appToken,
     secretKey,
-    webhookSecret: process.env.SUMSUB_WEBHOOK_SECRET,
+    webhookSecret: env.SUMSUB_WEBHOOK_SECRET,
   });
 }
 

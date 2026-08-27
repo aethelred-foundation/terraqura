@@ -53,8 +53,12 @@ export function CookieBanner() {
                 We use cookies
               </h3>
               <p className="text-white/55 text-sm leading-relaxed mb-4">
-                We use essential cookies to make our site work and analytics cookies to understand how you interact with it. Read our{" "}
-                <Link href="/cookies" className="text-emerald-400 hover:text-emerald-300 underline underline-offset-2 transition-colors">
+                We use essential cookies to make our site work and analytics
+                cookies to understand how you interact with it. Read our{" "}
+                <Link
+                  href="/cookies"
+                  className="text-emerald-400 hover:text-emerald-300 underline underline-offset-2 transition-colors"
+                >
                   Cookie Policy
                 </Link>{" "}
                 for details.

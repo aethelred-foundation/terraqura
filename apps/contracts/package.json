@@ -11,8 +11,13 @@
     "lint": "NO_UPDATE_NOTIFIER=1 SOLHINT_DISABLE_UPDATE_CHECK=true solhint --disc 'contracts/**/*.sol' && eslint 'scripts/**/*.ts' 'test/**/*.ts'",
     "lint:fix": "NO_UPDATE_NOTIFIER=1 SOLHINT_DISABLE_UPDATE_CHECK=true solhint --disc 'contracts/**/*.sol' --fix && eslint 'scripts/**/*.ts' 'test/**/*.ts' --fix",
     "typecheck": "tsc --noEmit",
-    "deploy:testnet": "hardhat run scripts/deploy.ts --network polygonAmoy",
-    "deploy:mainnet": "hardhat run scripts/deploy.ts --network polygonMainnet",
+    "deploy:testnet": "pnpm run deploy:testnet:preflight",
+    "deploy:testnet:rpc:check": "ts-node --transpile-only scripts/check-public-testnet-rpc.ts",
+    "deploy:testnet:signer-key:check": "ts-node --transpile-only scripts/check-deployer-key-file.ts",
+    "deploy:testnet:preflight": "TERRAQURA_DEPLOY_PHASE=preflight hardhat run scripts/deploy-aethelred-testnet.ts --network aethelredTestnet",
+    "deploy:testnet:bootstrap": "TERRAQURA_DEPLOY_PHASE=bootstrap hardhat run scripts/deploy-aethelred-testnet.ts --network aethelredTestnet",
+    "deploy:testnet:finalize": "TERRAQURA_DEPLOY_PHASE=finalize hardhat run scripts/deploy-aethelred-testnet.ts --network aethelredTestnet",
+    "deploy:testnet:verify": "TERRAQURA_DEPLOY_PHASE=verify hardhat run scripts/deploy-aethelred-testnet.ts --network aethelredTestnet",
     "verify": "hardhat verify",
     "clean": "hardhat clean && rm -rf typechain-types"
   },
@@ -25,6 +30,7 @@
     "@openzeppelin/contracts": "^4.9.6",
     "@openzeppelin/contracts-upgradeable": "^4.9.6",
     "@openzeppelin/hardhat-upgrades": "^3.0.2",
+    "@chainlink/contracts": "^1.5.0",
     "@terraqura/eslint-config": "workspace:*",
     "@terraqura/typescript-config": "workspace:*",
     "@typechain/ethers-v6": "^0.5.1",
@@ -41,12 +47,8 @@
     "merkletreejs": "^0.6.0",
     "solhint": "^4.1.1",
     "solidity-coverage": "^0.8.6",
-    "solidity-docgen": "0.6.0-beta.36",
     "ts-node": "^10.9.2",
     "typechain": "^8.3.2",
-    "typescript": "^5.3.3"
-  },
-  "dependencies": {
-    "@chainlink/contracts": "^1.5.0"
+    "typescript": "^5.9.3"
   }
 }

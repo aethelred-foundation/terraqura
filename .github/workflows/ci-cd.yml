@@ -10,10 +10,9 @@ on:
     branches: [main, develop]
 
 env:
-  NODE_VERSION: '20.18'
-  PNPM_VERSION: '9'
+  PNPM_VERSION: "9.0.0"
   # Retry Solidity compiler downloads (fixes undici transient failures)
-  HARDHAT_EXPERIMENTAL_ALLOW_NON_LOCAL_INSTALLATION: '1'
+  HARDHAT_EXPERIMENTAL_ALLOW_NON_LOCAL_INSTALLATION: "1"
 
 jobs:
   security-scan:
@@ -22,15 +21,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
       - run: pnpm install --frozen-lockfile
       - name: NPM Security Audit
-        # Advisory: upstream transitive dep vulnerabilities (OpenZeppelin, picomatch)
-        # are tracked via Dependabot; don't block CI on unpatched upstreams.
-        run: pnpm audit --audit-level=critical --prod || true
+        run: pnpm audit --audit-level=high --prod
 
   lint-format:
     name: Lint & Format
@@ -38,13 +37,14 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @terraqura/types build
-      - run: pnpm --filter @terraqura/database exec prisma generate
       - name: Build contracts (with compiler download retry)
         run: pnpm --filter @terraqura/contracts run build || pnpm --filter @terraqura/contracts run build
       - run: pnpm lint
@@ -55,7 +55,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: timescale/timescaledb:latest-pg16
+        image: postgres:16.9-alpine
         env:
           POSTGRES_USER: terraqura
           POSTGRES_PASSWORD: terraqura
@@ -70,43 +70,18 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @terraqura/types build
-      - run: pnpm --filter @terraqura/database exec prisma generate
       - run: pnpm --filter @terraqura/api test -- --coverage
         env:
           DATABASE_URL: postgresql://terraqura:terraqura@localhost:5432/terraqura_test
-
-  test-sdk:
-    name: Test SDK
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @terraqura/types build
-      - run: pnpm --filter @terraqura/sdk test -- --coverage
-
-  test-worker:
-    name: Test Worker
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: pnpm/action-setup@v4
-      - uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
-      - run: pnpm install --frozen-lockfile
-      - run: pnpm --filter @terraqura/worker test -- --coverage
+          RUN_DATABASE_INTEGRATION_TESTS: "true"
 
   test-contracts:
     name: Test Smart Contracts
@@ -114,57 +89,29 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @terraqura/contracts test
-      - run: pnpm --filter @terraqura/contracts coverage
+      - run: pnpm --filter @terraqura/contracts test:coverage
 
   build:
     name: Build
     runs-on: ubuntu-latest
-    needs: [lint-format, test-api, test-sdk, test-worker, test-contracts]
+    needs: [lint-format, test-api, test-contracts]
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
+        with:
+          version: ${{ env.PNPM_VERSION }}
       - uses: actions/setup-node@v4
         with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'pnpm'
+          node-version-file: ".nvmrc"
+          cache: "pnpm"
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter @terraqura/types build
-      - run: pnpm --filter @terraqura/database exec prisma generate
       - run: pnpm build
-
-  deploy-preview:
-    name: Deploy Preview
-    continue-on-error: true
-    runs-on: ubuntu-latest
-    needs: [build]
-    if: github.event_name == 'pull_request'
-    steps:
-      - uses: actions/checkout@v4
-      - name: Deploy to Vercel Preview
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-
-  deploy-production:
-    name: Deploy Production
-    continue-on-error: true
-    runs-on: ubuntu-latest
-    needs: [build, security-scan]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    steps:
-      - uses: actions/checkout@v4
-      - name: Deploy to Vercel Production
-        uses: amondnet/vercel-action@v25
-        with:
-          vercel-token: ${{ secrets.VERCEL_TOKEN }}
-          vercel-org-id: ${{ secrets.VERCEL_ORG_ID }}
-          vercel-project-id: ${{ secrets.VERCEL_PROJECT_ID }}
-          vercel-args: '--prod'

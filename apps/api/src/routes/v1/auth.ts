@@ -1,61 +1,45 @@
 import { FastifyInstance, FastifyPluginOptions, FastifyRequest } from "fastify";
-import { Pool } from "pg";
 import { generateNonce, SiweMessage } from "siwe";
 import { z } from "zod";
 
-import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
+import {
+  bearerAuthRateLimit,
+  verifyBearerAuth,
+} from "../../lib/bearer-auth.js";
+import { ensureDatabaseSchema } from "../../lib/database-schema.js";
+import { databasePool } from "../../lib/database.js";
 import { getApiRuntimeEnv } from "../../lib/runtime-env.js";
+import { createSumsubService } from "../../services/kyc/sumsub.service.js";
 
 const NONCE_TTL_MS = 10 * 60 * 1000;
 const runtimeEnv = getApiRuntimeEnv();
 const expectedSiweDomain = runtimeEnv.SIWE_DOMAIN;
-const noncePool = new Pool({
-  connectionString: runtimeEnv.DATABASE_URL,
-  max: 2,
-  connectionTimeoutMillis: 1500,
-  idleTimeoutMillis: 1500,
-});
-let nonceTableInitialization: Promise<void> | null = null;
 
-async function ensureNonceTable(): Promise<void> {
-  if (!nonceTableInitialization) {
-    nonceTableInitialization = (async () => {
-      await noncePool.query(`
-        CREATE TABLE IF NOT EXISTS siwe_nonces (
-          nonce TEXT PRIMARY KEY,
-          expires_at TIMESTAMPTZ NOT NULL
-        )
-      `);
-      await noncePool.query(`
-        CREATE INDEX IF NOT EXISTS idx_siwe_nonces_expires_at
-        ON siwe_nonces (expires_at)
-      `);
-    })();
-  }
-
-  await nonceTableInitialization;
-}
-
-async function createStoredNonce(nonce: string, expiresAt: Date): Promise<void> {
-  await ensureNonceTable();
-  await noncePool.query(
+async function createStoredNonce(
+  nonce: string,
+  expiresAt: Date,
+): Promise<void> {
+  await ensureDatabaseSchema();
+  await databasePool.query(
     `
       INSERT INTO siwe_nonces (nonce, expires_at)
       VALUES ($1, $2)
     `,
-    [nonce, expiresAt.toISOString()]
+    [nonce, expiresAt.toISOString()],
   );
 }
 
-async function consumeStoredNonce(nonce: string): Promise<"valid" | "invalid_or_expired"> {
-  await ensureNonceTable();
-  const result = await noncePool.query(
+async function consumeStoredNonce(
+  nonce: string,
+): Promise<"valid" | "invalid_or_expired"> {
+  await ensureDatabaseSchema();
+  const result = await databasePool.query(
     `
       DELETE FROM siwe_nonces
       WHERE nonce = $1
         AND expires_at > NOW()
     `,
-    [nonce]
+    [nonce],
   );
   return result.rowCount === 1 ? "valid" : "invalid_or_expired";
 }
@@ -75,9 +59,20 @@ interface AuthTokenPayload {
   kycStatus: "pending" | "approved" | "rejected";
 }
 
+function resolveUserType(walletAddress: string): UserType {
+  const normalized = walletAddress.toLowerCase();
+  if (runtimeEnv.ADMIN_WALLETS.includes(normalized)) return "admin";
+  if (runtimeEnv.AUDITOR_WALLETS.includes(normalized)) return "auditor";
+  return "operator";
+}
+
 function readTokenPayload(request: FastifyRequest): AuthTokenPayload | null {
   const user = request.user as Partial<AuthTokenPayload> | undefined;
-  if (!user || typeof user.address !== "string" || typeof user.chainId !== "number") {
+  if (
+    !user ||
+    typeof user.address !== "string" ||
+    typeof user.chainId !== "number"
+  ) {
     return null;
   }
 
@@ -91,9 +86,49 @@ function readTokenPayload(request: FastifyRequest): AuthTokenPayload | null {
   };
 }
 
+async function resolveKycStatus(
+  walletAddress: string,
+): Promise<AuthTokenPayload["kycStatus"]> {
+  if (runtimeEnv.KYC_PROVIDER !== "sumsub") {
+    return "pending";
+  }
+
+  const sumsubService = createSumsubService();
+  if (!sumsubService) {
+    return "pending";
+  }
+
+  try {
+    const applicant =
+      await sumsubService.getApplicantByExternalId(walletAddress);
+    if (!applicant) {
+      return "pending";
+    }
+
+    const verificationStatus = await sumsubService.getVerificationStatus(
+      applicant.id,
+    );
+    if (verificationStatus.status === "verified") {
+      const sanctions = await sumsubService.requestSanctionsCheck(applicant.id);
+      return sanctions.hit ? "rejected" : "approved";
+    }
+    if (verificationStatus.status === "rejected") {
+      return "rejected";
+    }
+
+    return "pending";
+  } catch (error) {
+    console.warn(
+      "Failed to resolve KYC status during auth verification",
+      error,
+    );
+    return "pending";
+  }
+}
+
 export async function authRoutes(
   fastify: FastifyInstance,
-  _options: FastifyPluginOptions
+  _options: FastifyPluginOptions,
 ) {
   /**
    * Get nonce for SIWE (Sign-In with Ethereum)
@@ -125,7 +160,7 @@ export async function authRoutes(
         nonce,
         expiresAt: expiresAt.toISOString(),
       };
-    }
+    },
   );
 
   /**
@@ -147,7 +182,8 @@ export async function authRoutes(
       schema: {
         tags: ["Auth"],
         summary: "Verify SIWE signature",
-        description: "Verifies a Sign-In with Ethereum signature and returns a JWT",
+        description:
+          "Verifies a Sign-In with Ethereum signature and returns a JWT",
         body: {
           type: "object",
           required: ["message", "signature"],
@@ -208,12 +244,13 @@ export async function authRoutes(
         }
 
         const normalizedAddress = verifiedMessage.address.toLowerCase();
+        const kycStatus = await resolveKycStatus(normalizedAddress);
         const tokenPayload: AuthTokenPayload = {
           sub: normalizedAddress,
           address: normalizedAddress,
           chainId: verifiedMessage.chainId,
-          userType: "operator",
-          kycStatus: "pending",
+          userType: resolveUserType(normalizedAddress),
+          kycStatus,
         };
         const token = fastify.jwt.sign(tokenPayload);
 
@@ -232,7 +269,7 @@ export async function authRoutes(
           error: "Invalid signature",
         });
       }
-    }
+    },
   );
 
   /**
@@ -287,6 +324,6 @@ export async function authRoutes(
           kycStatus: tokenPayload.kycStatus,
         },
       };
-    }
+    },
   );
 }

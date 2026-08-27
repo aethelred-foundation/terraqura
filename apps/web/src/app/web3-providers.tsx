@@ -18,7 +18,16 @@ import {
 import { WagmiProvider, useAccount, useChainId } from "wagmi";
 import { RainbowKitProvider, darkTheme } from "@rainbow-me/rainbowkit";
 import "@rainbow-me/rainbowkit/styles.css";
-import { config, ACTIVE_NETWORK, configError } from "@/lib/wagmi";
+import { AppProvider, AppProviderSSR } from "@/contexts/AppContext";
+import {
+  config,
+  ACTIVE_NETWORK,
+  configError,
+  RPC_EVALUATION_MODE,
+  RPC_PLAINTEXT_EVALUATION_MODE,
+  verifyConfiguredRpcIdentity,
+} from "@/lib/wagmi";
+import { TERRAQURA_PUBLIC_URL } from "@/lib/publicUrl";
 
 // ============================================
 // Query Client Configuration
@@ -34,7 +43,7 @@ function handleQueryError(error: Error): void {
   ];
 
   const shouldIgnore = ignoredErrors.some((msg) =>
-    error.message?.toLowerCase().includes(msg.toLowerCase())
+    error.message?.toLowerCase().includes(msg.toLowerCase()),
   );
 
   if (!shouldIgnore) {
@@ -77,8 +86,7 @@ function createQueryClient(): QueryClient {
         refetchOnMount: true,
         networkMode: "online",
         retry: shouldRetryQuery,
-        retryDelay: (attemptIndex) =>
-          Math.min(1000 * 2 ** attemptIndex, 10000),
+        retryDelay: (attemptIndex) => Math.min(1000 * 2 ** attemptIndex, 10000),
         structuralSharing: true,
       },
       mutations: {
@@ -134,7 +142,7 @@ function ConnectionMonitor(): null {
     if (isConnected && address) {
       if (chainId !== ACTIVE_NETWORK.id) {
         console.warn(
-          `[TerraQura] Wrong network detected. Expected ${ACTIVE_NETWORK.name} (${ACTIVE_NETWORK.id}), got ${chainId}`
+          `[TerraQura] Wrong network detected. Expected ${ACTIVE_NETWORK.name} (${ACTIVE_NETWORK.id}), got ${chainId}`,
         );
       }
     }
@@ -189,40 +197,138 @@ interface Web3ProvidersProps {
   children: React.ReactNode;
 }
 
-export default function Web3Providers({ children }: Web3ProvidersProps): React.JSX.Element {
+type RpcIdentityState = "not-required" | "checking" | "verified" | "blocked";
+
+function RpcStatusNotice({
+  state,
+  plaintext,
+  message,
+}: {
+  state: RpcIdentityState;
+  plaintext: boolean;
+  message?: string;
+}): React.JSX.Element | null {
+  if (state === "not-required") {
+    return null;
+  }
+  const blocked = state === "blocked";
+  const text =
+    message ||
+    (state === "checking"
+      ? "Public-testnet evaluation: verifying the plaintext RPC anchor. Wallet actions are disabled."
+      : blocked
+        ? "Wallet features are unavailable because the public-testnet RPC identity check failed."
+        : plaintext
+          ? "Public-testnet evaluation: RPC transport is plaintext HTTP. Use test assets and test-only credentials."
+          : "Public-testnet evaluation profile: use test assets and test-only credentials.");
+  return (
+    <div
+      role={blocked ? "alert" : "status"}
+      aria-live="polite"
+      className={`relative z-[100] border-b px-4 py-2 text-center text-xs font-semibold tracking-wide ${
+        blocked
+          ? "border-red-500/50 bg-red-950 text-red-100"
+          : "border-amber-400/40 bg-amber-950 text-amber-100"
+      }`}
+    >
+      {text}
+    </div>
+  );
+}
+
+export default function Web3Providers({
+  children,
+}: Web3ProvidersProps): React.JSX.Element {
   const [queryClient] = useState(() => createQueryClient());
+  const [rpcIdentityState, setRpcIdentityState] = useState<RpcIdentityState>(
+    RPC_EVALUATION_MODE ? "checking" : "not-required",
+  );
+
+  useEffect(() => {
+    if (!RPC_EVALUATION_MODE) {
+      return;
+    }
+    let active = true;
+    void verifyConfiguredRpcIdentity()
+      .then(() => {
+        if (active) setRpcIdentityState("verified");
+      })
+      .catch(() => {
+        if (active) setRpcIdentityState("blocked");
+      });
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // If wagmi config failed to initialise, render without Web3 providers.
   // The marketing site works fine without blockchain connectivity.
   if (configError || !config) {
-    return <>{children}</>;
+    return (
+      <>
+        <RpcStatusNotice
+          state="blocked"
+          plaintext={RPC_PLAINTEXT_EVALUATION_MODE}
+          message={`Wallet features are unavailable: ${configError?.message || "wallet configuration failed"}`}
+        />
+        <AppProviderSSR>{children}</AppProviderSSR>
+      </>
+    );
+  }
+
+  if (
+    RPC_EVALUATION_MODE &&
+    (rpcIdentityState === "checking" || rpcIdentityState === "blocked")
+  ) {
+    return (
+      <>
+        <RpcStatusNotice
+          state={rpcIdentityState}
+          plaintext={RPC_PLAINTEXT_EVALUATION_MODE}
+        />
+        <AppProviderSSR>{children}</AppProviderSSR>
+      </>
+    );
   }
 
   return (
-    <ProviderErrorBoundary fallback={children}>
-      <WagmiProvider config={config}>
-        <QueryClientProvider client={queryClient}>
-          <RainbowKitProvider
-            theme={customTheme}
-            modalSize="compact"
-            showRecentTransactions={true}
-            appInfo={{
-              appName: "TerraQura",
-              learnMoreUrl: "https://terraqura.aethelred.network",
-              disclaimer: ({ Text, Link }) => (
-                <Text>
-                  By connecting your wallet, you agree to TerraQura&apos;s{" "}
-                  <Link href="https://terraqura.aethelred.network/terms">Terms of Service</Link> and{" "}
-                  <Link href="https://terraqura.aethelred.network/privacy">Privacy Policy</Link>
-                </Text>
-              ),
-            }}
-          >
-            <ConnectionMonitor />
-            {children}
-          </RainbowKitProvider>
-        </QueryClientProvider>
-      </WagmiProvider>
-    </ProviderErrorBoundary>
+    <>
+      <RpcStatusNotice
+        state={rpcIdentityState}
+        plaintext={RPC_PLAINTEXT_EVALUATION_MODE}
+      />
+      <ProviderErrorBoundary
+        fallback={<AppProviderSSR>{children}</AppProviderSSR>}
+      >
+        <WagmiProvider config={config}>
+          <QueryClientProvider client={queryClient}>
+            <RainbowKitProvider
+              theme={customTheme}
+              modalSize="compact"
+              showRecentTransactions={true}
+              appInfo={{
+                appName: "TerraQura",
+                learnMoreUrl: TERRAQURA_PUBLIC_URL,
+                disclaimer: ({ Text, Link }) => (
+                  <Text>
+                    By connecting your wallet, you agree to TerraQura&apos;s{" "}
+                    <Link href={`${TERRAQURA_PUBLIC_URL}/terms`}>
+                      Terms of Service
+                    </Link>{" "}
+                    and{" "}
+                    <Link href={`${TERRAQURA_PUBLIC_URL}/privacy`}>
+                      Privacy Policy
+                    </Link>
+                  </Text>
+                ),
+              }}
+            >
+              <ConnectionMonitor />
+              <AppProvider>{children}</AppProvider>
+            </RainbowKitProvider>
+          </QueryClientProvider>
+        </WagmiProvider>
+      </ProviderErrorBoundary>
+    </>
   );
 }

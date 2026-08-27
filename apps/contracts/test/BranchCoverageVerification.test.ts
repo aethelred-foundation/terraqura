@@ -690,7 +690,7 @@ describe("BranchCoverageVerification", function () {
 
       await expect(
         verificationEngine.connect(user1).whitelistDacUnit(newDac, user1.address)
-      ).to.be.revertedWith("Ownable: caller is not the owner");
+      ).to.be.revertedWithCustomError(verificationEngine, "UnauthorizedCaller");
     });
 
     it("should reject non-owner from setting tech thresholds", async function () {

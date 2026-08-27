@@ -1,0 +1,162 @@
+name: terraqura-public-testnet-evaluation
+
+x-service-security: &service-security
+  restart: unless-stopped
+  init: true
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  read_only: true
+  tmpfs:
+    - /tmp:size=64m,mode=1777
+  logging:
+    driver: json-file
+    options:
+      max-size: 10m
+      max-file: "5"
+
+services:
+  postgres:
+    image: postgres:16.9-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: terraqura
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD is required}
+      POSTGRES_DB: terraqura
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U terraqura -d terraqura"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    networks:
+      - data
+    logging:
+      driver: json-file
+      options:
+        max-size: 10m
+        max-file: "5"
+
+  api:
+    <<: *service-security
+    build:
+      context: .
+      dockerfile: apps/api/Dockerfile
+    ports:
+      - "${PUBLIC_BIND_ADDRESS:-0.0.0.0}:${API_PORT:-4000}:4000"
+    environment:
+      NODE_ENV: production
+      TERRAQURA_DEPLOYMENT_PROFILE: public-testnet-evaluation
+      API_HOST: 0.0.0.0
+      API_PORT: 4000
+      LOG_LEVEL: ${LOG_LEVEL:-info}
+      TRUST_PROXY: "0"
+      API_DOCS_ENABLED: "false"
+      DATABASE_URL: postgresql://terraqura:${DB_PASSWORD:?DB_PASSWORD is required}@postgres:5432/terraqura
+      DATABASE_SSL_MODE: disable
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      JWT_EXPIRES_IN: ${JWT_EXPIRES_IN:-24h}
+      SIWE_DOMAIN: ${SIWE_DOMAIN:?SIWE_DOMAIN is required}
+      ADMIN_WALLETS: ${ADMIN_WALLETS:?ADMIN_WALLETS is required}
+      AUDITOR_WALLETS: ${AUDITOR_WALLETS:-}
+      CORS_ORIGIN: ${CORS_ORIGIN:?CORS_ORIGIN is required}
+      CHAIN_ID: ${CHAIN_ID:?CHAIN_ID is required}
+      AETHELRED_RPC_URL: ${AETHELRED_RPC_URL:?AETHELRED_RPC_URL is required}
+      AETHELRED_EXPLORER_URL: ${AETHELRED_EXPLORER_URL:-}
+      ALLOW_INSECURE_TESTNET_RPC: ${ALLOW_INSECURE_TESTNET_RPC:?ALLOW_INSECURE_TESTNET_RPC is required}
+      AETHELRED_NETWORK_ANCHOR_BLOCK: ${AETHELRED_NETWORK_ANCHOR_BLOCK:?AETHELRED_NETWORK_ANCHOR_BLOCK is required}
+      AETHELRED_NETWORK_ANCHOR_HASH: ${AETHELRED_NETWORK_ANCHOR_HASH:?AETHELRED_NETWORK_ANCHOR_HASH is required}
+      ACCESS_CONTROL_ADDRESS: ${ACCESS_CONTROL_ADDRESS:?ACCESS_CONTROL_ADDRESS is required}
+      VERIFICATION_ENGINE_ADDRESS: ${VERIFICATION_ENGINE_ADDRESS:?VERIFICATION_ENGINE_ADDRESS is required}
+      CARBON_CREDIT_ADDRESS: ${CARBON_CREDIT_ADDRESS:?CARBON_CREDIT_ADDRESS is required}
+      CARBON_MARKETPLACE_ADDRESS: ${CARBON_MARKETPLACE_ADDRESS:?CARBON_MARKETPLACE_ADDRESS is required}
+      CIRCUIT_BREAKER_ADDRESS: ${CIRCUIT_BREAKER_ADDRESS:?CIRCUIT_BREAKER_ADDRESS is required}
+      OPERATOR_SIGNER_KEY_FILE: /run/secrets/terraqura_operator_signer
+      AETHEL_USD_PRICE: ${AETHEL_USD_PRICE:-}
+      KYC_PROVIDER: disabled
+      SUMSUB_APP_TOKEN: ""
+      SUMSUB_SECRET_KEY: ""
+      SUMSUB_WEBHOOK_SECRET: ""
+      FORWARDER_CONTRACT: ""
+      RELAYER_SIGNER_KEY_FILE: ""
+    secrets:
+      - terraqura_operator_signer
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:4000/v1/health/ready').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 8s
+      retries: 5
+      start_period: 30s
+    networks:
+      - app
+      - data
+
+  web:
+    <<: *service-security
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID: ${NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID:?NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID is required}
+        NEXT_PUBLIC_TERRAQURA_DEPLOYMENT_PROFILE: public-testnet-evaluation
+        NEXT_PUBLIC_AETHELRED_TESTNET_CHAIN_ID: ${CHAIN_ID:?CHAIN_ID is required}
+        NEXT_PUBLIC_AETHELRED_TESTNET_RPC_URL: ${AETHELRED_RPC_URL:?AETHELRED_RPC_URL is required}
+        NEXT_PUBLIC_AETHELRED_TESTNET_EXPLORER_URL: ${AETHELRED_EXPLORER_URL:-}
+        NEXT_PUBLIC_ALLOW_INSECURE_TESTNET_RPC: ${ALLOW_INSECURE_TESTNET_RPC:?ALLOW_INSECURE_TESTNET_RPC is required}
+        NEXT_PUBLIC_AETHELRED_NETWORK_ANCHOR_BLOCK: ${AETHELRED_NETWORK_ANCHOR_BLOCK:?AETHELRED_NETWORK_ANCHOR_BLOCK is required}
+        NEXT_PUBLIC_AETHELRED_NETWORK_ANCHOR_HASH: ${AETHELRED_NETWORK_ANCHOR_HASH:?AETHELRED_NETWORK_ANCHOR_HASH is required}
+        NEXT_PUBLIC_ACCESS_CONTROL_ADDRESS: ${ACCESS_CONTROL_ADDRESS:?ACCESS_CONTROL_ADDRESS is required}
+        NEXT_PUBLIC_VERIFICATION_ENGINE_ADDRESS: ${VERIFICATION_ENGINE_ADDRESS:?VERIFICATION_ENGINE_ADDRESS is required}
+        NEXT_PUBLIC_CARBON_CREDIT_ADDRESS: ${CARBON_CREDIT_ADDRESS:?CARBON_CREDIT_ADDRESS is required}
+        NEXT_PUBLIC_CARBON_MARKETPLACE_ADDRESS: ${CARBON_MARKETPLACE_ADDRESS:?CARBON_MARKETPLACE_ADDRESS is required}
+        NEXT_PUBLIC_CIRCUIT_BREAKER_ADDRESS: ${CIRCUIT_BREAKER_ADDRESS:?CIRCUIT_BREAKER_ADDRESS is required}
+        NEXT_PUBLIC_APP_URL: ${WEB_PUBLIC_ORIGIN:?WEB_PUBLIC_ORIGIN is required}
+    ports:
+      - "${PUBLIC_BIND_ADDRESS:-0.0.0.0}:${WEB_PORT:-3007}:3000"
+    environment:
+      TERRAQURA_API_ORIGIN: http://api:4000
+      TERRAQURA_ALLOW_INSECURE_UPSTREAM: "true"
+    tmpfs:
+      - /tmp:size=64m,mode=1777
+      - /app/apps/web/.next/cache:size=128m,mode=1777,uid=1001,gid=1001
+    depends_on:
+      api:
+        condition: service_healthy
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "node",
+          "-e",
+          "fetch('http://127.0.0.1:3000/').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 8s
+      retries: 5
+      start_period: 30s
+    networks:
+      - app
+
+volumes:
+  postgres_data:
+
+networks:
+  app:
+  data:
+    internal: true
+
+secrets:
+  terraqura_operator_signer:
+    file: ${OPERATOR_SIGNER_KEY_FILE:?OPERATOR_SIGNER_KEY_FILE is required}

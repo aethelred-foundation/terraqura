@@ -1,10 +1,15 @@
-import { createHash } from "crypto";
+import { createHash } from "node:crypto";
 
 import { AnomalyReason } from "@terraqura/types";
 import { FastifyInstance, FastifyPluginOptions, FastifyRequest } from "fastify";
 import { z } from "zod";
 
-import { mutateState, readState } from "../../lib/state-store.js";
+import { authenticateSensorApiKey } from "../../lib/api-key-store.js";
+import {
+  insertSensorReadings,
+  summarizeSensorReadings,
+  type SensorEvidenceReading,
+} from "../../lib/sensor-reading-store.js";
 
 const SensorReadingSchema = z.object({
   sensorId: z.string().min(1),
@@ -15,6 +20,7 @@ const SensorReadingSchema = z.object({
   ambientTemperatureC: z.number().optional(),
   ambientHumidityPercent: z.number().min(0).max(100).optional(),
   atmosphericCo2Ppm: z.number().min(0).optional(),
+  measurementDurationSeconds: z.number().positive().max(86400).default(3600),
   rawData: z.record(z.unknown()).optional(),
 });
 
@@ -23,32 +29,13 @@ const MIN_KWH_PER_TONNE = 200;
 const MAX_KWH_PER_TONNE = 600;
 const MIN_PURITY_PERCENTAGE = 90;
 
-function parseSensorApiKeyConfig(rawConfig?: string): Map<string, string> {
-  const mappings = new Map<string, string>();
-
-  if (!rawConfig) {
-    return mappings;
-  }
-
-  for (const pair of rawConfig.split(",")) {
-    const [apiKey, dacUnitId] = pair.split(":").map((value) => value?.trim());
-    if (!apiKey || !dacUnitId) {
-      continue;
-    }
-
-    mappings.set(apiKey, dacUnitId);
-  }
-
-  return mappings;
-}
-
-const sensorApiKeys = parseSensorApiKeyConfig(process.env.SENSOR_API_KEYS);
-
-function resolveSensorApiKey(
-  headers: FastifyRequest["headers"]
-): { apiKey: string; dacUnitId: string } | null {
+async function resolveSensorApiKey(
+  headers: FastifyRequest["headers"],
+): Promise<{ dacUnitId: string } | null> {
   const headerValue = headers["x-sensor-api-key"];
-  const keyCandidate = Array.isArray(headerValue) ? headerValue[0] : headerValue;
+  const keyCandidate = Array.isArray(headerValue)
+    ? headerValue[0]
+    : headerValue;
 
   if (typeof keyCandidate !== "string") {
     return null;
@@ -59,12 +46,8 @@ function resolveSensorApiKey(
     return null;
   }
 
-  const dacUnitId = sensorApiKeys.get(apiKey);
-  if (!dacUnitId) {
-    return null;
-  }
-
-  return { apiKey, dacUnitId };
+  const identity = await authenticateSensorApiKey(apiKey);
+  return identity ? { dacUnitId: identity.dacUnitId } : null;
 }
 
 /**
@@ -74,9 +57,10 @@ function detectAnomaly(reading: {
   co2CaptureRateKgHour: number;
   energyConsumptionKwh: number;
   co2PurityPercentage?: number;
+  measurementDurationSeconds: number;
 }): { isAnomaly: boolean; reason: AnomalyReason | null } {
-  // Calculate kWh per tonne
-  const co2Kg = reading.co2CaptureRateKgHour; // Per hour
+  const co2Kg =
+    reading.co2CaptureRateKgHour * (reading.measurementDurationSeconds / 3600);
   const co2Tonnes = co2Kg / 1000;
 
   if (co2Tonnes > 0) {
@@ -107,38 +91,31 @@ function detectAnomaly(reading: {
 /**
  * Generate SHA-256 hash of sensor data
  */
+function canonicalize(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map(canonicalize);
+  }
+  if (value && typeof value === "object") {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>)
+        .sort(([left], [right]) => left.localeCompare(right))
+        .map(([key, nested]) => [key, canonicalize(nested)]),
+    );
+  }
+  return value;
+}
+
 function hashSensorData(data: Record<string, unknown>): string {
-  const jsonString = JSON.stringify(data, Object.keys(data).sort());
+  const jsonString = JSON.stringify(canonicalize(data));
+  // This is a content-integrity digest. API credentials are authenticated
+  // with scrypt in api-key-store.ts; no credential is hashed here.
+  // codeql[js/insufficient-password-hash]
   return createHash("sha256").update(jsonString).digest("hex");
 }
 
-interface StoredSensorReading {
-  time: string;
-  dacUnitId: string;
-  sensorId: string;
-  co2CaptureRateKgHour: number;
-  energyConsumptionKwh: number;
-  co2PurityPercentage: number;
-  ambientTemperatureC: number | null;
-  ambientHumidityPercent: number | null;
-  atmosphericCo2Ppm: number | null;
-  dataHash: string;
-  isAnomaly: boolean;
-  anomalyReason: string | null;
-}
-
-interface SensorsState {
-  readings: StoredSensorReading[];
-}
-
-const SENSORS_STORE_KEY = "sensors:v1";
-const DEFAULT_SENSORS_STATE: SensorsState = {
-  readings: [],
-};
-
 export async function sensorsRoutes(
   fastify: FastifyInstance,
-  _options: FastifyPluginOptions
+  _options: FastifyPluginOptions,
 ) {
   /**
    * Submit a sensor reading
@@ -153,7 +130,11 @@ export async function sensorsRoutes(
         security: [{ apiKeyAuth: [] }],
         body: {
           type: "object",
-          required: ["sensorId", "co2CaptureRateKgHour", "energyConsumptionKwh"],
+          required: [
+            "sensorId",
+            "co2CaptureRateKgHour",
+            "energyConsumptionKwh",
+          ],
           properties: {
             sensorId: { type: "string" },
             timestamp: { type: "string", format: "date-time" },
@@ -163,6 +144,12 @@ export async function sensorsRoutes(
             ambientTemperatureC: { type: "number" },
             ambientHumidityPercent: { type: "number" },
             atmosphericCo2Ppm: { type: "number" },
+            measurementDurationSeconds: {
+              type: "number",
+              minimum: 1,
+              maximum: 86400,
+              default: 3600,
+            },
             rawData: { type: "object" },
           },
         },
@@ -189,11 +176,18 @@ export async function sensorsRoutes(
               error: { type: "string" },
             },
           },
+          409: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
         },
       },
     },
     async (request, reply) => {
-      const sensorIdentity = resolveSensorApiKey(request.headers);
+      const sensorIdentity = await resolveSensorApiKey(request.headers);
       if (!sensorIdentity) {
         return reply.status(401).send({
           success: false,
@@ -206,11 +200,17 @@ export async function sensorsRoutes(
 
       // Generate data hash
       const dataHash = hashSensorData({
+        dacUnitId: sensorIdentity.dacUnitId,
         sensorId: body.sensorId,
         timestamp: timestamp.toISOString(),
         co2CaptureRateKgHour: body.co2CaptureRateKgHour,
         energyConsumptionKwh: body.energyConsumptionKwh,
         co2PurityPercentage: body.co2PurityPercentage,
+        ambientTemperatureC: body.ambientTemperatureC,
+        ambientHumidityPercent: body.ambientHumidityPercent,
+        atmosphericCo2Ppm: body.atmosphericCo2Ppm,
+        measurementDurationSeconds: body.measurementDurationSeconds,
+        rawData: body.rawData,
       });
 
       // Detect anomalies
@@ -218,24 +218,33 @@ export async function sensorsRoutes(
         co2CaptureRateKgHour: body.co2CaptureRateKgHour,
         energyConsumptionKwh: body.energyConsumptionKwh,
         co2PurityPercentage: body.co2PurityPercentage,
+        measurementDurationSeconds: body.measurementDurationSeconds,
       });
 
-      await mutateState(SENSORS_STORE_KEY, DEFAULT_SENSORS_STATE, async (state) => {
-        state.readings.push({
-          time: timestamp.toISOString(),
-          dacUnitId: sensorIdentity.dacUnitId,
-          sensorId: body.sensorId,
-          co2CaptureRateKgHour: body.co2CaptureRateKgHour,
-          energyConsumptionKwh: body.energyConsumptionKwh,
-          co2PurityPercentage: body.co2PurityPercentage || 95,
-          ambientTemperatureC: body.ambientTemperatureC || null,
-          ambientHumidityPercent: body.ambientHumidityPercent || null,
-          atmosphericCo2Ppm: body.atmosphericCo2Ppm || null,
-          dataHash,
-          isAnomaly,
-          anomalyReason: reason,
+      const evidence: SensorEvidenceReading = {
+        time: timestamp.toISOString(),
+        dacUnitId: sensorIdentity.dacUnitId,
+        sensorId: body.sensorId,
+        co2CaptureRateKgHour: body.co2CaptureRateKgHour,
+        energyConsumptionKwh: body.energyConsumptionKwh,
+        measurementDurationSeconds: body.measurementDurationSeconds,
+        co2PurityPercentage: body.co2PurityPercentage ?? 95,
+        ambientTemperatureC: body.ambientTemperatureC ?? null,
+        ambientHumidityPercent: body.ambientHumidityPercent ?? null,
+        atmosphericCo2Ppm: body.atmosphericCo2Ppm ?? null,
+        dataHash,
+        rawData: body.rawData ?? null,
+        isAnomaly,
+        anomalyReason: reason,
+      };
+      const inserted = await insertSensorReadings([evidence]);
+
+      if (!inserted) {
+        return reply.status(409).send({
+          success: false,
+          error: "This sensor evidence has already been accepted",
         });
-      });
+      }
 
       return reply.status(201).send({
         success: true,
@@ -246,7 +255,7 @@ export async function sensorsRoutes(
           timestamp: timestamp.toISOString(),
         },
       });
-    }
+    },
   );
 
   /**
@@ -268,13 +277,27 @@ export async function sensorsRoutes(
               type: "array",
               items: {
                 type: "object",
-                required: ["sensorId", "co2CaptureRateKgHour", "energyConsumptionKwh"],
+                required: [
+                  "sensorId",
+                  "co2CaptureRateKgHour",
+                  "energyConsumptionKwh",
+                ],
                 properties: {
                   sensorId: { type: "string" },
                   timestamp: { type: "string" },
                   co2CaptureRateKgHour: { type: "number" },
                   energyConsumptionKwh: { type: "number" },
                   co2PurityPercentage: { type: "number" },
+                  ambientTemperatureC: { type: "number" },
+                  ambientHumidityPercent: { type: "number" },
+                  atmosphericCo2Ppm: { type: "number" },
+                  measurementDurationSeconds: {
+                    type: "number",
+                    minimum: 1,
+                    maximum: 86400,
+                    default: 3600,
+                  },
+                  rawData: { type: "object" },
                 },
               },
             },
@@ -302,11 +325,18 @@ export async function sensorsRoutes(
               error: { type: "string" },
             },
           },
+          409: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: { type: "string" },
+            },
+          },
         },
       },
     },
     async (request, reply) => {
-      const sensorIdentity = resolveSensorApiKey(request.headers);
+      const sensorIdentity = await resolveSensorApiKey(request.headers);
       if (!sensorIdentity) {
         return reply.status(401).send({
           success: false,
@@ -315,73 +345,80 @@ export async function sensorsRoutes(
       }
 
       const body = request.body as { readings: unknown[] };
-      const readings = z.array(SensorReadingSchema).parse(body.readings);
+      const readings = z
+        .array(SensorReadingSchema)
+        .min(1)
+        .max(1000)
+        .parse(body.readings);
 
-      const batchResult = await mutateState(
-        SENSORS_STORE_KEY,
-        DEFAULT_SENSORS_STATE,
-        async (state) => {
-          let anomalyCount = 0;
-          const hashes: string[] = [];
+      const prepared = readings.map((reading) => {
+        const timestamp = reading.timestamp
+          ? new Date(reading.timestamp)
+          : new Date();
+        const dataHash = hashSensorData({
+          dacUnitId: sensorIdentity.dacUnitId,
+          sensorId: reading.sensorId,
+          timestamp: timestamp.toISOString(),
+          co2CaptureRateKgHour: reading.co2CaptureRateKgHour,
+          energyConsumptionKwh: reading.energyConsumptionKwh,
+          co2PurityPercentage: reading.co2PurityPercentage,
+          ambientTemperatureC: reading.ambientTemperatureC,
+          ambientHumidityPercent: reading.ambientHumidityPercent,
+          atmosphericCo2Ppm: reading.atmosphericCo2Ppm,
+          measurementDurationSeconds: reading.measurementDurationSeconds,
+          rawData: reading.rawData,
+        });
+        const anomaly = detectAnomaly(reading);
+        return { reading, timestamp, dataHash, anomaly };
+      });
+      if (
+        new Set(prepared.map(({ dataHash }) => dataHash)).size !==
+        prepared.length
+      ) {
+        return reply.status(409).send({
+          success: false,
+          error: "The batch contains duplicate sensor evidence",
+        });
+      }
 
-          for (const reading of readings) {
-            const timestamp = reading.timestamp ? new Date(reading.timestamp) : new Date();
-            const dataHash = hashSensorData({
-              sensorId: reading.sensorId,
-              timestamp: timestamp.toISOString(),
-              co2CaptureRateKgHour: reading.co2CaptureRateKgHour,
-              energyConsumptionKwh: reading.energyConsumptionKwh,
-              co2PurityPercentage: reading.co2PurityPercentage,
-            });
-
-            hashes.push(dataHash);
-
-            const { isAnomaly, reason } = detectAnomaly({
-              co2CaptureRateKgHour: reading.co2CaptureRateKgHour,
-              energyConsumptionKwh: reading.energyConsumptionKwh,
-              co2PurityPercentage: reading.co2PurityPercentage,
-            });
-
-            if (isAnomaly) {
-              anomalyCount += 1;
-            }
-
-            state.readings.push({
-              time: timestamp.toISOString(),
-              dacUnitId: sensorIdentity.dacUnitId,
-              sensorId: reading.sensorId,
-              co2CaptureRateKgHour: reading.co2CaptureRateKgHour,
-              energyConsumptionKwh: reading.energyConsumptionKwh,
-              co2PurityPercentage: reading.co2PurityPercentage || 95,
-              ambientTemperatureC: reading.ambientTemperatureC || null,
-              ambientHumidityPercent: reading.ambientHumidityPercent || null,
-              atmosphericCo2Ppm: reading.atmosphericCo2Ppm || null,
-              dataHash,
-              isAnomaly,
-              anomalyReason: reason,
-            });
-          }
-
-          const batchHash = createHash("sha256")
-            .update(hashes.join(""))
-            .digest("hex");
-
-          return {
-            anomalyCount,
-            batchHash,
-          };
-        }
+      const evidence = prepared.map(
+        ({ reading, timestamp, dataHash, anomaly }): SensorEvidenceReading => ({
+          time: timestamp.toISOString(),
+          dacUnitId: sensorIdentity.dacUnitId,
+          sensorId: reading.sensorId,
+          co2CaptureRateKgHour: reading.co2CaptureRateKgHour,
+          energyConsumptionKwh: reading.energyConsumptionKwh,
+          measurementDurationSeconds: reading.measurementDurationSeconds,
+          co2PurityPercentage: reading.co2PurityPercentage ?? 95,
+          ambientTemperatureC: reading.ambientTemperatureC ?? null,
+          ambientHumidityPercent: reading.ambientHumidityPercent ?? null,
+          atmosphericCo2Ppm: reading.atmosphericCo2Ppm ?? null,
+          dataHash,
+          rawData: reading.rawData ?? null,
+          isAnomaly: anomaly.isAnomaly,
+          anomalyReason: anomaly.reason,
+        }),
       );
+      const inserted = await insertSensorReadings(evidence);
+      if (!inserted) {
+        return reply.status(409).send({
+          success: false,
+          error: "At least one sensor evidence item has already been accepted",
+        });
+      }
+      const batchHash = createHash("sha256")
+        .update(prepared.map(({ dataHash }) => dataHash).join(""))
+        .digest("hex");
 
       return reply.status(201).send({
         success: true,
         data: {
           processed: readings.length,
-          anomalies: batchResult.anomalyCount,
-          batchHash: `0x${batchResult.batchHash}`,
+          anomalies: prepared.filter(({ anomaly }) => anomaly.isAnomaly).length,
+          batchHash: `0x${batchHash}`,
         },
       });
-    }
+    },
   );
 
   /**
@@ -442,18 +479,13 @@ export async function sensorsRoutes(
         : new Date(Date.now() - 24 * 60 * 60 * 1000); // Last 24 hours
       const endTime = query.endTime ? new Date(query.endTime) : new Date();
 
-      // Filter readings
-      const state = await readState(SENSORS_STORE_KEY, DEFAULT_SENSORS_STATE);
-      const readings = state.readings.filter((r) => {
-        const readingTime = new Date(r.time);
-        return (
-          r.dacUnitId === params.dacUnitId &&
-          readingTime >= startTime &&
-          readingTime <= endTime
-        );
-      });
+      const summary = await summarizeSensorReadings(
+        params.dacUnitId,
+        startTime,
+        endTime,
+      );
 
-      if (readings.length === 0) {
+      if (summary.readingCount === 0) {
         return {
           success: true,
           data: {
@@ -472,23 +504,9 @@ export async function sensorsRoutes(
         };
       }
 
-      // Calculate aggregates
-      const totalCo2CapturedKg = readings.reduce(
-        (sum, r) => sum + r.co2CaptureRateKgHour,
-        0
-      );
-      const totalEnergyConsumedKwh = readings.reduce(
-        (sum, r) => sum + r.energyConsumptionKwh,
-        0
-      );
-      const avgCo2CaptureRateKgHour = totalCo2CapturedKg / readings.length;
-      const avgPurityPercentage =
-        readings.reduce((sum, r) => sum + r.co2PurityPercentage, 0) /
-        readings.length;
-      const anomalyCount = readings.filter((r) => r.isAnomaly).length;
-
-      const co2Tonnes = totalCo2CapturedKg / 1000;
-      const kwhPerTonne = co2Tonnes > 0 ? totalEnergyConsumedKwh / co2Tonnes : 0;
+      const co2Tonnes = summary.totalCo2CapturedKg / 1000;
+      const kwhPerTonne =
+        co2Tonnes > 0 ? summary.totalEnergyConsumedKwh / co2Tonnes : 0;
 
       let efficiencyRating = "N/A";
       if (kwhPerTonne > 0) {
@@ -504,16 +522,16 @@ export async function sensorsRoutes(
           dacUnitId: params.dacUnitId,
           startTime: startTime.toISOString(),
           endTime: endTime.toISOString(),
-          totalCo2CapturedKg,
-          totalEnergyConsumedKwh,
-          avgCo2CaptureRateKgHour,
-          avgPurityPercentage,
+          totalCo2CapturedKg: summary.totalCo2CapturedKg,
+          totalEnergyConsumedKwh: summary.totalEnergyConsumedKwh,
+          avgCo2CaptureRateKgHour: summary.avgCo2CaptureRateKgHour,
+          avgPurityPercentage: summary.avgPurityPercentage,
           kwhPerTonne,
           efficiencyRating,
-          readingCount: readings.length,
-          anomalyCount,
+          readingCount: summary.readingCount,
+          anomalyCount: summary.anomalyCount,
         },
       };
-    }
+    },
   );
 }

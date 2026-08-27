@@ -136,10 +136,10 @@ contract RetirementCertificate is
 
         string memory json = string(
             abi.encodePacked(
-                '{"name":"TerraQura Retirement Certificate #',
+                "{\"name\":\"TerraQura Retirement Certificate #",
                 tokenId.toString(),
-                '","description":"Proof of permanent carbon credit retirement on the TerraQura platform."',
-                ',"attributes":[',
+                "\",\"description\":\"Proof of permanent carbon credit retirement on the TerraQura platform.\"",
+                ",\"attributes\":[",
                 _buildAttributes(cert),
                 "]}"
             )
@@ -210,16 +210,64 @@ contract RetirementCertificate is
     function _buildAttributes(CertificateData memory cert) internal pure returns (string memory) {
         return string(
             abi.encodePacked(
-                '{"trait_type":"Retirement ID","value":"', cert.retirementId.toString(), '"}',
-                ',{"trait_type":"Credit ID","value":"', cert.creditId.toString(), '"}',
-                ',{"trait_type":"Amount (tonnes CO2)","value":"', cert.amount.toString(), '"}',
-                ',{"trait_type":"Beneficiary","value":"', cert.beneficiary, '"}',
-                ',{"trait_type":"Reason","value":"', cert.reason, '"}',
-                ',{"trait_type":"Timestamp","value":"', cert.timestamp.toString(), '"}',
-                ',{"trait_type":"Methodology","value":"', cert.methodology, '"}',
-                ',{"trait_type":"Vintage","value":"', cert.vintage, '"}'
+                "{\"trait_type\":\"Retirement ID\",\"value\":\"", cert.retirementId.toString(), "\"}",
+                ",{\"trait_type\":\"Credit ID\",\"value\":\"", cert.creditId.toString(), "\"}",
+                ",{\"trait_type\":\"Amount (tonnes CO2)\",\"value\":\"", cert.amount.toString(), "\"}",
+                ",{\"trait_type\":\"Beneficiary\",\"value\":\"", _escapeJson(cert.beneficiary), "\"}",
+                ",{\"trait_type\":\"Reason\",\"value\":\"", _escapeJson(cert.reason), "\"}",
+                ",{\"trait_type\":\"Timestamp\",\"value\":\"", cert.timestamp.toString(), "\"}",
+                ",{\"trait_type\":\"Methodology\",\"value\":\"", _escapeJson(cert.methodology), "\"}",
+                ",{\"trait_type\":\"Vintage\",\"value\":\"", _escapeJson(cert.vintage), "\"}"
             )
         );
+    }
+
+    function _escapeJson(string memory value) internal pure returns (string memory) {
+        bytes memory input = bytes(value);
+        bytes memory buffer = new bytes(input.length * 6);
+        uint256 length;
+
+        for (uint256 i = 0; i < input.length; i++) {
+            bytes1 character = input[i];
+            if (character == 0x22 || character == 0x5c) {
+                buffer[length++] = 0x5c;
+                buffer[length++] = character;
+            } else if (character == 0x08) {
+                buffer[length++] = 0x5c;
+                buffer[length++] = 0x62;
+            } else if (character == 0x09) {
+                buffer[length++] = 0x5c;
+                buffer[length++] = 0x74;
+            } else if (character == 0x0a) {
+                buffer[length++] = 0x5c;
+                buffer[length++] = 0x6e;
+            } else if (character == 0x0c) {
+                buffer[length++] = 0x5c;
+                buffer[length++] = 0x66;
+            } else if (character == 0x0d) {
+                buffer[length++] = 0x5c;
+                buffer[length++] = 0x72;
+            } else if (uint8(character) < 0x20) {
+                buffer[length++] = 0x5c;
+                buffer[length++] = 0x75;
+                buffer[length++] = 0x30;
+                buffer[length++] = 0x30;
+                buffer[length++] = _jsonHexDigit(uint8(character) >> 4);
+                buffer[length++] = _jsonHexDigit(uint8(character) & 0x0f);
+            } else {
+                buffer[length++] = character;
+            }
+        }
+
+        bytes memory escaped = new bytes(length);
+        for (uint256 i = 0; i < length; i++) {
+            escaped[i] = buffer[i];
+        }
+        return string(escaped);
+    }
+
+    function _jsonHexDigit(uint8 value) internal pure returns (bytes1) {
+        return value < 10 ? bytes1(value + 0x30) : bytes1(value + 0x57);
     }
 
     /**

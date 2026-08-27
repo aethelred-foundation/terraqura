@@ -71,7 +71,7 @@ contract TerraQuraAccessControl is
         KycStatus status;
         uint256 verifiedAt;
         uint256 expiresAt;
-        string provider; // sumsub, onfido, etc.
+        string provider; // Identity-verification provider identifier
         bytes32 applicantIdHash; // Hashed for privacy
         bool sanctionsCleared;
     }
@@ -186,6 +186,39 @@ contract TerraQuraAccessControl is
         });
 
         emit KycStatusUpdated(account, status, provider, expiresAt);
+    }
+
+    /**
+     * @notice Atomically update identity and sanctions status for a wallet.
+     * @dev Used by the managed compliance service after a signed provider
+     * webhook has been validated.
+     */
+    function updateComplianceStatus(
+        address account,
+        KycStatus status,
+        string calldata provider,
+        bytes32 applicantIdHash,
+        bool sanctionsCleared
+    ) external onlyRole(COMPLIANCE_ROLE) {
+        if (bytes(provider).length == 0 && status == KycStatus.VERIFIED) {
+            revert InvalidKycProvider();
+        }
+
+        uint256 expiresAt = status == KycStatus.VERIFIED
+            ? block.timestamp + kycValidityPeriod
+            : 0;
+
+        kycRegistry[account] = KycInfo({
+            status: status,
+            verifiedAt: status == KycStatus.VERIFIED ? block.timestamp : 0,
+            expiresAt: expiresAt,
+            provider: provider,
+            applicantIdHash: applicantIdHash,
+            sanctionsCleared: sanctionsCleared
+        });
+
+        emit KycStatusUpdated(account, status, provider, expiresAt);
+        emit SanctionsStatusUpdated(account, sanctionsCleared);
     }
 
     /**
@@ -323,6 +356,18 @@ contract TerraQuraAccessControl is
     }
 
     /**
+     * @notice Grant a permanent role and clear any stale expiration metadata
+     * @dev Ensures expired role state cannot survive a standard re-grant.
+     */
+    function grantRole(
+        bytes32 role,
+        address account
+    ) public override {
+        super.grantRole(role, account);
+        delete roleExpiration[role][account];
+    }
+
+    /**
      * @notice Check if role has expired for an account
      * @param role The role to check
      * @param account The account to check
@@ -342,7 +387,7 @@ contract TerraQuraAccessControl is
      * @return True if account has the role and it hasn't expired
      */
     function hasValidRole(bytes32 role, address account) public view returns (bool) {
-        return hasRole(role, account) && !isRoleExpired(role, account);
+        return hasRole(role, account);
     }
 
     /**
@@ -354,8 +399,8 @@ contract TerraQuraAccessControl is
         if (!isRoleExpired(role, account)) {
             revert RoleExpired(role, account); // Reusing error - role is NOT expired
         }
-        _revokeRole(role, account);
         delete roleExpiration[role][account];
+        _revokeRole(role, account);
     }
 
     /**
@@ -377,6 +422,28 @@ contract TerraQuraAccessControl is
     }
 
     /**
+     * @notice Revoke a role and clear any associated expiration state
+     */
+    function revokeRole(
+        bytes32 role,
+        address account
+    ) public override {
+        delete roleExpiration[role][account];
+        super.revokeRole(role, account);
+    }
+
+    /**
+     * @notice Renounce a role and clear any associated expiration state
+     */
+    function renounceRole(
+        bytes32 role,
+        address account
+    ) public override {
+        delete roleExpiration[role][account];
+        super.renounceRole(role, account);
+    }
+
+    /**
      * @notice Check if account has role and is KYC verified
      */
     function hasRoleAndKyc(
@@ -384,6 +451,16 @@ contract TerraQuraAccessControl is
         address account
     ) external view returns (bool) {
         return hasRole(role, account) && isKycVerified(account);
+    }
+
+    /**
+     * @notice AccessControl role checks fail closed once the grant has expired
+     */
+    function hasRole(
+        bytes32 role,
+        address account
+    ) public view override returns (bool) {
+        return super.hasRole(role, account) && !isRoleExpired(role, account);
     }
 
     // ============================================

@@ -1,9 +1,12 @@
-import { createHmac, randomBytes } from "crypto";
+import { createHmac, randomBytes, randomUUID } from "node:crypto";
 
 import { FastifyInstance, FastifyPluginOptions } from "fastify";
 import { z } from "zod";
 
-import { bearerAuthRateLimit, verifyBearerAuth } from "../../lib/bearer-auth.js";
+import {
+  bearerAuthRateLimit,
+  verifyBearerAuth,
+} from "../../lib/bearer-auth.js";
 import { mutateState, readState } from "../../lib/state-store.js";
 
 const WebhookEventType = z.enum([
@@ -97,7 +100,7 @@ function signPayload(payload: string, signingKey: string): string {
 
 export async function webhooksRoutes(
   fastify: FastifyInstance,
-  _options: FastifyPluginOptions
+  _options: FastifyPluginOptions,
 ) {
   // POST /v1/webhooks — Register a webhook
   fastify.post(
@@ -187,7 +190,7 @@ export async function webhooksRoutes(
         WEBHOOKS_STORE_KEY,
         DEFAULT_WEBHOOKS_STATE,
         async (state) => {
-          const id = `wh_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+          const id = `wh_${randomUUID()}`;
           const nowIso = new Date().toISOString();
 
           const created: StoredWebhook = {
@@ -200,7 +203,8 @@ export async function webhooksRoutes(
             signingKey,
             retryConfig: {
               maxRetries: body.retryConfig?.maxRetries ?? 3,
-              backoffMultiplierMs: body.retryConfig?.backoffMultiplierMs ?? 1000,
+              backoffMultiplierMs:
+                body.retryConfig?.backoffMultiplierMs ?? 1000,
             },
             isActive: true,
             createdAt: nowIso,
@@ -212,7 +216,7 @@ export async function webhooksRoutes(
 
           state.webhooks[id] = created;
           return created;
-        }
+        },
       );
 
       return reply.status(201).send({
@@ -226,7 +230,7 @@ export async function webhooksRoutes(
           createdAt: webhook.createdAt,
         },
       });
-    }
+    },
   );
 
   // GET /v1/webhooks — List registered webhooks
@@ -236,7 +240,8 @@ export async function webhooksRoutes(
       schema: {
         tags: ["Webhooks"],
         summary: "List registered webhooks",
-        description: "Returns all webhooks registered by the authenticated user",
+        description:
+          "Returns all webhooks registered by the authenticated user",
         security: [{ bearerAuth: [] }],
         querystring: {
           type: "object",
@@ -307,7 +312,7 @@ export async function webhooksRoutes(
 
       const state = await readState(WEBHOOKS_STORE_KEY, DEFAULT_WEBHOOKS_STATE);
       let webhooks = Object.values(state.webhooks).filter(
-        (wh) => wh.userId === userId
+        (wh) => wh.userId === userId,
       );
 
       if (query.isActive !== undefined) {
@@ -316,7 +321,7 @@ export async function webhooksRoutes(
 
       webhooks.sort(
         (a, b) =>
-          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
       );
 
       const total = webhooks.length;
@@ -339,7 +344,7 @@ export async function webhooksRoutes(
         })),
         pagination: { total, limit, offset },
       };
-    }
+    },
   );
 
   // DELETE /v1/webhooks/:id — Remove a webhook
@@ -425,7 +430,7 @@ export async function webhooksRoutes(
           webhooks.delete(params.id);
           state.webhooks = Object.fromEntries(webhooks);
           return { kind: "success" as const };
-        }
+        },
       );
 
       if (result.kind === "not_found") {
@@ -449,7 +454,7 @@ export async function webhooksRoutes(
           deletedAt: new Date().toISOString(),
         },
       };
-    }
+    },
   );
 
   // POST /v1/webhooks/:id/test — Send a test event
@@ -552,7 +557,7 @@ export async function webhooksRoutes(
 
       const payloadJson = JSON.stringify(testPayload);
       const signature = signPayload(payloadJson, webhook.signingKey);
-      const deliveryId = `del_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      const deliveryId = `del_${randomUUID()}`;
 
       await mutateState(
         WEBHOOKS_STORE_KEY,
@@ -579,7 +584,7 @@ export async function webhooksRoutes(
             lastAttemptAt: new Date().toISOString(),
             createdAt: new Date().toISOString(),
           });
-        }
+        },
       );
 
       return {
@@ -593,6 +598,6 @@ export async function webhooksRoutes(
           note: "Test event generated. In production, this payload would be POSTed to your webhook URL with the X-TerraQura-Signature header.",
         },
       };
-    }
+    },
   );
 }

@@ -10,6 +10,11 @@
 
 @layer base {
   :root {
+    /* System font stacks avoid external font requests and build-time fetches. */
+    --font-space-grotesk: "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    --font-inter: Inter, "SF Pro Text", "Segoe UI", system-ui, sans-serif;
+    --font-jetbrains: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+
     /* Core Colors - Refined Dark Theme */
     --background: 220 30% 2%;
     --foreground: 210 40% 98%;

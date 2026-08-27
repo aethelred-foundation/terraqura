@@ -54,10 +54,16 @@ export function RiskDisclaimer({
         <div className="flex items-start gap-3">
           <WarningIcon className="mt-0.5 h-5 w-5 flex-shrink-0 text-amber-400" />
           <div>
-            <h4 className="font-medium text-amber-200">Important Risk Disclosure</h4>
+            <h4 className="font-medium text-amber-200">
+              Important Risk Disclosure
+            </h4>
             <ul className="mt-2 space-y-1 text-sm text-amber-200/70">
-              <li>• Carbon Credit Tokens (CCTs) are volatile environmental assets</li>
-              <li>• CCTs are NOT investment securities or financial instruments</li>
+              <li>
+                • Carbon Credit Tokens (CCTs) are volatile environmental assets
+              </li>
+              <li>
+                • CCTs are NOT investment securities or financial instruments
+              </li>
               <li>• Market prices can fluctuate significantly</li>
               <li>• Past performance does not indicate future results</li>
               <li>• Only trade with capital you can afford to lose</li>
@@ -81,12 +87,13 @@ export function RiskDisclaimer({
               <p className="mt-1">
                 Carbon Credit Tokens ("CCTs") are volatile environmental assets
                 and are NOT investment securities, financial instruments, or
-                regulated products. The value of CCTs may fluctuate significantly
-                and you may lose some or all of your investment. Past performance
-                is not indicative of future results. Trading in CCTs involves
-                substantial risk and is not suitable for all investors. You should
-                not invest more than you can afford to lose. Please consult a
-                qualified financial advisor before making any trading decisions.
+                regulated products. The value of CCTs may fluctuate
+                significantly and you may lose some or all of your investment.
+                Past performance is not indicative of future results. Trading in
+                CCTs involves substantial risk and is not suitable for all
+                investors. You should not invest more than you can afford to
+                lose. Please consult a qualified financial advisor before making
+                any trading decisions.
               </p>
             </div>
           </div>
@@ -147,18 +154,24 @@ export function TransactionRiskModal({
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4">
       <div className="w-full max-w-md rounded-2xl bg-gray-900 shadow-2xl">
         <div className="border-b border-gray-700 px-6 py-4">
-          <h3 className="text-lg font-bold text-white">Confirm {actionText[action]}</h3>
+          <h3 className="text-lg font-bold text-white">
+            Confirm {actionText[action]}
+          </h3>
         </div>
 
         <div className="p-6">
           <div className="mb-4 rounded-lg bg-gray-800 p-4">
             <div className="flex justify-between text-sm">
               <span className="text-gray-400">Action</span>
-              <span className="font-medium text-white">{actionText[action]}</span>
+              <span className="font-medium text-white">
+                {actionText[action]}
+              </span>
             </div>
             <div className="mt-2 flex justify-between text-sm">
               <span className="text-gray-400">Amount</span>
-              <span className="font-medium text-white">{amount} tonnes CO2</span>
+              <span className="font-medium text-white">
+                {amount} tonnes CO2
+              </span>
             </div>
             <div className="mt-2 flex justify-between text-sm">
               <span className="text-gray-400">Token ID</span>
@@ -176,7 +189,8 @@ export function TransactionRiskModal({
                 className="mt-1 h-4 w-4 rounded border-gray-600 bg-gray-700 text-emerald-500"
               />
               <span className="text-sm text-gray-300">
-                I understand and accept the risks associated with this transaction
+                I understand and accept the risks associated with this
+                transaction
               </span>
             </label>
           </div>

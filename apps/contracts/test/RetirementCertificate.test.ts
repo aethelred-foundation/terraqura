@@ -203,6 +203,36 @@ describe("RetirementCertificate", function () {
       expect(findTrait("Methodology").value).to.equal("DAC");
     });
 
+    it("should preserve valid JSON when certificate fields contain control characters", async function () {
+      const { certificate, owner } = await loadFixture(deployFixture);
+      await certificate.setRetirementContract(owner.address);
+      await certificate.mint(owner.address, 1n, {
+        retirementId: 1n,
+        creditId: CREDIT_ID_1,
+        amount: 500n,
+        beneficiary: 'Client "North"\\Division',
+        reason: "Line one\nLine two",
+        timestamp: 1n,
+        methodology: "DAC",
+        vintage: "2026",
+      });
+
+      const uri = await certificate.tokenURI(1n);
+      const encoded = uri.replace("data:application/json;base64,", "");
+      const metadata = JSON.parse(
+        Buffer.from(encoded, "base64").toString("utf-8")
+      );
+      const findTrait = (name: string) =>
+        metadata.attributes.find(
+          (attribute: { trait_type: string }) => attribute.trait_type === name
+        );
+
+      expect(findTrait("Beneficiary").value).to.equal(
+        'Client "North"\\Division'
+      );
+      expect(findTrait("Reason").value).to.equal("Line one\nLine two");
+    });
+
     it("should revert tokenURI for non-existent token", async function () {
       const { certificate } = await loadFixture(deployFixture);
 

@@ -1,6 +1,6 @@
-'use client';
+"use client";
 
-import { useState, useEffect, Suspense, type ComponentType } from 'react';
+import { useState, useEffect, Suspense, type ComponentType } from "react";
 
 function LoadingSpinner() {
   return (
@@ -17,7 +17,11 @@ function LoadingSpinner() {
  * Client-only page wrapper. Defers content import until after hydration
  * so wagmi/RainbowKit hooks are available via WagmiProvider.
  */
-export function ClientPage({ loader }: { loader: () => Promise<ComponentType> }) {
+export function ClientPage({
+  loader,
+}: {
+  loader: () => Promise<ComponentType>;
+}) {
   const [Component, setComponent] = useState<ComponentType | null>(null);
 
   useEffect(() => {

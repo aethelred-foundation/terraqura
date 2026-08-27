@@ -8,6 +8,7 @@ import "@openzeppelin/contracts-upgradeable/security/ReentrancyGuardUpgradeable.
 import "@openzeppelin/contracts-upgradeable/proxy/utils/Initializable.sol";
 import "@openzeppelin/contracts-upgradeable/proxy/utils/UUPSUpgradeable.sol";
 import "../interfaces/ICarbonCredit.sol";
+import "../interfaces/ICircuitBreaker.sol";
 import "../interfaces/IVerificationEngine.sol";
 
 /**
@@ -115,6 +116,11 @@ contract CarbonCredit is
      */
     mapping(uint256 => uint256) private _tokenTotalSupply;
 
+    /**
+     * @notice Circuit breaker emergency control
+     */
+    ICircuitBreaker public circuitBreaker;
+
     // ============ Events ============
 
     /**
@@ -169,6 +175,8 @@ contract CarbonCredit is
         uint256 timestamp
     );
 
+    event CircuitBreakerUpdated(address indexed previousCircuitBreaker, address indexed newCircuitBreaker);
+
     // ============ Errors ============
 
     error UnauthorizedMinter();
@@ -183,6 +191,10 @@ contract CarbonCredit is
     error InsufficientBufferBalance();
     error ReversalAmountExceedsBuffer();
     error InvalidReversalAmount();
+    error InvalidCircuitBreaker();
+    error CircuitBreakerBlocked();
+    error CircuitBreakerRateLimited();
+    error CircuitBreakerVolumeExceeded();
 
     // ============ Modifiers ============
 
@@ -261,6 +273,8 @@ if (_owner != msg.sender) {
         nonReentrant
         returns (uint256 tokenId)
     {
+        _enforceCircuitBreakerPreflight();
+
         // Validate inputs
         if (bytes(ipfsMetadataUri).length == 0) {
             revert EmptyMetadataUri();
@@ -306,6 +320,8 @@ if (_owner != msg.sender) {
 
         // Calculate adjusted credit amount based on Net-Negative efficiency factor
         uint256 creditsToMint = (co2AmountKg * efficiencyFactor) / SCALE;
+
+        _enforceCircuitBreakerVolume(creditsToMint);
 
         // Store metadata (v3.0.0: includes gridIntensity)
         _creditMetadata[tokenId] = CreditMetadata({
@@ -384,6 +400,8 @@ if (_owner != msg.sender) {
         uint256 amount,
         string calldata reason
     ) external override whenNotPaused nonReentrant {
+        _enforceCircuitBreaker(amount);
+
         // Check balance
         if (balanceOf(msg.sender, tokenId) < amount) {
             revert InsufficientBalance();
@@ -489,6 +507,20 @@ if (_owner != msg.sender) {
     }
 
     /**
+     * @notice Configure the circuit breaker contract used for runtime safety checks
+     */
+    function setCircuitBreaker(address newCircuitBreaker) external onlyOwner {
+        if (newCircuitBreaker == address(0)) {
+            revert InvalidCircuitBreaker();
+        }
+
+        address previousCircuitBreaker = address(circuitBreaker);
+        circuitBreaker = ICircuitBreaker(newCircuitBreaker);
+
+        emit CircuitBreakerUpdated(previousCircuitBreaker, newCircuitBreaker);
+    }
+
+    /**
      * @notice Pause the contract
      */
     function pause() external onlyOwner {
@@ -554,6 +586,8 @@ if (_owner != msg.sender) {
         address releaseTo,
         string calldata reason
     ) external onlyOwner whenNotPaused nonReentrant {
+        _enforceCircuitBreaker(amount);
+
         if (amount == 0) revert InsufficientBalance();
         if (bufferPoolBalance[tokenId] < amount) {
             revert InsufficientBufferBalance();
@@ -593,6 +627,8 @@ if (_owner != msg.sender) {
         uint256 amountToBurn,
         string calldata reason
     ) external onlyOwner whenNotPaused nonReentrant {
+        _enforceCircuitBreaker(amountToBurn);
+
         if (amountToBurn == 0) revert InvalidReversalAmount();
         if (bufferPoolBalance[tokenId] < amountToBurn) {
             revert ReversalAmountExceedsBuffer();
@@ -664,6 +700,36 @@ if (_owner != msg.sender) {
      */
     function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
+    function _enforceCircuitBreakerPreflight() internal {
+        address breaker = address(circuitBreaker);
+        if (breaker == address(0)) {
+            return;
+        }
+
+        if (!circuitBreaker.isOperationAllowed(address(this))) {
+            revert CircuitBreakerBlocked();
+        }
+        if (!circuitBreaker.checkRateLimit(address(this))) {
+            revert CircuitBreakerRateLimited();
+        }
+    }
+
+    function _enforceCircuitBreakerVolume(uint256 volume) internal {
+        address breaker = address(circuitBreaker);
+        if (breaker == address(0) || volume == 0) {
+            return;
+        }
+
+        if (!circuitBreaker.checkVolumeLimit(address(this), volume)) {
+            revert CircuitBreakerVolumeExceeded();
+        }
+    }
+
+    function _enforceCircuitBreaker(uint256 volume) internal {
+        _enforceCircuitBreakerPreflight();
+        _enforceCircuitBreakerVolume(volume);
+    }
+
     // ============ View Functions ============
 
     /**
@@ -730,6 +796,17 @@ if (_owner != msg.sender) {
 
         address sender = msg.sender;
         uint256 totalRetired = 0;
+
+        for (uint256 i = 0; i < len; ) {
+            unchecked {
+                totalRetired += amounts[i];
+                ++i;
+            }
+        }
+
+        _enforceCircuitBreaker(totalRetired);
+
+        totalRetired = 0;
 
         for (uint256 i = 0; i < len; ) {
             uint256 tokenId = tokenIds[i];

@@ -7,6 +7,11 @@
     "noUnusedLocals": false,
     "noUnusedParameters": false
   },
-  "include": ["./scripts", "./test", "./typechain-types", "./hardhat.config.ts", "./defender.config.ts"],
-  "files": ["./hardhat.config.ts", "./defender.config.ts"]
+  "include": [
+    "./scripts",
+    "./test",
+    "./typechain-types",
+    "./hardhat.config.ts"
+  ],
+  "files": ["./hardhat.config.ts"]
 }

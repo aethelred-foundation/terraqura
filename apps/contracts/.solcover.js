@@ -34,14 +34,14 @@
 module.exports = {
   skipFiles: [
     // Test utilities - not production code
-    'mocks/AccessControlTestHelper.sol',
-    'mocks/MockChainlinkRouter.sol',
-    'mocks/MockERC1155.sol',
-    'mocks/MockFunctionsRouter.sol',
-    'mocks/ModifierTestContract.sol',
-    'mocks/GaslessHarness.sol',
-    'mocks/SilentReverter.sol',
-    'mocks/MintRejector.sol',
+    "mocks/AccessControlTestHelper.sol",
+    "mocks/MockChainlinkRouter.sol",
+    "mocks/MockERC1155.sol",
+    "mocks/MockFunctionsRouter.sol",
+    "mocks/ModifierTestContract.sol",
+    "mocks/GaslessHarness.sol",
+    "mocks/SilentReverter.sol",
+    "mocks/MintRejector.sol",
     // Keep EfficiencyCalculatorTest as it's used for testing the library
   ],
   mocha: {

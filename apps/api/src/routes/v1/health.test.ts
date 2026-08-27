@@ -1,16 +1,21 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-
 import {
-  createTestServer,
-  resetStateStore,
-} from "../../../test/helpers.js";
+  afterAll,
+  afterEach,
+  beforeAll,
+  describe,
+  expect,
+  it,
+  vi,
+} from "vitest";
+
+import { createTestServer, resetStateStore } from "../../../test/helpers.js";
+
 import type { FastifyInstance } from "fastify";
 
 // ---------------------------------------------------------------------------
 // Mock fetch for blockchain check and mock pg Pool for database check
 // ---------------------------------------------------------------------------
 
-let databaseCheckResult = true;
 let blockchainCheckResult = true;
 
 // The health route creates its own Pool inline, so we control it via the pg mock
@@ -26,7 +31,7 @@ vi.stubGlobal(
     return {
       ok: true,
       json: async () => ({
-        result: "0x" + (78432).toString(16),
+        result: `0x${(7332).toString(16)}`,
       }),
     };
   }),
@@ -100,7 +105,6 @@ describe("GET /v1/health/ready", () => {
 
   afterEach(() => {
     resetStateStore();
-    databaseCheckResult = true;
     blockchainCheckResult = true;
   });
 

@@ -7,3 +7,5 @@ export * from "./sensor.js";
 export * from "./verification.js";
 export * from "./compliance.js";
 export * from "./marketplace.js";
+export * from "./legal.js";
+export * from "./public-testnet-rpc-policy.js";

@@ -56,9 +56,9 @@ describe("GaslessMarketplace", function () {
             expect(await marketplace.hasRole(ADMIN_ROLE, accessControl.address)).to.be.true;
         });
 
-        it("should set default admin role to deployer", async function () {
+        it("should assign default admin role to the configured governance address", async function () {
             const DEFAULT_ADMIN_ROLE = await marketplace.DEFAULT_ADMIN_ROLE();
-            expect(await marketplace.hasRole(DEFAULT_ADMIN_ROLE, owner.address)).to.be.true;
+            expect(await marketplace.hasRole(DEFAULT_ADMIN_ROLE, accessControl.address)).to.be.true;
         });
 
         it("should support ERC1155 receiver interface", async function () {
@@ -71,6 +71,18 @@ describe("GaslessMarketplace", function () {
             // AccessControl interface ID
             const ACCESS_CONTROL_INTERFACE = "0x7965db0b";
             expect(await marketplace.supportsInterface(ACCESS_CONTROL_INTERFACE)).to.be.true;
+        });
+
+        it("should reject an EOA as the trusted forwarder", async function () {
+            const MarketplaceFactory = await ethers.getContractFactory("GaslessMarketplace");
+
+            await expect(
+                upgrades.deployProxy(
+                    MarketplaceFactory,
+                    [accessControl.address, await mockToken.getAddress(), unauthorized.address],
+                    { initializer: "initialize" }
+                )
+            ).to.be.revertedWithCustomError(MarketplaceFactory, "InvalidTrustedForwarder");
         });
     });
 

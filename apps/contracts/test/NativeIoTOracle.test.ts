@@ -497,6 +497,27 @@ describe("NativeIoTOracle", function () {
       expect(total).to.equal(0);
       expect(entries.length).to.equal(0);
     });
+
+    it("should cap retained history and keep the most recent readings", async function () {
+      await oracle.connect(oracleAdmin).setMaxHistoryPerDevice(3);
+
+      for (let i = 6; i <= 8; i++) {
+        await oracle.connect(oracleNode).pushSensorData(
+          DAC_ID,
+          ethers.parseUnits(String(i * 10), 18),
+          ethers.parseUnits(String(i * 5), 18),
+          false,
+          `ipfs://QmReading${i}`
+        );
+      }
+
+      const [entries, total] = await oracle.getDataHistory(DAC_ID, 0, 10);
+      expect(total).to.equal(3);
+      expect(entries.length).to.equal(3);
+      expect(entries[0].co2Captured).to.equal(ethers.parseUnits("60", 18));
+      expect(entries[1].co2Captured).to.equal(ethers.parseUnits("70", 18));
+      expect(entries[2].co2Captured).to.equal(ethers.parseUnits("80", 18));
+    });
   });
 
   // ============================================

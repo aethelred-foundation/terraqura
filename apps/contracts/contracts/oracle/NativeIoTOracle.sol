@@ -78,6 +78,9 @@ contract NativeIoTOracle is
     /// @notice Historical sensor readings per device (append-only ring buffer)
     mapping(string => SensorData[]) private _dataHistory;
 
+    /// @notice Logical start index for capped per-device history windows
+    mapping(string => uint256) private _historyStartIndex;
+
     /// @notice Maximum historical entries per device (0 = unlimited)
     uint256 public maxHistoryPerDevice;
 
@@ -385,7 +388,7 @@ contract NativeIoTOracle is
         uint256 limit
     ) external view returns (SensorData[] memory entries, uint256 total) {
         SensorData[] storage history = _dataHistory[dacId];
-        total = history.length;
+        total = _effectiveHistoryLength(history.length);
 
         if (offset >= total || limit == 0) {
             return (new SensorData[](0), total);
@@ -397,7 +400,8 @@ contract NativeIoTOracle is
 
         entries = new SensorData[](count);
         for (uint256 i = 0; i < count; ) {
-            entries[i] = history[offset + i];
+            uint256 actualIndex = _historyIndexForRead(dacId, history.length, offset + i, total);
+            entries[i] = history[actualIndex];
             unchecked { ++i; }
         }
     }
@@ -410,7 +414,7 @@ contract NativeIoTOracle is
     function getHistoryCount(
         string calldata dacId
     ) external view returns (uint256 count) {
-        return _dataHistory[dacId].length;
+        return _effectiveHistoryLength(_dataHistory[dacId].length);
     }
 
     /**
@@ -552,17 +556,7 @@ contract NativeIoTOracle is
         // Store latest reading
         _latestData[dacId] = reading;
 
-        // Append to history (with optional ring buffer behavior)
-        SensorData[] storage history = _dataHistory[dacId];
-        if (maxHistoryPerDevice > 0 && history.length >= maxHistoryPerDevice) {
-            // Shift-and-overwrite: move last entry to oldest position is gas-expensive
-            // Instead, we pop from front by shifting index logic in getDataHistory.
-            // For simplicity in v2, we just push and rely on maxHistoryPerDevice
-            // being large enough. A future version can implement a circular buffer.
-            history.push(reading);
-        } else {
-            history.push(reading);
-        }
+        _appendHistory(dacId, reading);
 
         // Increment global counter
         unchecked { ++totalSubmissions; }
@@ -614,9 +608,80 @@ contract NativeIoTOracle is
         }
     }
 
+    function _appendHistory(
+        string calldata dacId,
+        SensorData memory reading
+    ) internal {
+        SensorData[] storage history = _dataHistory[dacId];
+
+        if (maxHistoryPerDevice == 0) {
+            history.push(reading);
+            return;
+        }
+
+        if (history.length < maxHistoryPerDevice) {
+            history.push(reading);
+            return;
+        }
+
+        if (history.length > maxHistoryPerDevice) {
+            _compactHistoryToCap(history, maxHistoryPerDevice);
+            _historyStartIndex[dacId] = 0;
+        }
+
+        uint256 overwriteIndex = _historyStartIndex[dacId];
+        history[overwriteIndex] = reading;
+        _historyStartIndex[dacId] = (overwriteIndex + 1) % maxHistoryPerDevice;
+    }
+
+    function _compactHistoryToCap(
+        SensorData[] storage history,
+        uint256 cap
+    ) internal {
+        uint256 keepStart = history.length - cap;
+
+        for (uint256 i = 0; i < cap; ) {
+            history[i] = history[keepStart + i];
+            unchecked { ++i; }
+        }
+
+        for (uint256 currentLength = history.length; currentLength > cap; ) {
+            history.pop();
+            unchecked { --currentLength; }
+        }
+    }
+
+    function _effectiveHistoryLength(uint256 rawLength) internal view returns (uint256) {
+        if (maxHistoryPerDevice == 0 || rawLength <= maxHistoryPerDevice) {
+            return rawLength;
+        }
+        return maxHistoryPerDevice;
+    }
+
+    function _historyIndexForRead(
+        string calldata dacId,
+        uint256 rawLength,
+        uint256 logicalIndex,
+        uint256 effectiveLength
+    ) internal view returns (uint256) {
+        if (maxHistoryPerDevice == 0) {
+            return logicalIndex;
+        }
+
+        if (rawLength > maxHistoryPerDevice) {
+            return rawLength - effectiveLength + logicalIndex;
+        }
+
+        if (effectiveLength == 0) {
+            return 0;
+        }
+
+        return (_historyStartIndex[dacId] + logicalIndex) % effectiveLength;
+    }
+
     // ============================================
     // STORAGE GAP (for future upgrades)
     // ============================================
 
-    uint256[40] private __gap;
+    uint256[39] private __gap;
 }

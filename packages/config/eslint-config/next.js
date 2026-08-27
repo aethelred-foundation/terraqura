@@ -10,7 +10,13 @@ module.exports = {
     "plugin:jsx-a11y/recommended",
     "next",
   ],
-  plugins: ["@typescript-eslint", "react", "react-hooks", "jsx-a11y", "only-warn"],
+  plugins: [
+    "@typescript-eslint",
+    "react",
+    "react-hooks",
+    "jsx-a11y",
+    "only-warn",
+  ],
   parserOptions: {
     ecmaVersion: "latest",
     sourceType: "module",

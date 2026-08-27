@@ -1,23 +1,75 @@
-import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
+import { createHash } from "crypto";
+
+import {
+  afterAll,
+  afterEach,
+  beforeAll,
+  beforeEach,
+  describe,
+  expect,
+  it,
+} from "vitest";
 
 import {
   createTestServer,
   generateAuthToken,
+  makeDacUnit,
   makeSensorReading,
   makeVerification,
   resetStateStore,
   seedState,
 } from "../../../test/helpers.js";
+
 import type { FastifyInstance } from "fastify";
 
 const SENSORS_STORE_KEY = "sensors:v1";
 const VERIFICATIONS_STORE_KEY = "verification:v1";
+const DAC_UNITS_STORE_KEY = "dac-units:v1";
+
+function buildVerificationDatasetHash(
+  dacUnitId: string,
+  readings: Array<{ time: string; sensorId: string; dataHash: string }>,
+) {
+  const digest = createHash("sha256");
+  digest.update(dacUnitId.toLowerCase());
+
+  const sorted = [...readings].sort((left, right) => {
+    const timeOrder = left.time.localeCompare(right.time);
+    if (timeOrder !== 0) {
+      return timeOrder;
+    }
+
+    return left.sensorId.localeCompare(right.sensorId);
+  });
+
+  for (const reading of sorted) {
+    digest.update("|");
+    digest.update(reading.time);
+    digest.update("|");
+    digest.update(reading.sensorId);
+    digest.update("|");
+    digest.update(reading.dataHash.toLowerCase());
+  }
+
+  return `0x${digest.digest("hex")}`;
+}
 
 describe("Verification routes", () => {
   let server: FastifyInstance;
 
   beforeAll(async () => {
     server = await createTestServer();
+  });
+
+  beforeEach(() => {
+    seedState(DAC_UNITS_STORE_KEY, {
+      units: {
+        "dac-unit-001": makeDacUnit({
+          id: "dac-unit-001",
+          status: "active",
+        }),
+      },
+    });
   });
 
   afterEach(() => {
@@ -80,6 +132,75 @@ describe("Verification routes", () => {
       expect(response.statusCode).toBe(401);
     });
 
+    it("returns 403 when KYC is not approved", async () => {
+      const token = generateAuthToken(server, { kycStatus: "pending" });
+      const response = await server.inject({
+        method: "POST",
+        url: "/v1/verification/initiate",
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          dacUnitId: "dac-unit-001",
+          startTime: "2026-01-15T00:00:00.000Z",
+          endTime: "2026-01-16T00:00:00.000Z",
+        },
+      });
+
+      expect(response.statusCode).toBe(403);
+    });
+
+    it("returns 403 when caller does not operate the DAC unit", async () => {
+      seedState(DAC_UNITS_STORE_KEY, {
+        units: {
+          "dac-unit-001": makeDacUnit({
+            id: "dac-unit-001",
+            status: "active",
+            operatorWallet: "0xbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+          }),
+        },
+      });
+
+      const token = generateAuthToken(server, {
+        address: "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      });
+      const response = await server.inject({
+        method: "POST",
+        url: "/v1/verification/initiate",
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          dacUnitId: "dac-unit-001",
+          startTime: "2026-01-15T00:00:00.000Z",
+          endTime: "2026-01-16T00:00:00.000Z",
+        },
+      });
+
+      expect(response.statusCode).toBe(403);
+    });
+
+    it("returns 409 when the DAC unit is not active", async () => {
+      seedState(DAC_UNITS_STORE_KEY, {
+        units: {
+          "dac-unit-001": makeDacUnit({
+            id: "dac-unit-001",
+            status: "pending",
+          }),
+        },
+      });
+
+      const token = generateAuthToken(server);
+      const response = await server.inject({
+        method: "POST",
+        url: "/v1/verification/initiate",
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          dacUnitId: "dac-unit-001",
+          startTime: "2026-01-15T00:00:00.000Z",
+          endTime: "2026-01-16T00:00:00.000Z",
+        },
+      });
+
+      expect(response.statusCode).toBe(409);
+    });
+
     it("returns 400 when endTime is before startTime", async () => {
       const token = generateAuthToken(server);
       const response = await server.inject({
@@ -96,6 +217,25 @@ describe("Verification routes", () => {
       expect(response.statusCode).toBe(400);
       const body = response.json();
       expect(body.error).toBe("endTime must be after startTime");
+    });
+
+    it("returns 400 when the verification period exceeds 31 days", async () => {
+      const token = generateAuthToken(server);
+      const response = await server.inject({
+        method: "POST",
+        url: "/v1/verification/initiate",
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          dacUnitId: "dac-unit-001",
+          startTime: "2026-01-01T00:00:00.000Z",
+          endTime: "2026-02-02T00:00:00.000Z",
+        },
+      });
+
+      expect(response.statusCode).toBe(400);
+      expect(response.json().error).toBe(
+        "Verification periods cannot exceed 31 days",
+      );
     });
 
     it("fails verification (FAILED) when no sensor readings exist", async () => {
@@ -238,6 +378,58 @@ describe("Verification routes", () => {
       expect(body.data.status).toBe("FAILED"); // No readings for this DAC unit
     });
 
+    it("deduplicates the same reading set even when the requested window shifts", async () => {
+      const readings = [
+        makeSensorReading({
+          dacUnitId: "dac-unit-001",
+          time: "2026-01-15T06:00:00.000Z",
+          sensorId: "sensor-001",
+          dataHash: "0x" + "1".repeat(64),
+        }),
+        makeSensorReading({
+          dacUnitId: "dac-unit-001",
+          time: "2026-01-15T12:00:00.000Z",
+          sensorId: "sensor-002",
+          dataHash: "0x" + "2".repeat(64),
+        }),
+      ];
+      seedState(SENSORS_STORE_KEY, { readings });
+      const sourceDataHash = buildVerificationDatasetHash(
+        "dac-unit-001",
+        readings.map((reading) => ({
+          time: reading.time,
+          sensorId: reading.sensorId,
+          dataHash: reading.dataHash,
+        })),
+      );
+
+      const existing = makeVerification({
+        id: "ver_existing",
+        dacUnitId: "dac-unit-001",
+        startTime: "2026-01-15T00:00:00.000Z",
+        endTime: "2026-01-16T00:00:00.000Z",
+        sourceDataHash,
+      });
+      seedState(VERIFICATIONS_STORE_KEY, {
+        verifications: { ver_existing: existing },
+      });
+
+      const token = generateAuthToken(server);
+      const response = await server.inject({
+        method: "POST",
+        url: "/v1/verification/initiate",
+        headers: { authorization: `Bearer ${token}` },
+        payload: {
+          dacUnitId: "dac-unit-001",
+          startTime: "2026-01-15T05:00:00.000Z",
+          endTime: "2026-01-15T13:00:00.000Z",
+        },
+      });
+
+      expect(response.statusCode).toBe(201);
+      expect(response.json().data.status).toBe("FAILED");
+    });
+
     it("rejects missing required fields", async () => {
       const token = generateAuthToken(server);
 
@@ -328,7 +520,10 @@ describe("Verification routes", () => {
       const verification = makeVerification({
         id: "ver_failed",
         status: "FAILED",
-        sourceCheck: { status: "PASSED", completedAt: new Date().toISOString() },
+        sourceCheck: {
+          status: "PASSED",
+          completedAt: new Date().toISOString(),
+        },
         logicCheck: {
           status: "FAILED",
           completedAt: new Date().toISOString(),
@@ -442,7 +637,12 @@ describe("Verification routes", () => {
         id: "ver_fail_msgs",
         status: "FAILED",
         sourceCheck: { status: "FAILED", completedAt: now },
-        logicCheck: { status: "FAILED", completedAt: now, kwhPerTonne: 100, efficiencyFactor: 0 },
+        logicCheck: {
+          status: "FAILED",
+          completedAt: now,
+          kwhPerTonne: 100,
+          efficiencyFactor: 0,
+        },
         mintCheck: { status: "FAILED", completedAt: now },
       });
       seedState(VERIFICATIONS_STORE_KEY, {
@@ -471,7 +671,10 @@ describe("Verification routes", () => {
         id: "ver_no_credits",
         status: "FAILED",
         creditsToMint: null,
-        sourceCheck: { status: "FAILED", completedAt: new Date().toISOString() },
+        sourceCheck: {
+          status: "FAILED",
+          completedAt: new Date().toISOString(),
+        },
         logicCheck: { status: "PENDING", completedAt: null },
         mintCheck: { status: "PENDING", completedAt: null },
       });

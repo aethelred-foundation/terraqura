@@ -3,30 +3,45 @@
 // TerraQura Terms of Service Modal
 // Click-wrap agreement for ADGM compliance
 
-import { useState, useEffect } from "react";
+import {
+  TERRAQURA_TERMS_HASH,
+  TERRAQURA_TERMS_VERSION,
+  TermsAcceptancePayload,
+  buildTermsAcceptanceMessage,
+} from "@terraqura/types";
+import { useCallback, useEffect, useState } from "react";
 import { useAccount, useSignMessage } from "wagmi";
+
+import { terraquraApi } from "@/lib/terraquraApi";
 
 interface TermsModalProps {
   isOpen: boolean;
-  onAccept: (signature: string) => void;
+  onAccept: (acceptance: TermsAcceptancePayload) => Promise<void>;
   onDecline: () => void;
 }
-
-const TERMS_VERSION = "1.0.0";
-const TERMS_HASH = "0x..."; // Hash of terms document
 
 export function TermsModal({ isOpen, onAccept, onDecline }: TermsModalProps) {
   const { address } = useAccount();
   const [hasScrolledToBottom, setHasScrolledToBottom] = useState(false);
   const [isChecked, setIsChecked] = useState(false);
   const [isSigning, setIsSigning] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const { signMessageAsync } = useSignMessage();
+
+  useEffect(() => {
+    if (isOpen) {
+      setHasScrolledToBottom(false);
+      setIsChecked(false);
+      setError(null);
+    }
+  }, [isOpen]);
 
   const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
     const target = e.target as HTMLDivElement;
     const isAtBottom =
-      Math.abs(target.scrollHeight - target.scrollTop - target.clientHeight) < 10;
+      Math.abs(target.scrollHeight - target.scrollTop - target.clientHeight) <
+      10;
     if (isAtBottom) {
       setHasScrolledToBottom(true);
     }
@@ -36,27 +51,37 @@ export function TermsModal({ isOpen, onAccept, onDecline }: TermsModalProps) {
     if (!address) return;
 
     setIsSigning(true);
+    setError(null);
 
     try {
-      // Create message to sign
-      const message = `I, the owner of wallet ${address}, agree to the TerraQura Terms of Service (Version ${TERMS_VERSION}).\n\nTimestamp: ${new Date().toISOString()}\nTerms Hash: ${TERMS_HASH}`;
-
-      // Sign the message
+      const acceptedAt = new Date().toISOString();
+      const message = buildTermsAcceptanceMessage(address, acceptedAt);
       const signature = await signMessageAsync({ message });
+      const acceptance: TermsAcceptancePayload = {
+        walletAddress: address,
+        signature,
+        message,
+        version: TERRAQURA_TERMS_VERSION,
+        termsHash: TERRAQURA_TERMS_HASH,
+        acceptedAt,
+      };
 
-      // Store acceptance (would be sent to backend)
+      await onAccept(acceptance);
       localStorage.setItem(
         `terraqura_terms_accepted_${address}`,
         JSON.stringify({
-          version: TERMS_VERSION,
+          version: TERRAQURA_TERMS_VERSION,
+          termsHash: TERRAQURA_TERMS_HASH,
           signature,
-          timestamp: new Date().toISOString(),
-        })
+          acceptedAt,
+        }),
       );
-
-      onAccept(signature);
     } catch (error) {
-      console.error("Failed to sign terms:", error);
+      setError(
+        error instanceof Error
+          ? error.message
+          : "Unable to record the signed terms acceptance",
+      );
     } finally {
       setIsSigning(false);
     }
@@ -86,16 +111,17 @@ export function TermsModal({ isOpen, onAccept, onDecline }: TermsModalProps) {
             <h3 className="font-bold text-white">1. INTRODUCTION</h3>
             <p>
               These Terms of Service ("Terms") govern your access to and use of
-              the TerraQura platform ("Platform"), operated by TerraQura Limited,
-              a company registered in the Abu Dhabi Global Market ("ADGM").
+              the TerraQura platform ("Platform"), operated by TerraQura
+              Limited, a company registered in the Abu Dhabi Global Market
+              ("ADGM").
             </p>
 
             <h3 className="font-bold text-white">2. ELIGIBILITY</h3>
             <p>
               To use the Platform, you must: (a) be at least 18 years of age;
-              (b) have the legal capacity to enter into binding contracts;
-              (c) not be located in any jurisdiction where use of the Platform
-              is prohibited; (d) successfully complete our Know Your Customer
+              (b) have the legal capacity to enter into binding contracts; (c)
+              not be located in any jurisdiction where use of the Platform is
+              prohibited; (d) successfully complete our Know Your Customer
               ("KYC") verification process.
             </p>
 
@@ -110,29 +136,31 @@ export function TermsModal({ isOpen, onAccept, onDecline }: TermsModalProps) {
 
             <h3 className="font-bold text-white">4. VERIFICATION PROCESS</h3>
             <p>
-              All carbon credits undergo a three-phase verification process:
-              (a) Source Check - validates data authenticity from IoT sensors;
-              (b) Logic Check - ensures efficiency metrics fall within acceptable
+              All carbon credits undergo a three-phase verification process: (a)
+              Source Check - validates data authenticity from IoT sensors; (b)
+              Logic Check - ensures efficiency metrics fall within acceptable
               parameters (200-600 kWh per tonne of CO2); (c) Mint Check - final
-              validation before token minting. We use our sovereign NativeIoT Oracle for
-              1st-party verification with satellite imagery cross-referencing.
+              validation before token minting. We use our sovereign NativeIoT
+              Oracle for 1st-party verification with satellite imagery
+              cross-referencing.
             </p>
 
             <h3 className="font-bold text-white">5. MARKETPLACE</h3>
             <p>
               The Platform provides a peer-to-peer marketplace for trading CCTs.
-              All transactions are executed through smart contracts on the TerraQura
-              blockchain infrastructure. A platform fee of 2.5% applies to all marketplace
-              transactions. Prices are denominated in USDC.
+              All transactions are executed through smart contracts on the
+              TerraQura blockchain infrastructure. A platform fee of 2.5%
+              applies to all marketplace transactions. Prices are denominated in
+              USDC.
             </p>
 
             <h3 className="font-bold text-white">6. KYC/AML COMPLIANCE</h3>
             <p>
               In compliance with ADGM regulations and international anti-money
-              laundering standards, all users must complete identity verification
-              before participating in the marketplace. We conduct ongoing
-              sanctions screening and reserve the right to suspend accounts that
-              fail compliance checks.
+              laundering standards, all users must complete identity
+              verification before participating in the marketplace. We conduct
+              ongoing sanctions screening and reserve the right to suspend
+              accounts that fail compliance checks.
             </p>
 
             <h3 className="font-bold text-white">7. DATA PRIVACY</h3>
@@ -162,9 +190,9 @@ export function TermsModal({ isOpen, onAccept, onDecline }: TermsModalProps) {
 
             <h3 className="font-bold text-white">10. GOVERNING LAW</h3>
             <p>
-              These Terms are governed by the laws of the Abu Dhabi Global Market.
-              Any disputes shall be resolved through arbitration in accordance
-              with the ADGM Arbitration Regulations.
+              These Terms are governed by the laws of the Abu Dhabi Global
+              Market. Any disputes shall be resolved through arbitration in
+              accordance with the ADGM Arbitration Regulations.
             </p>
 
             <h3 className="font-bold text-white">11. AMENDMENTS</h3>
@@ -181,7 +209,7 @@ export function TermsModal({ isOpen, onAccept, onDecline }: TermsModalProps) {
             </p>
 
             <p className="mt-6 text-xs text-gray-500">
-              Version {TERMS_VERSION} | Last Updated: February 2026
+              Version {TERRAQURA_TERMS_VERSION} | Last Updated: February 2026
             </p>
           </div>
         </div>
@@ -195,6 +223,14 @@ export function TermsModal({ isOpen, onAccept, onDecline }: TermsModalProps) {
 
         {/* Actions */}
         <div className="border-t border-gray-700 bg-gray-800 px-6 py-4">
+          {error && (
+            <div
+              role="alert"
+              className="mb-4 rounded-lg border border-red-500/40 bg-red-950/40 px-4 py-3 text-sm text-red-200"
+            >
+              {error}
+            </div>
+          )}
           {/* Checkbox */}
           <label className="mb-4 flex cursor-pointer items-start gap-3">
             <input
@@ -241,30 +277,51 @@ export function useTermsAccepted() {
   const [accepted, setAccepted] = useState(false);
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
+  const checkAcceptance = useCallback(async () => {
     if (!address) {
       setAccepted(false);
       setLoading(false);
       return;
     }
 
-    const stored = localStorage.getItem(`terraqura_terms_accepted_${address}`);
-    if (stored) {
+    setLoading(true);
+    try {
+      const result = await terraquraApi<{
+        accepted: boolean;
+        version: string;
+        termsHash: string;
+      }>(`/v1/legal/acceptance/${encodeURIComponent(address)}`);
+      setAccepted(
+        result.accepted &&
+          result.version === TERRAQURA_TERMS_VERSION &&
+          result.termsHash === TERRAQURA_TERMS_HASH,
+      );
+    } catch {
+      // The signed local record is a continuity cache only. Protected backend
+      // operations must independently enforce legal acceptance.
+      const stored = localStorage.getItem(
+        `terraqura_terms_accepted_${address}`,
+      );
       try {
-        const data = JSON.parse(stored);
-        // Check if the version matches
-        if (data.version === TERMS_VERSION) {
-          setAccepted(true);
-        }
+        const data = stored ? JSON.parse(stored) : null;
+        setAccepted(
+          data?.version === TERRAQURA_TERMS_VERSION &&
+            data?.termsHash === TERRAQURA_TERMS_HASH &&
+            typeof data?.signature === "string",
+        );
       } catch {
-        // Invalid data
+        setAccepted(false);
       }
+    } finally {
+      setLoading(false);
     }
-
-    setLoading(false);
   }, [address]);
 
-  return { accepted, loading };
+  useEffect(() => {
+    void checkAcceptance();
+  }, [checkAcceptance]);
+
+  return { accepted, loading, refetch: checkAcceptance };
 }
 
 export default TermsModal;

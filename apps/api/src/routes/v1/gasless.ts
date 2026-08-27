@@ -1,8 +1,11 @@
 // TerraQura Gasless Transaction Routes
 // API endpoints for meta-transaction relay
 
-import { FastifyInstance } from "fastify";
+import { FastifyInstance, FastifyReply } from "fastify";
 
+import { getAuthenticatedAddress, isAdmin } from "../../lib/auth-context.js";
+import { verifyBearerAuth } from "../../lib/bearer-auth.js";
+import { getApiRuntimeEnv } from "../../lib/runtime-env.js";
 import { getGaslessRelayer } from "../../services/gasless/relayer.service.js";
 
 interface BuildRequestBody {
@@ -25,7 +28,40 @@ interface RelayBody {
   signature: string;
 }
 
+function ensureAuthorizedAddress(
+  request: { user?: unknown },
+  reply: FastifyReply,
+  targetAddress: string,
+): string | null {
+  const callerAddress = getAuthenticatedAddress(request);
+  if (!callerAddress) {
+    reply.status(401).send({
+      success: false,
+      error: {
+        code: "UNAUTHORIZED",
+        message: "Missing authenticated wallet",
+      },
+    });
+    return null;
+  }
+
+  const normalizedTarget = targetAddress.toLowerCase();
+  if (!isAdmin(request) && normalizedTarget !== callerAddress) {
+    reply.status(403).send({
+      success: false,
+      error: {
+        code: "FORBIDDEN",
+        message: "Gasless actions are limited to the authenticated wallet",
+      },
+    });
+    return null;
+  }
+
+  return normalizedTarget;
+}
+
 export async function gaslessRoutes(fastify: FastifyInstance) {
+  const env = getApiRuntimeEnv();
   const relayer = getGaslessRelayer();
 
   // ============================================
@@ -58,10 +94,73 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
               },
             },
           },
+          401: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
+          403: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
+          500: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
+          503: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
         },
       },
+      config: {
+        rateLimit: {
+          max: 20,
+          timeWindow: "1 minute",
+        },
+      },
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
+      if (!ensureAuthorizedAddress(request, reply, request.params.address)) {
+        return;
+      }
+
       if (!relayer) {
         return reply.status(503).send({
           success: false,
@@ -91,7 +190,7 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
           },
         });
       }
-    }
+    },
   );
 
   // ============================================
@@ -140,10 +239,73 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
               },
             },
           },
+          401: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
+          403: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
+          500: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
+          503: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
         },
       },
+      config: {
+        rateLimit: {
+          max: 20,
+          timeWindow: "1 minute",
+        },
+      },
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
+      if (!ensureAuthorizedAddress(request, reply, request.body.from)) {
+        return;
+      }
+
       if (!relayer) {
         return reply.status(503).send({
           success: false,
@@ -157,12 +319,13 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
       const { from, to, data, gasLimit } = request.body;
 
       try {
-        const { request: forwardRequest, domain } = await relayer.buildForwardRequest(
-          from,
-          to,
-          data,
-          gasLimit ? BigInt(gasLimit) : undefined
-        );
+        const { request: forwardRequest, domain } =
+          await relayer.buildForwardRequest(
+            from,
+            to,
+            data,
+            gasLimit ? BigInt(gasLimit) : undefined,
+          );
 
         return {
           success: true,
@@ -190,7 +353,7 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
           },
         });
       }
-    }
+    },
   );
 
   // ============================================
@@ -209,7 +372,15 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
           properties: {
             request: {
               type: "object",
-              required: ["from", "to", "value", "gas", "nonce", "deadline", "data"],
+              required: [
+                "from",
+                "to",
+                "value",
+                "gas",
+                "nonce",
+                "deadline",
+                "data",
+              ],
               properties: {
                 from: { type: "string" },
                 to: { type: "string" },
@@ -236,10 +407,86 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
               },
             },
           },
+          400: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
+          401: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
+          403: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
+          500: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
+          503: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
         },
       },
+      config: {
+        rateLimit: {
+          max: 20,
+          timeWindow: "1 minute",
+        },
+      },
+      preHandler: verifyBearerAuth,
     },
     async (request, reply) => {
+      if (!ensureAuthorizedAddress(request, reply, request.body.request.from)) {
+        return;
+      }
+
       if (!relayer) {
         return reply.status(503).send({
           success: false,
@@ -264,10 +511,7 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
           data: forwardRequest.data,
         };
 
-        // Use Defender relay in production, direct relay otherwise
-        const result = process.env.DEFENDER_RELAYER_API_KEY
-          ? await relayer.relayViaDefender(typedRequest, signature)
-          : await relayer.relay(typedRequest, signature);
+        const result = await relayer.relay(typedRequest, signature);
 
         if (!result.success) {
           return reply.status(400).send({
@@ -295,7 +539,7 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
           },
         });
       }
-    }
+    },
   );
 
   // ============================================
@@ -323,19 +567,39 @@ export async function gaslessRoutes(fastify: FastifyInstance) {
               },
             },
           },
+          401: {
+            type: "object",
+            properties: {
+              success: { type: "boolean" },
+              error: {
+                type: "object",
+                properties: {
+                  code: { type: "string" },
+                  message: { type: "string" },
+                },
+              },
+            },
+          },
         },
       },
+      config: {
+        rateLimit: {
+          max: 20,
+          timeWindow: "1 minute",
+        },
+      },
+      preHandler: verifyBearerAuth,
     },
     async (_request, _reply) => {
       return {
         success: true,
         data: {
           enabled: relayer !== null,
-          forwarderAddress: process.env.FORWARDER_CONTRACT || null,
-          chainId: parseInt(process.env.CHAIN_ID || "137", 10),
+          forwarderAddress: env.FORWARDER_CONTRACT || null,
+          chainId: env.CHAIN_ID,
         },
       };
-    }
+    },
   );
 }
 
